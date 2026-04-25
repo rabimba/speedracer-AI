@@ -1,0 +1,9 @@
+.gradle/
+.idea/
+build/
+app/build/
+local.properties
+models/current-model.json
+models/**/*.litertlm
+models/**/*.partial
+models/**/*.task
