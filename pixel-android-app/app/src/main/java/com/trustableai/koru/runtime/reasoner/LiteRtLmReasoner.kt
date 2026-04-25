@@ -28,13 +28,18 @@ class LiteRtLmReasoner(
             Class.forName("com.google.mediapipe.tasks.genai.llminference.LlmInference")
         }.isSuccess
         val installStatus = modelAssetManager.installStatus()
-        usable = dependencyPresent && installStatus.isPresent && installStatus.checksumVerified
+        usable = dependencyPresent &&
+            installStatus.isPresent &&
+            installStatus.checksumVerified &&
+            installStatus.supportsNativeAndroid
 
         val detail = when {
             usable ->
-                "LiteRT-LM dependency and model asset detected. Structured-output Gemma lane ready for runtime hookup."
+                "LiteRT-LM dependency and model asset detected at ${installStatus.filePath}. Structured-output Gemma lane ready for runtime hookup."
             !dependencyPresent ->
                 "LiteRT-LM dependency not present at runtime."
+            installStatus.issue != null ->
+                installStatus.issue
             else ->
                 modelAssetManager.recommendedDownloadAction()
         }

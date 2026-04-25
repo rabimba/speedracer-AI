@@ -16,8 +16,11 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-    buildConfigField("String", "DEFAULT_MODEL_VERSION", "\"gemma4-e2b-q4\"")
-    buildConfigField("String", "DEFAULT_MODEL_CHECKSUM", "\"\"")
+    buildConfigField("String", "DEFAULT_MODEL_VERSION", "\"gemma-4-e2b-it\"")
+    buildConfigField("String", "DEFAULT_MODEL_CHECKSUM", "\"ab7838cdfc8f77e54d8ca45eadceb20452d9f01e4bfade03e5dce27911b27e42\"")
+    buildConfigField("String", "DEFAULT_MODEL_FILENAME", "\"gemma-4-E2B-it.litertlm\"")
+    buildConfigField("String", "DEFAULT_MODEL_URL", "\"https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm\"")
+    buildConfigField("String", "MODEL_DEV_ROOT", "\"/data/local/tmp/koru/models\"")
   }
 
   buildTypes {

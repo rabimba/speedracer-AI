@@ -157,6 +157,9 @@ data class ModelInstallStatus(
     val checksumVerified: Boolean,
     val downloadAllowedOnCurrentNetwork: Boolean,
     val filePath: String,
+    val fileName: String,
+    val supportsNativeAndroid: Boolean,
+    val issue: String? = null,
 )
 
 fun CoachingPath.bridgeValue(): String = name.lowercase()
