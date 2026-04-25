@@ -1,15 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { TelemetryStreamService } from '../services/telemetryStreamService';
-import { CoachingService } from '../services/coachingService';
-import { AudioService } from '../services/audioService';
 import { useTTS } from '../hooks/useTTS';
 import { THUNDERHILL_EAST } from '../data/trackData';
 import TelemetryCharts from '../components/TelemetryCharts';
 import TrackMap from '../components/TrackMap';
 import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
 import GaugeCluster from '../components/GaugeCluster';
-import type { TelemetryFrame, SSEConnectionStatus, TTSProvider } from '../types';
+import type {
+  LiveBackendStatus,
+  TelemetryFrame,
+  SSEConnectionStatus,
+  TTSProvider,
+} from '../types';
 import { Radio, Unplug } from 'lucide-react';
+import { LiveBackendAdapter } from '../services/liveBackendAdapter';
+import { isNativeBackend } from '../services/sharedPhraseCatalog';
+import { hasAndroidBridge } from '../services/androidBridge';
 
 interface LiveSessionProps {
   apiKey: string | null;
@@ -22,60 +27,89 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const [activeCoach, setActiveCoach] = useState('superaj');
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [sseUrl, setSseUrl] = useState('');
+  const [backendStatus, setBackendStatus] = useState<LiveBackendStatus | null>(null);
+  const [nativeMode, setNativeMode] = useState(hasAndroidBridge());
 
-  const streamRef = useRef(TelemetryStreamService.getInstance());
-  const coachRef = useRef(new CoachingService());
-  const audioRef = useRef(new AudioService());
+  const adapterRef = useRef<LiveBackendAdapter | null>(null);
+  const audioEnabledRef = useRef(audioEnabled);
+  const initialConfigRef = useRef({ apiKey, activeCoach, audioEnabled });
   const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
+  const speakRef = useRef(speak);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    audio.init();
-    return () => audio.destroy();
-  }, []);
+    speakRef.current = speak;
+  }, [speak]);
 
   useEffect(() => {
-    if (apiKey) coachRef.current.setApiKey(apiKey);
-  }, [apiKey]);
+    audioEnabledRef.current = audioEnabled;
+    adapterRef.current?.setAudioEnabled(audioEnabled);
+  }, [audioEnabled]);
 
   useEffect(() => {
-    const stream = streamRef.current;
+    const initialConfig = initialConfigRef.current;
+    const adapter = new LiveBackendAdapter({
+      apiKey: initialConfig.apiKey,
+      coachId: initialConfig.activeCoach,
+      audioEnabled: initialConfig.audioEnabled,
+      track: THUNDERHILL_EAST,
+    });
+    adapterRef.current = adapter;
+    setNativeMode(adapter.isNativeMode());
 
-    const unsubStatus = stream.onStatus(setStatus);
-    const unsubFrame = stream.onFrame((frame) => {
+    const unsubStatus = adapter.onStatus(setStatus);
+    const unsubFrame = adapter.onFrame((frame) => {
       setFrames(prev => [...prev.slice(-500), frame]);
-      coachRef.current.processFrame(frame);
     });
 
-    const unsubCoach = coachRef.current.onCoaching(msg => {
+    const unsubCoach = adapter.onCoaching((msg) => {
       const coachMsg: CoachMessage = {
         id: `${Date.now()}-${Math.random()}`,
         path: msg.path,
         text: msg.text,
         timestamp: Date.now(),
+        backend: msg.backend,
+        priority: msg.priority,
+        confidence: msg.confidence,
       };
       setMessages(prev => [...prev, coachMsg]);
 
-      if (audioEnabled && msg.text) {
-        speak(msg.text);
+      if (audioEnabledRef.current && msg.text && !isNativeBackend(msg.backend)) {
+        speakRef.current(msg.text);
       }
     });
 
-    return () => { unsubStatus(); unsubFrame(); unsubCoach(); };
-  }, [audioEnabled, speak]);
+    const unsubBackend = adapter.onBackendStatus((nextStatus) => {
+      setNativeMode(isNativeBackend(nextStatus.backend));
+      setBackendStatus(nextStatus);
+    });
+
+    adapter.requestBackendStatus();
+
+    return () => {
+      unsubStatus();
+      unsubFrame();
+      unsubCoach();
+      unsubBackend();
+      adapter.destroy();
+      adapterRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    adapterRef.current?.setApiKey(apiKey);
+  }, [apiKey]);
 
   const handleConnect = useCallback(() => {
     if (status === 'connected') {
-      streamRef.current.disconnect();
+      adapterRef.current?.disconnect();
     } else {
-      const url = sseUrl.trim() || '/mock-telemetry.txt';
-      streamRef.current.connect(url);
+      adapterRef.current?.connect(sseUrl.trim());
     }
   }, [status, sseUrl]);
 
   const handleCoachChange = useCallback((id: string) => {
     setActiveCoach(id);
-    coachRef.current.setCoach(id);
+    adapterRef.current?.setCoach(id);
   }, []);
 
   const currentFrame = frames[frames.length - 1] || null;
@@ -87,7 +121,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
         <div className="live-controls">
           <input
             type="text"
-            placeholder="SSE URL or .txt file path"
+            placeholder={nativeMode ? 'Optional mock telemetry override' : 'SSE URL or .txt file path'}
             value={sseUrl}
             onChange={e => setSseUrl(e.target.value)}
             className="sse-input"
@@ -99,14 +133,16 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
             {status === 'connected' ? <><Unplug size={14} /> Disconnect</> : <><Radio size={14} /> Connect</>}
           </button>
           <span className={`status-badge status-${status}`}>{status}</span>
-          <select
-            className="tts-select"
-            value={provider}
-            onChange={e => setProvider(e.target.value as TTSProvider)}
-          >
-            <option value="browser">Browser TTS</option>
-            <option value="gemini">Gemini TTS</option>
-          </select>
+          {!nativeMode && (
+            <select
+              className="tts-select"
+              value={provider}
+              onChange={e => setProvider(e.target.value as TTSProvider)}
+            >
+              <option value="browser">Browser TTS</option>
+              <option value="gemini">Gemini TTS</option>
+            </select>
+          )}
         </div>
       </header>
 
@@ -130,6 +166,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
             onCoachChange={handleCoachChange}
             audioEnabled={audioEnabled}
             onAudioToggle={() => setAudioEnabled(!audioEnabled)}
+            backendStatus={backendStatus}
           />
         </div>
       </div>

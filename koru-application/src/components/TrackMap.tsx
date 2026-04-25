@@ -58,7 +58,7 @@ export default function TrackMap({ track, currentFrame }: TrackMapProps) {
         />
 
         {/* Corner labels */}
-        {track.corners.map((c, i) => {
+        {track.corners.map((c) => {
           const ptIdx = Math.floor((c.apexDist / track.length) * track.mapPoints.length);
           const pt = track.mapPoints[Math.min(ptIdx, track.mapPoints.length - 1)];
           if (!pt) return null;

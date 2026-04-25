@@ -1,4 +1,4 @@
-import type { TelemetryFrame, Track, Corner, CornerPhase } from '../types';
+import type { TelemetryFrame, Track, CornerPhase } from '../types';
 import { haversineDistance, isValidGps } from '../utils/geoUtils';
 
 export interface CornerDetection {
@@ -53,7 +53,7 @@ export class CornerPhaseDetector {
 
       // Within 200m of a corner — determine phase
       if (distToEntry < 200 || distToApex < 150) {
-        const phase = this.classifyPhaseByDistance(distToEntry, distToApex, corner);
+        const phase = this.classifyPhaseByDistance(distToEntry, distToApex);
         return {
           phase,
           cornerId: corner.id,
@@ -67,7 +67,6 @@ export class CornerPhaseDetector {
   private classifyPhaseByDistance(
     distToEntry: number,
     distToApex: number,
-    _corner: Corner,
   ): CornerPhase {
     // Approaching entry — brake zone
     if (distToEntry < 100 && distToApex > 80) return 'BRAKE_ZONE';

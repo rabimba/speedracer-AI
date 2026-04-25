@@ -123,7 +123,8 @@ TASK: Identify the biggest time loss. Explain the error.
 
       if (audioParts.length > 0) {
         const wavBuffer = convertToWav(audioParts, audioMimeType || 'audio/pcm; rate=24000');
-        return new Blob([wavBuffer], { type: 'audio/wav' });
+        const blobBytes = Uint8Array.from(wavBuffer);
+        return new Blob([blobBytes], { type: 'audio/wav' });
       }
       return null;
     } catch (e) {

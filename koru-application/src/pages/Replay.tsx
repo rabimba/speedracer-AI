@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, startTransition } from 'react';
 import { parseTelemetryCSV } from '../utils/telemetryParser';
 import { CoachingService } from '../services/coachingService';
 import { useGeminiCloud } from '../hooks/useGeminiCloud';
@@ -29,8 +29,8 @@ export default function Replay({ apiKey }: ReplayProps) {
   const [analysisResult, setAnalysisResult] = useState('');
 
   const { generateFeedback, status: cloudStatus } = useGeminiCloud();
-  const { speak, setProvider, provider, isSpeaking } = useTTS(apiKey, activeCoach);
-  const { analyzeLap, checkLookahead } = usePredictiveCoaching();
+  const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
+  const { checkLookahead } = usePredictiveCoaching();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const coachRef = useRef(new CoachingService());
@@ -57,6 +57,7 @@ export default function Replay({ apiKey }: ReplayProps) {
         path: msg.path,
         text: msg.text,
         timestamp: Date.now(),
+        backend: 'browser',
       };
       setMessages(prev => [...prev, coachMsg]);
 
@@ -122,8 +123,11 @@ export default function Replay({ apiKey }: ReplayProps) {
         path: 'feedforward',
         text: `Ahead: ${zone.cornerName} — ${zone.advice} (lost ${Math.abs(zone.speedDelta).toFixed(0)} mph last lap)`,
         timestamp: Date.now(),
+        backend: 'browser',
       };
-      setMessages(prev => [...prev, msg]);
+      startTransition(() => {
+        setMessages(prev => [...prev, msg]);
+      });
       if (audioEnabled) speak(msg.text);
     }
   }, [currentIdx, frames, checkLookahead, audioEnabled, speak]);
@@ -145,6 +149,7 @@ export default function Replay({ apiKey }: ReplayProps) {
         path: 'cold',
         text: result,
         timestamp: Date.now(),
+        backend: 'browser',
       };
       setMessages(prev => [...prev, msg]);
     }

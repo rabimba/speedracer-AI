@@ -605,6 +605,15 @@ html, body, #root {
 .coach-msg-hot { border-left-color: var(--red); }
 .coach-msg-cold { border-left-color: var(--text-secondary); }
 .coach-msg-feedforward { border-left-color: var(--amber); }
+.coach-msg-edge { border-left-color: #2dd4bf; }
+
+.coach-msg-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
 
 .coach-msg-badge {
   font-size: 9px;
@@ -618,6 +627,42 @@ html, body, #root {
 .coach-msg-hot .coach-msg-badge { color: var(--red); }
 .coach-msg-cold .coach-msg-badge { color: var(--text-secondary); }
 .coach-msg-feedforward .coach-msg-badge { color: var(--amber); }
+.coach-msg-edge .coach-msg-badge { color: #2dd4bf; }
+
+.coach-msg-backend,
+.backend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.coach-msg-backend-browser,
+.backend-chip-browser { border-color: #64748b; color: #cbd5f5; }
+.coach-msg-backend-aicore,
+.backend-chip-aicore { border-color: #22c55e; color: #bbf7d0; }
+.coach-msg-backend-litertlm,
+.backend-chip-litertlm { border-color: #38bdf8; color: #bae6fd; }
+.coach-msg-backend-deterministic,
+.backend-chip-deterministic { border-color: #f59e0b; color: #fde68a; }
+
+.backend-chip-state {
+  padding-left: 6px;
+  border-left: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+.backend-chip-state-ready { color: #86efac; }
+.backend-chip-state-degraded { color: #fcd34d; }
+.backend-chip-state-error,
+.backend-chip-state-unavailable { color: #fca5a5; }
+.backend-chip-state-starting { color: #bae6fd; }
 
 .coach-msg-text { font-size: 13px; line-height: 1.5; }
 .coach-msg-text p { margin-bottom: 6px; }
@@ -1190,4 +1235,3 @@ html, body, #root {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #333; }
-

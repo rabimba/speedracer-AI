@@ -1,13 +1,16 @@
-import { useState } from 'react';
 import { COACHES, DEFAULT_COACH } from '../utils/coachingKnowledge';
 import { MessageCircle, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import type { CoachingPath, LiveBackendStatus, RuntimeBackend } from '../types';
 
 interface CoachMessage {
   id: string;
-  path: 'hot' | 'cold' | 'feedforward';
+  path: CoachingPath;
   text: string;
   timestamp: number;
+  backend?: RuntimeBackend;
+  priority?: 0 | 1 | 2 | 3;
+  confidence?: number;
 }
 
 interface CoachPanelProps {
@@ -16,6 +19,7 @@ interface CoachPanelProps {
   onCoachChange: (id: string) => void;
   audioEnabled: boolean;
   onAudioToggle: () => void;
+  backendStatus?: LiveBackendStatus | null;
 }
 
 export default function CoachPanel({
@@ -24,6 +28,7 @@ export default function CoachPanel({
   onCoachChange,
   audioEnabled,
   onAudioToggle,
+  backendStatus,
 }: CoachPanelProps) {
   const coach = COACHES[activeCoach] || COACHES[DEFAULT_COACH];
 
@@ -40,6 +45,14 @@ export default function CoachPanel({
         </div>
 
         <div className="coach-actions">
+          {backendStatus && (
+            <div className={`backend-chip backend-chip-${backendStatus.backend}`}>
+              <span>{backendStatus.backend}</span>
+              <span className={`backend-chip-state backend-chip-state-${backendStatus.state}`}>
+                {backendStatus.state}
+              </span>
+            </div>
+          )}
           <button className="icon-btn" onClick={onAudioToggle}>
             {audioEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
           </button>
@@ -69,7 +82,14 @@ export default function CoachPanel({
         ) : (
           messages.slice(-20).reverse().map(msg => (
             <div key={msg.id} className={`coach-msg coach-msg-${msg.path}`}>
-              <div className="coach-msg-badge">{msg.path.toUpperCase()}</div>
+              <div className="coach-msg-meta">
+                <div className="coach-msg-badge">{msg.path.toUpperCase()}</div>
+                {msg.backend && (
+                  <div className={`coach-msg-backend coach-msg-backend-${msg.backend}`}>
+                    {msg.backend}
+                  </div>
+                )}
+              </div>
               <div className="coach-msg-text">
                 <ReactMarkdown>{msg.text}</ReactMarkdown>
               </div>

@@ -171,14 +171,21 @@ export type CornerPhase =
   | 'MID_CORNER' | 'APEX' | 'EXIT' | 'ACCELERATION';
 
 export type TimingState = 'OPEN' | 'DELIVERING' | 'COOLDOWN' | 'BLACKOUT';
+export type CoachingPath = 'hot' | 'cold' | 'feedforward' | 'edge';
+export type RuntimeBackend = 'browser' | 'aicore' | 'litertlm' | 'deterministic';
+export type LiveBackendState = 'idle' | 'starting' | 'ready' | 'degraded' | 'unavailable' | 'error';
 
 export interface CoachingDecision {
-  path: 'hot' | 'cold' | 'feedforward';
+  path: CoachingPath;
   action?: CoachAction;
   text: string;
   priority: 0 | 1 | 2 | 3;
   cornerPhase: CornerPhase;
   timestamp: number;
+  backend?: RuntimeBackend;
+  latencyMs?: number;
+  confidence?: number;
+  phraseId?: string;
 }
 
 // ── Driver Model ──────────────────────────────────────────
@@ -197,3 +204,13 @@ export type SSEConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 
 export type TTSProvider = 'browser' | 'gemini';
 
 export type CloudModel = 'flash' | 'pro';
+
+export interface LiveBackendStatus {
+  backend: RuntimeBackend;
+  state: LiveBackendState;
+  detail: string;
+  lastUpdated: number;
+  model?: string;
+  usesOnDeviceModel: boolean;
+  supportedPaths: CoachingPath[];
+}

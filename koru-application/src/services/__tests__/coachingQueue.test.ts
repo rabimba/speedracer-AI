@@ -34,7 +34,7 @@ describe('CoachingQueue', () => {
     
     expect(queue.size()).toBe(1);
     
-    const dequeued = queue.dequeue(mockGate, 'STRAIGHT');
+    const dequeued = queue.dequeue(mockGate);
     expect(dequeued?.text).toBe('test1');
     expect(queue.size()).toBe(0);
   });
@@ -46,9 +46,9 @@ describe('CoachingQueue', () => {
     vi.setSystemTime(1020);
     queue.enqueue(createDecision(0, 'critical'));
 
-    expect(queue.dequeue(mockGate, 'STRAIGHT')?.text).toBe('critical');
-    expect(queue.dequeue(mockGate, 'STRAIGHT')?.text).toBe('high');
-    expect(queue.dequeue(mockGate, 'STRAIGHT')?.text).toBe('low');
+    expect(queue.dequeue(mockGate)?.text).toBe('critical');
+    expect(queue.dequeue(mockGate)?.text).toBe('high');
+    expect(queue.dequeue(mockGate)?.text).toBe('low');
   });
 
   it('should discard stale messages on dequeue', () => {
@@ -60,7 +60,7 @@ describe('CoachingQueue', () => {
     vi.setSystemTime(6000);
     queue.enqueue(createDecision(2, 'fresh'));
 
-    const dequeued = queue.dequeue(mockGate, 'STRAIGHT');
+    const dequeued = queue.dequeue(mockGate);
     expect(dequeued?.text).toBe('fresh');
     expect(queue.size()).toBe(0);
   });

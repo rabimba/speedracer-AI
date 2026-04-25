@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Koru Edge</string>
+    <string name="notification_channel_name">Koru Live Coaching</string>
+    <string name="notification_channel_description">Foreground telemetry and on-device coaching session</string>
+    <string name="notification_title">Koru live session active</string>
+    <string name="notification_content">Processing telemetry and edge coaching on device</string>
+</resources>

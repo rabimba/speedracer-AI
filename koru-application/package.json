@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:android": "npm run build && npm run sync:shared && npm run sync:android:web",
     "lint": "eslint .",
     "preview": "vite preview",
+    "sync:android:web": "node ../scripts/sync-web-to-android.mjs",
+    "sync:shared": "node ../scripts/sync-shared-assets.mjs",
     "test": "vitest run"
   },
   "dependencies": {

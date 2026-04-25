@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
@@ -8,6 +8,11 @@ import Replay from './pages/Replay';
 import Analysis from './pages/Analysis';
 
 export default function App() {
+  const Router = typeof window !== 'undefined'
+    && (window.location.protocol === 'file:' || Boolean(window.AndroidBridge))
+    ? HashRouter
+    : BrowserRouter;
+
   const [apiKey, setApiKey] = useState<string | null>(
     () => localStorage.getItem('gemini_api_key')
   );
@@ -22,7 +27,7 @@ export default function App() {
   };
 
   return (
-    <BrowserRouter>
+    <Router>
       <div className="app">
         <Routes>
           <Route path="/" element={<Landing />} />
@@ -41,6 +46,6 @@ export default function App() {
           } />
         </Routes>
       </div>
-    </BrowserRouter>
+    </Router>
   );
 }

@@ -7,9 +7,6 @@ import { CoachingQueue } from './coachingQueue';
 import { DriverModel } from './driverModel';
 import { PerformanceTracker } from './performanceTracker';
 
-/** Safety actions that bypass blackout and cooldown */
-const SAFETY_ACTIONS: Set<CoachAction> = new Set(['OVERSTEER_RECOVERY', 'BRAKE']);
-
 /** Map actions to priority levels (module-level Map avoids per-call array allocations) */
 const ACTION_PRIORITY: Map<string, 0 | 1 | 2 | 3> = new Map([
   ['OVERSTEER_RECOVERY', 0], ['BRAKE', 0],
@@ -148,7 +145,7 @@ export class CoachingService {
   }
 
   private drainQueue(): void {
-    const decision = this.coachingQueue.dequeue(this.timingGate, this.currentPhase);
+    const decision = this.coachingQueue.dequeue(this.timingGate);
     if (decision) {
       this.emit(decision);
     }

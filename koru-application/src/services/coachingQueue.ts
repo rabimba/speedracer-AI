@@ -1,4 +1,4 @@
-import type { CoachingDecision, CornerPhase } from '../types';
+import type { CoachingDecision } from '../types';
 import type { TimingGate } from './timingGate';
 
 const MAX_QUEUE_SIZE = 5;
@@ -45,7 +45,7 @@ export class CoachingQueue {
   }
 
   /** Dequeue the highest-priority message that the timing gate allows. */
-  dequeue(timingGate: TimingGate, _currentPhase: CornerPhase): CoachingDecision | null {
+  dequeue(timingGate: TimingGate): CoachingDecision | null {
     this.expireStale();
 
     for (let i = 0; i < this.queue.length; i++) {
