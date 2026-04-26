@@ -22,6 +22,7 @@ import com.trustableai.koru.model.bridgeValue
 import com.trustableai.koru.runtime.EdgeRuntimeManager
 import com.trustableai.koru.runtime.KoruRealtimeEngine
 import com.trustableai.koru.runtime.KoruSessionBus
+import com.trustableai.koru.runtime.LiveSessionConfig
 import com.trustableai.koru.runtime.ModelAssetManager
 import com.trustableai.koru.runtime.PhraseCatalog
 import com.trustableai.koru.runtime.RecordedSessionRecorder
@@ -73,7 +74,7 @@ class KoruTelemetryService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val sessionJson = intent.getStringExtra(EXTRA_SESSION_CONFIG) ?: "{}"
-                serviceScope.launch { startSession(SessionConfig.fromJson(sessionJson)) }
+                serviceScope.launch { startSession(LiveSessionConfig.fromJson(sessionJson)) }
             }
 
             ACTION_STOP -> {
@@ -106,7 +107,7 @@ class KoruTelemetryService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private suspend fun startSession(config: SessionConfig) {
+    private suspend fun startSession(config: LiveSessionConfig) {
         stopActiveLoop()
         sessionRecorder.discard()
         ensureForeground(
@@ -306,30 +307,6 @@ class KoruTelemetryService : Service() {
         }
         startForeground(NOTIFICATION_ID, buildNotification(content))
         foregroundStarted = true
-    }
-
-    private data class SessionConfig(
-        val coachId: String,
-        val audioEnabled: Boolean,
-        val trackName: String,
-        val sessionMode: SessionMode,
-        val sourceUrl: String?,
-    ) {
-        companion object {
-            fun fromJson(json: String): SessionConfig {
-                val root = JSONObject(json)
-                return SessionConfig(
-                    coachId = root.optString("coachId", "superaj"),
-                    audioEnabled = root.optBoolean("audioEnabled", true),
-                    trackName = root.optString("trackName", TrackCatalog.thunderhillEast.name),
-                    sessionMode = when (root.optString("sessionMode", "telemetry")) {
-                        "camera_direct" -> SessionMode.CAMERA_DIRECT
-                        else -> SessionMode.TELEMETRY
-                    },
-                    sourceUrl = root.optString("sourceUrl").ifBlank { null },
-                )
-            }
-        }
     }
 
     companion object {

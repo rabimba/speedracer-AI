@@ -30,7 +30,10 @@ import com.trustableai.koru.camera.CameraLaneAnalyzer
 import com.trustableai.koru.camera.VisionFeatureStore
 import com.trustableai.koru.bridge.KoruJsBridge
 import com.trustableai.koru.bridge.WebViewEventDispatcher
+import com.trustableai.koru.model.SessionMode
+import com.trustableai.koru.runtime.CameraDirectSessionController
 import com.trustableai.koru.runtime.KoruSessionBus
+import com.trustableai.koru.runtime.LiveSessionConfig
 import com.trustableai.koru.service.KoruTelemetryService
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -54,6 +57,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraStatusText: TextView
     private lateinit var webView: WebView
     private lateinit var dispatcher: WebViewEventDispatcher
+    private lateinit var cameraDirectController: CameraDirectSessionController
+    private var activeSessionMode: SessionMode? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         cameraStatusText = findViewById(R.id.camera_lane_status)
         webView = findViewById(R.id.webview)
         dispatcher = WebViewEventDispatcher(webView)
+        cameraDirectController = CameraDirectSessionController(this)
         assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
@@ -138,6 +144,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         VisionFeatureStore.clear()
+        cameraDirectController.shutdown()
         cameraExecutor.shutdown()
         webView.removeJavascriptInterface("AndroidBridge")
         super.onDestroy()
@@ -145,19 +152,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startLiveSession(configJson: String) {
-        ContextCompat.startForegroundService(this, KoruTelemetryService.startIntent(this, configJson))
+        val config = LiveSessionConfig.fromJson(configJson)
+        activeSessionMode = config.sessionMode
+        Log.d(tag, "startLiveSession mode=${config.sessionMode} track=${config.trackName}")
+        when (config.sessionMode) {
+            SessionMode.CAMERA_DIRECT -> cameraDirectController.start(config)
+            SessionMode.TELEMETRY -> ContextCompat.startForegroundService(this, KoruTelemetryService.startIntent(this, configJson))
+        }
     }
 
     private fun stopLiveSession() {
-        dispatchServiceIntent(KoruTelemetryService.stopIntent(this))
+        Log.d(tag, "stopLiveSession mode=$activeSessionMode")
+        when (activeSessionMode) {
+            SessionMode.CAMERA_DIRECT -> cameraDirectController.stop()
+            SessionMode.TELEMETRY -> dispatchServiceIntent(KoruTelemetryService.stopIntent(this))
+            null -> Unit
+        }
+        activeSessionMode = null
     }
 
     private fun setActiveCoach(coachId: String) {
-        dispatchServiceIntent(KoruTelemetryService.setCoachIntent(this, coachId))
+        cameraDirectController.setActiveCoach(coachId)
+        if (activeSessionMode == SessionMode.TELEMETRY) {
+            dispatchServiceIntent(KoruTelemetryService.setCoachIntent(this, coachId))
+        }
     }
 
     private fun setAudioEnabled(enabled: Boolean) {
-        dispatchServiceIntent(KoruTelemetryService.setAudioIntent(this, enabled))
+        cameraDirectController.setAudioEnabled(enabled)
+        if (activeSessionMode == SessionMode.TELEMETRY) {
+            dispatchServiceIntent(KoruTelemetryService.setAudioIntent(this, enabled))
+        }
     }
 
     private fun requestBackendStatus() {
