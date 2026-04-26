@@ -44,13 +44,13 @@ class KoruTelemetryService : Service() {
     private lateinit var engine: KoruRealtimeEngine
 
     private var sessionJob: Job? = null
+    private var foregroundStarted = false
     private var audioEnabled = true
     private var activeCoachId = "superaj"
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_content)))
 
         audioDispatcher = CoachAudioDispatcher(this)
         phraseCatalog = PhraseCatalog(this)
@@ -100,6 +100,7 @@ class KoruTelemetryService : Service() {
 
     private suspend fun startSession(config: SessionConfig) {
         stopActiveLoop()
+        ensureForeground(getString(R.string.notification_content))
 
         activeCoachId = config.coachId
         audioEnabled = config.audioEnabled
@@ -153,7 +154,10 @@ class KoruTelemetryService : Service() {
                 supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD),
             ),
         )
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (foregroundStarted) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            foregroundStarted = false
+        }
         stopSelf()
     }
 
@@ -176,6 +180,7 @@ class KoruTelemetryService : Service() {
     }
 
     private fun updateNotification(content: String) {
+        if (!foregroundStarted) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, buildNotification(content))
     }
@@ -187,6 +192,15 @@ class KoruTelemetryService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .build()
+    }
+
+    private fun ensureForeground(content: String) {
+        if (foregroundStarted) {
+            updateNotification(content)
+            return
+        }
+        startForeground(NOTIFICATION_ID, buildNotification(content))
+        foregroundStarted = true
     }
 
     private data class SessionConfig(

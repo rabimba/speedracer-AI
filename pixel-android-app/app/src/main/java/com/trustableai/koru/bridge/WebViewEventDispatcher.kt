@@ -22,7 +22,19 @@ class WebViewEventDispatcher(private val webView: WebView) {
     private fun dispatch(jsonPayload: String) {
         val escapedPayload = JSONObject.quote(jsonPayload)
         webView.post {
-            webView.evaluateJavascript("window.__koruDispatchNativeEvent($escapedPayload);", null)
+            webView.evaluateJavascript(
+                """
+                (function() {
+                  if (typeof window.__koruDispatchNativeEvent === 'function') {
+                    window.__koruDispatchNativeEvent($escapedPayload);
+                    return;
+                  }
+                  window.__koruPendingNativeEvents = window.__koruPendingNativeEvents || [];
+                  window.__koruPendingNativeEvents.push($escapedPayload);
+                })();
+                """.trimIndent(),
+                null,
+            )
         }
     }
 }

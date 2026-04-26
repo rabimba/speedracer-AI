@@ -24,6 +24,7 @@ declare global {
   interface Window {
     AndroidBridge?: NativeBridgeHost;
     __koruDispatchNativeEvent?: (payload: AndroidBridgeEvent | string) => void;
+    __koruPendingNativeEvents?: Array<AndroidBridgeEvent | string>;
   }
 }
 
@@ -52,6 +53,12 @@ export function installAndroidBridgeDispatcher(): void {
     if (!detail) return;
     window.dispatchEvent(new CustomEvent<AndroidBridgeEvent>(BRIDGE_EVENT_NAME, { detail }));
   };
+
+  const pending = window.__koruPendingNativeEvents ?? [];
+  window.__koruPendingNativeEvents = [];
+  pending.forEach((payload) => {
+    window.__koruDispatchNativeEvent?.(payload);
+  });
 }
 
 export function subscribeAndroidBridge(

@@ -1,11 +1,13 @@
 package com.trustableai.koru.ui
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -14,6 +16,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.webkit.WebViewAssetLoader
 import com.trustableai.koru.R
 import com.trustableai.koru.bridge.KoruJsBridge
 import com.trustableai.koru.bridge.WebViewEventDispatcher
@@ -23,6 +26,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private val tag = "KoruMainActivity"
+    private lateinit var assetLoader: WebViewAssetLoader
     private lateinit var webView: WebView
     private lateinit var dispatcher: WebViewEventDispatcher
 
@@ -33,11 +37,14 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
         dispatcher = WebViewEventDispatcher(webView)
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.settings.allowFileAccess = true
-        webView.settings.allowContentAccess = true
+        webView.settings.allowFileAccess = false
+        webView.settings.allowContentAccess = false
         webView.settings.mediaPlaybackRequiresUserGesture = false
         WebView.setWebContentsDebuggingEnabled(true)
         webView.webChromeClient = object : WebChromeClient() {
@@ -50,6 +57,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?,
+            ): WebResourceResponse? {
+                val url = request?.url ?: return super.shouldInterceptRequest(view, request)
+                return assetLoader.shouldInterceptRequest(url) ?: super.shouldInterceptRequest(view, request)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 Log.d(tag, "WebView finished loading $url")
                 dispatcher.dispatchStatus(KoruSessionBus.status.value)
@@ -87,8 +102,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        Log.d(tag, "Loading WebView entrypoint file:///android_asset/web/index.html#/live")
-        webView.loadUrl("file:///android_asset/web/index.html#/live")
+        Log.d(tag, "Loading WebView entrypoint https://appassets.androidplatform.net/assets/web/index.html#/live")
+        webView.loadUrl("https://appassets.androidplatform.net/assets/web/index.html#/live")
     }
 
     override fun onDestroy() {
@@ -102,19 +117,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopLiveSession() {
-        ContextCompat.startForegroundService(this, KoruTelemetryService.stopIntent(this))
+        dispatchServiceIntent(KoruTelemetryService.stopIntent(this))
     }
 
     private fun setActiveCoach(coachId: String) {
-        ContextCompat.startForegroundService(this, KoruTelemetryService.setCoachIntent(this, coachId))
+        dispatchServiceIntent(KoruTelemetryService.setCoachIntent(this, coachId))
     }
 
     private fun setAudioEnabled(enabled: Boolean) {
-        ContextCompat.startForegroundService(this, KoruTelemetryService.setAudioIntent(this, enabled))
+        dispatchServiceIntent(KoruTelemetryService.setAudioIntent(this, enabled))
     }
 
     private fun requestBackendStatus() {
-        ContextCompat.startForegroundService(this, KoruTelemetryService.requestStatusIntent(this))
         dispatcher.dispatchStatus(KoruSessionBus.status.value)
+    }
+
+    private fun dispatchServiceIntent(intent: Intent) {
+        super.startService(intent)
     }
 }
