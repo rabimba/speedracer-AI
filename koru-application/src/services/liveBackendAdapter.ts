@@ -139,7 +139,6 @@ export class LiveBackendAdapter {
         sessionMode,
         sourceUrl: sourceUrl?.trim() || undefined,
       });
-      requestAndroidBackendStatus();
       return;
     }
 

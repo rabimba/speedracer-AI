@@ -139,19 +139,28 @@ class KoruTelemetryService : Service() {
         KoruSessionBus.tryEmitStatus(startingStatus)
 
         val selectedBackend = runtimeManager.warmupPreferredBackend()
-        KoruSessionBus.tryEmitStatus(selectedBackend)
+        KoruSessionBus.tryEmitStatus(
+            when (config.sessionMode) {
+                SessionMode.CAMERA_DIRECT -> selectedBackend.copy(
+                    state = LiveBackendState.STARTING,
+                    detail = "Edge runtime warmed. Waiting for camera lane frames",
+                    supportedPaths = listOf(CoachingPath.EDGE),
+                )
+                SessionMode.TELEMETRY -> selectedBackend
+            },
+        )
 
         val track = TrackCatalog.fromName(config.trackName)
         sessionRecorder.start(config.sessionMode, track.name, activeCoachId)
         updateNotification(
             when (config.sessionMode) {
-                SessionMode.CAMERA_DIRECT -> "Direct camera feedback active"
+                SessionMode.CAMERA_DIRECT -> "Direct camera feedback active (${selectedBackend.backend.bridgeValue()})"
                 SessionMode.TELEMETRY -> selectedBackend.detail
             },
         )
         sessionJob = serviceScope.launch {
             when (config.sessionMode) {
-                SessionMode.CAMERA_DIRECT -> runCameraDirectLoop()
+                SessionMode.CAMERA_DIRECT -> runCameraDirectLoop(selectedBackend)
                 SessionMode.TELEMETRY -> runTelemetryLoop(track)
             }
         }
@@ -195,13 +204,11 @@ class KoruTelemetryService : Service() {
         }
     }
 
-    private suspend fun runCameraDirectLoop() {
+    private suspend fun runCameraDirectLoop(runtimeStatus: LiveBackendStatus) {
         KoruSessionBus.tryEmitStatus(
-            LiveBackendStatus(
-                backend = RuntimeBackend.DETERMINISTIC,
+            runtimeStatus.copy(
                 state = LiveBackendState.STARTING,
                 detail = "Waiting for camera lane frames before starting reasoning",
-                usesOnDeviceModel = false,
                 supportedPaths = listOf(CoachingPath.EDGE),
             ),
         )
@@ -220,11 +227,9 @@ class KoruTelemetryService : Service() {
             if (!readyEmitted) {
                 readyEmitted = true
                 KoruSessionBus.tryEmitStatus(
-                    LiveBackendStatus(
-                        backend = RuntimeBackend.DETERMINISTIC,
+                    runtimeStatus.copy(
                         state = LiveBackendState.READY,
                         detail = "Direct camera reasoning active on device",
-                        usesOnDeviceModel = false,
                         supportedPaths = listOf(CoachingPath.EDGE),
                     ),
                 )

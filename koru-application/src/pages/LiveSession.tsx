@@ -123,7 +123,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   }, []);
 
   const handleConnect = useCallback(() => {
-    if (status === 'connected') {
+    if (status !== 'disconnected') {
       adapterRef.current?.disconnect();
     } else {
       setFrames([]);
@@ -167,7 +167,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
             className={`connect-btn ${status === 'connected' ? 'connected' : ''}`}
             onClick={handleConnect}
           >
-            {status === 'connected'
+            {status !== 'disconnected'
               ? <><Unplug size={14} /> {nativeMode && sessionMode === 'camera_direct' ? 'Stop Feedback' : 'Disconnect'}</>
               : <><Radio size={14} /> {nativeMode && sessionMode === 'camera_direct' ? 'Start Feedback' : 'Connect'}</>}
           </button>
