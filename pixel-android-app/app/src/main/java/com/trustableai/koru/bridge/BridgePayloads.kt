@@ -26,7 +26,20 @@ object BridgePayloads {
                     .put("gLat", frame.gLat)
                     .put("gLong", frame.gLong)
                     .put("gear", frame.gear)
-                    .put("distance", frame.distanceMeters),
+                    .put("distance", frame.distanceMeters)
+                    .put(
+                        "vision",
+                        frame.vision?.let { vision ->
+                            JSONObject()
+                                .put("timestamp", vision.timestampMs)
+                                .put("averageLuma", vision.averageLuma)
+                                .put("motionEnergy", vision.motionEnergy)
+                                .put("lateralBalance", vision.lateralBalance)
+                                .put("verticalBalance", vision.verticalBalance)
+                                .put("centerContrast", vision.centerContrast)
+                                .put("framesPerSecond", vision.framesPerSecond)
+                        },
+                    ),
             )
             .toString()
     }

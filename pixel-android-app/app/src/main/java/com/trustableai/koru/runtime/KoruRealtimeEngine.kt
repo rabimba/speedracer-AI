@@ -7,7 +7,6 @@ import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
-import com.trustableai.koru.model.VisionFeatureSnapshot
 import com.trustableai.koru.model.bridgeValue
 import com.trustableai.koru.runtime.deterministic.CoachingQueue
 import com.trustableai.koru.runtime.deterministic.CornerPhaseDetector
@@ -36,11 +35,7 @@ class KoruRealtimeEngine(
         activeCoachId = coachId
     }
 
-    suspend fun processFrame(
-        frame: TelemetryFrame,
-        vision: VisionFeatureSnapshot? = null,
-        nowMs: Long = System.currentTimeMillis(),
-    ): List<CoachingDecision> {
+    suspend fun processFrame(frame: TelemetryFrame, nowMs: Long = System.currentTimeMillis()): List<CoachingDecision> {
         val detection = cornerDetector.detect(frame)
         currentPhase = detection.phase
         timingGate.update(currentPhase, nowMs)
@@ -77,7 +72,7 @@ class KoruRealtimeEngine(
         }
 
         val reasoner = reasonerProvider()
-        edgeTriggerEvaluator.evaluate(frame, currentPhase, driverState, detection.corner, nowMs, vision)?.let { window ->
+        edgeTriggerEvaluator.evaluate(frame, currentPhase, driverState, detection.corner, nowMs)?.let { window ->
             reasoner.reason(window)?.let { result ->
                 queue.enqueue(
                     CoachingQueue.QueuedDecision(

@@ -77,6 +77,7 @@ data class TelemetryFrame(
     val gLong: Double,
     val gear: Int? = null,
     val distanceMeters: Double? = null,
+    val vision: VisionFeatureSnapshot? = null,
 )
 
 data class Corner(

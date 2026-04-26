@@ -2,6 +2,7 @@ package com.trustableai.koru.service
 
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
+import com.trustableai.koru.model.VisionFeatureSnapshot
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -111,13 +112,14 @@ class SyntheticTrackSource : TelemetrySource {
 }
 
 class TelemetryFusionEngine {
-    fun fuse(frame: TelemetryFrame): TelemetryFrame {
+    fun fuse(frame: TelemetryFrame, vision: VisionFeatureSnapshot? = null): TelemetryFrame {
         return frame.copy(
             gLat = frame.gLat.coerceIn(-3.0, 3.0),
             gLong = frame.gLong.coerceIn(-3.0, 3.0),
             throttle = frame.throttle.coerceIn(0.0, 100.0),
             brake = frame.brake.coerceIn(0.0, 100.0),
             speedMph = abs(frame.speedMph),
+            vision = vision,
         )
     }
 }

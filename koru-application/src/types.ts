@@ -14,6 +14,17 @@ export interface TelemetryFrame {
   gLong: number;         // longitudinal G
   gear?: number;
   distance?: number;     // cumulative meters
+  vision?: VisionFeatureSnapshot;
+}
+
+export interface VisionFeatureSnapshot {
+  timestamp: number;
+  averageLuma: number;
+  motionEnergy: number;
+  lateralBalance: number;
+  verticalBalance: number;
+  centerContrast: number;
+  framesPerSecond: number;
 }
 
 export interface GpsSSEPoint {

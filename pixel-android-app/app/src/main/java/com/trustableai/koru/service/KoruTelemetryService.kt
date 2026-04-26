@@ -130,9 +130,9 @@ class KoruTelemetryService : Service() {
             while (isActive) {
                 val elapsedSeconds = step / 10.0
                 val rawFrame = telemetrySource.nextFrame(step, track, elapsedSeconds)
-                val frame = fusionEngine.fuse(rawFrame)
+                val frame = fusionEngine.fuse(rawFrame, VisionFeatureStore.latest.value)
                 KoruSessionBus.tryEmitFrame(frame)
-                engine.processFrame(frame, VisionFeatureStore.latest.value).forEach { decision ->
+                engine.processFrame(frame).forEach { decision ->
                     KoruSessionBus.tryEmitDecision(decision)
                     if (audioEnabled) {
                         audioDispatcher.speak(decision.text, "${decision.path.bridgeValue()}-${decision.timestampMs}")

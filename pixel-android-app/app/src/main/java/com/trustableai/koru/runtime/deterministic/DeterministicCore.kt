@@ -8,7 +8,6 @@ import com.trustableai.koru.model.EdgeReasoningWindow
 import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
-import com.trustableai.koru.model.VisionFeatureSnapshot
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -299,9 +298,9 @@ class EdgeTriggerEvaluator {
         driverState: DriverState,
         corner: Corner?,
         nowMs: Long,
-        vision: VisionFeatureSnapshot?,
     ): EdgeReasoningWindow? {
         if (nowMs - lastTriggerAtMs < MIN_TRIGGER_INTERVAL_MS) return null
+        val vision = frame.vision
 
         val trigger = when {
             frame.brake > 70.0 && frame.gLong < -1.0 -> buildWindow(
@@ -314,7 +313,6 @@ class EdgeTriggerEvaluator {
                 skillLevel = driverState.skillLevel,
                 corner = corner,
                 frame = frame,
-                vision = vision,
             )
 
             (phase == CornerPhase.EXIT || phase == CornerPhase.ACCELERATION) && frame.throttle in 20.0..55.0 ->
@@ -328,7 +326,6 @@ class EdgeTriggerEvaluator {
                     skillLevel = driverState.skillLevel,
                     corner = corner,
                     frame = frame,
-                    vision = vision,
                 )
 
             frame.throttle < 8.0 && frame.brake < 8.0 && frame.speedMph > 55.0 -> {
@@ -345,7 +342,6 @@ class EdgeTriggerEvaluator {
                         skillLevel = driverState.skillLevel,
                         corner = corner,
                         frame = frame,
-                        vision = vision,
                     )
                 } else {
                     null
@@ -367,7 +363,6 @@ class EdgeTriggerEvaluator {
                     skillLevel = driverState.skillLevel,
                     corner = corner,
                     frame = frame,
-                    vision = vision,
                 )
 
             driverState.cognitiveLoad > 0.72 -> buildWindow(
@@ -380,7 +375,6 @@ class EdgeTriggerEvaluator {
                 skillLevel = driverState.skillLevel,
                 corner = corner,
                 frame = frame,
-                vision = vision,
             )
 
             corner != null && phase == CornerPhase.BRAKE_ZONE && frame.speedMph > 70.0 -> buildWindow(
@@ -393,7 +387,6 @@ class EdgeTriggerEvaluator {
                 skillLevel = driverState.skillLevel,
                 corner = corner,
                 frame = frame,
-                vision = vision,
             )
 
             else -> null
@@ -415,8 +408,8 @@ class EdgeTriggerEvaluator {
         skillLevel: SkillLevel,
         corner: Corner?,
         frame: TelemetryFrame,
-        vision: VisionFeatureSnapshot?,
     ): EdgeReasoningWindow {
+        val vision = frame.vision
         val features = mutableMapOf(
             "speed_mph" to frame.speedMph,
             "throttle" to frame.throttle,
