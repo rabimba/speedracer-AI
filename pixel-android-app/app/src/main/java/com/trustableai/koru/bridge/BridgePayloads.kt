@@ -3,6 +3,7 @@ package com.trustableai.koru.bridge
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -64,7 +65,7 @@ object BridgePayloads {
                     .put("usesOnDeviceModel", status.usesOnDeviceModel)
                     .put(
                         "supportedPaths",
-                        JSONArray(status.supportedPaths.map { it.bridgeValue() }),
+                        JSONArray(status.supportedPaths.map { path -> path.bridgeValue() }),
                     ),
             )
             .toString()

@@ -1,11 +1,45 @@
 import { useState } from 'react';
-import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Navigate, Outlet, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import LiveSession from './pages/LiveSession';
 import Replay from './pages/Replay';
 import Analysis from './pages/Analysis';
+
+function readApiKey(): string | null {
+  try {
+    return localStorage.getItem('gemini_api_key');
+  } catch {
+    return null;
+  }
+}
+
+function writeApiKey(key: string): void {
+  try {
+    if (key) {
+      localStorage.setItem('gemini_api_key', key);
+    } else {
+      localStorage.removeItem('gemini_api_key');
+    }
+  } catch {
+    // Ignore storage failures in WebView/file contexts.
+  }
+}
+
+function AppLayout(props: {
+  apiKey: string | null;
+  onApiKeyChange: (key: string) => void;
+}) {
+  return (
+    <>
+      <Navbar apiKey={props.apiKey} onApiKeyChange={props.onApiKeyChange} />
+      <main className="main-content">
+        <Outlet />
+      </main>
+    </>
+  );
+}
 
 export default function App() {
   const Router = typeof window !== 'undefined'
@@ -14,15 +48,11 @@ export default function App() {
     : BrowserRouter;
 
   const [apiKey, setApiKey] = useState<string | null>(
-    () => localStorage.getItem('gemini_api_key')
+    () => readApiKey()
   );
 
   const handleApiKeyChange = (key: string) => {
-    if (key) {
-      localStorage.setItem('gemini_api_key', key);
-    } else {
-      localStorage.removeItem('gemini_api_key');
-    }
+    writeApiKey(key);
     setApiKey(key || null);
   };
 
@@ -31,19 +61,15 @@ export default function App() {
       <div className="app">
         <Routes>
           <Route path="/" element={<Landing />} />
-          <Route path="/*" element={
-            <>
-              <Navbar apiKey={apiKey} onApiKeyChange={handleApiKeyChange} />
-              <main className="main-content">
-                <Routes>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/live" element={<LiveSession apiKey={apiKey} />} />
-                  <Route path="/replay" element={<Replay apiKey={apiKey} />} />
-                  <Route path="/analysis" element={<Analysis />} />
-                </Routes>
-              </main>
-            </>
-          } />
+          <Route
+            element={<AppLayout apiKey={apiKey} onApiKeyChange={handleApiKeyChange} />}
+          >
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/live" element={<LiveSession apiKey={apiKey} />} />
+            <Route path="/replay" element={<Replay apiKey={apiKey} />} />
+            <Route path="/analysis" element={<Analysis />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/live" replace />} />
         </Routes>
       </div>
     </Router>
