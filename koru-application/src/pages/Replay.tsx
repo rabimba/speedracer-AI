@@ -1,18 +1,19 @@
 import { useState, useRef, useCallback, useEffect, startTransition } from 'react';
-import { parseTelemetryCSV } from '../utils/telemetryParser';
 import { CoachingService } from '../services/coachingService';
 import { useGeminiCloud } from '../hooks/useGeminiCloud';
 import { useTTS } from '../hooks/useTTS';
 import { usePredictiveCoaching } from '../hooks/usePredictiveCoaching';
+import { loadLatestRecordedSession } from '../services/recordedSessionStore';
 import TelemetryCharts from '../components/TelemetryCharts';
 import PlaybackControls from '../components/PlaybackControls';
 import GaugeCluster from '../components/GaugeCluster';
 import TrackMap from '../components/TrackMap';
 import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
 import { THUNDERHILL_EAST } from '../data/trackData';
-import type { TelemetryFrame, TTSProvider } from '../types';
+import type { RecordedSessionArtifact, TelemetryFrame, TTSProvider } from '../types';
 import { Upload } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { parseTelemetryCaptureInput } from '../utils/sessionCapture';
 
 interface ReplayProps {
   apiKey: string | null;
@@ -27,6 +28,7 @@ export default function Replay({ apiKey }: ReplayProps) {
   const [activeCoach, setActiveCoach] = useState('superaj');
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [analysisResult, setAnalysisResult] = useState('');
+  const [recordedSession, setRecordedSession] = useState<RecordedSessionArtifact | null>(null);
 
   const { generateFeedback, status: cloudStatus } = useGeminiCloud();
   const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
@@ -77,14 +79,26 @@ export default function Replay({ apiKey }: ReplayProps) {
     const reader = new FileReader();
     reader.onload = () => {
       const text = reader.result as string;
-      const parsed = parseTelemetryCSV(text);
-      setFrames(parsed);
+      const parsed = parseTelemetryCaptureInput(text);
+      setFrames(parsed.frames);
+      setRecordedSession(parsed.session);
       setCurrentIdx(0);
       setIsPlaying(false);
       setMessages([]);
       setAnalysisResult('');
     };
     reader.readAsText(file);
+  }, []);
+
+  const handleLoadLatestCapture = useCallback(() => {
+    const latest = loadLatestRecordedSession();
+    if (!latest) return;
+    setFrames(latest.frames);
+    setRecordedSession(latest);
+    setCurrentIdx(0);
+    setIsPlaying(false);
+    setMessages([]);
+    setAnalysisResult('');
   }, []);
 
   // Playback loop
@@ -112,6 +126,24 @@ export default function Replay({ apiKey }: ReplayProps) {
     const frame = frames[currentIdx];
     if (!frame) return;
 
+    if (recordedSession?.decisions.length) {
+      const cutoffMs = recordedSession.startedAt + frame.time * 1000;
+      setMessages(
+        recordedSession.decisions
+          .filter((decision) => decision.timestamp <= cutoffMs)
+          .map((decision) => ({
+            id: `${decision.timestamp}-${decision.path}-${decision.text}`,
+            path: decision.path,
+            text: decision.text,
+            timestamp: decision.timestamp,
+            backend: decision.backend,
+            priority: decision.priority,
+            confidence: decision.confidence,
+          })),
+      );
+      return;
+    }
+
     // Process through hot/cold/feedforward coaching engine
     coachRef.current.processFrame(frame);
 
@@ -130,7 +162,7 @@ export default function Replay({ apiKey }: ReplayProps) {
       });
       if (audioEnabled) speak(msg.text);
     }
-  }, [currentIdx, frames, checkLookahead, audioEnabled, speak]);
+  }, [audioEnabled, checkLookahead, currentIdx, frames, recordedSession, speak]);
 
   // AI Analysis
   const handleAnalyze = useCallback(async () => {
@@ -140,6 +172,9 @@ export default function Replay({ apiKey }: ReplayProps) {
     const slice = frames.slice(start, end);
     const context = slice.map((f, i) =>
       `[${i}] Speed:${f.speed.toFixed(0)} Thr:${f.throttle.toFixed(0)} Brk:${f.brake.toFixed(0)} GLat:${f.gLat.toFixed(2)} GLong:${f.gLong.toFixed(2)}`
+      + (f.vision
+        ? ` VisionMotion:${f.vision.motionEnergy.toFixed(2)} VisionBalance:${f.vision.lateralBalance.toFixed(2)} VisionContrast:${f.vision.centerContrast.toFixed(2)}`
+        : '')
     ).join('\n');
     const result = await generateFeedback('flash', context);
     setAnalysisResult(result);
@@ -164,9 +199,16 @@ export default function Replay({ apiKey }: ReplayProps) {
         <div className="replay-controls">
           <label className="upload-btn">
             <Upload size={14} />
-            <span>Upload CSV</span>
-            <input type="file" accept=".csv,.txt" onChange={handleFileUpload} hidden />
+            <span>Upload CSV / JSON</span>
+            <input type="file" accept=".csv,.txt,.json" onChange={handleFileUpload} hidden />
           </label>
+          <button
+            className="upload-btn"
+            onClick={handleLoadLatestCapture}
+            disabled={!loadLatestRecordedSession()}
+          >
+            Load Latest Capture
+          </button>
           <button
             className="analyze-btn"
             onClick={handleAnalyze}
@@ -188,8 +230,8 @@ export default function Replay({ apiKey }: ReplayProps) {
       {frames.length === 0 ? (
         <div className="empty-state">
           <Upload size={40} />
-          <h2>Upload Telemetry Data</h2>
-          <p>Drop a CSV file from your OBD datalogger to begin replay analysis</p>
+          <h2>Upload Session Data</h2>
+          <p>Drop a CSV or recorded JSON session to begin replay analysis</p>
         </div>
       ) : (
         <>

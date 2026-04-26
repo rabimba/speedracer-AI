@@ -127,6 +127,7 @@ class MainActivity : AppCompatActivity() {
                 launch { KoruSessionBus.telemetry.collect { dispatcher.dispatchTelemetry(it) } }
                 launch { KoruSessionBus.decisions.collect { dispatcher.dispatchDecision(it) } }
                 launch { KoruSessionBus.status.collect { dispatcher.dispatchStatus(it) } }
+                launch { KoruSessionBus.savedSessions.collect { dispatcher.dispatchSessionSaved(it) } }
             }
         }
 

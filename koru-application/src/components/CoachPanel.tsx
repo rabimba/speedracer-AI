@@ -77,7 +77,7 @@ export default function CoachPanel({
         {messages.length === 0 ? (
           <div className="coach-empty">
             <MessageCircle size={24} />
-            <p>Waiting for telemetry data...</p>
+            <p>Waiting for live session data...</p>
           </div>
         ) : (
           messages.slice(-20).reverse().map(msg => (

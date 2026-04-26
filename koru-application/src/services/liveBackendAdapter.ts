@@ -1,6 +1,7 @@
 import type {
   CoachingDecision,
   LiveBackendStatus,
+  SessionMode,
   SSEConnectionStatus,
   TelemetryFrame,
   Track,
@@ -32,7 +33,7 @@ const NATIVE_INITIAL_STATUS: LiveBackendStatus = {
   detail: 'Waiting for Android live backend',
   lastUpdated: Date.now(),
   usesOnDeviceModel: false,
-  supportedPaths: ['hot', 'feedforward'],
+  supportedPaths: ['hot', 'feedforward', 'edge'],
 };
 
 const BROWSER_STATUS: LiveBackendStatus = {
@@ -128,13 +129,14 @@ export class LiveBackendAdapter {
     return () => this.backendListeners.delete(listener);
   }
 
-  connect(sourceUrl?: string): void {
+  connect(sourceUrl?: string, sessionMode: SessionMode = 'telemetry'): void {
     if (this.nativeMode) {
       this.statusListeners.forEach((listener) => listener('connecting'));
       startAndroidLiveSession({
         coachId: this.coachId,
         audioEnabled: this.audioEnabled,
         trackName: this.options.track.name,
+        sessionMode,
         sourceUrl: sourceUrl?.trim() || undefined,
       });
       requestAndroidBackendStatus();

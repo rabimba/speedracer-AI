@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useGeminiCloud } from '../hooks/useGeminiCloud';
-import { parseTelemetryCSV } from '../utils/telemetryParser';
+import { parseTelemetryCaptureInput } from '../utils/sessionCapture';
 import TelemetryCharts from '../components/TelemetryCharts';
 import { THUNDERHILL_EAST } from '../data/trackData';
 import type { TelemetryFrame } from '../types';
@@ -19,8 +19,8 @@ export default function Analysis() {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        const parsed = parseTelemetryCSV(reader.result as string);
-        setter(parsed);
+        const parsed = parseTelemetryCaptureInput(reader.result as string);
+        setter(parsed.frames);
       };
       reader.readAsText(file);
     }, []);
@@ -34,7 +34,13 @@ export default function Analysis() {
       const avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
       const maxBrake = Math.max(...frames.map(f => f.brake));
       const maxGLat = Math.max(...frames.map(f => Math.abs(f.gLat)));
-      return `${label}: MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}`;
+      const visionFrames = frames.filter((frame) => frame.vision);
+      const visionSummary = visionFrames.length > 0
+        ? ` AvgMotion=${(visionFrames.reduce((sum, frame) => sum + (frame.vision?.motionEnergy ?? 0), 0) / visionFrames.length).toFixed(2)}`
+          + ` AvgContrast=${(visionFrames.reduce((sum, frame) => sum + (frame.vision?.centerContrast ?? 0), 0) / visionFrames.length).toFixed(2)}`
+          + ` AvgBalance=${(visionFrames.reduce((sum, frame) => sum + Math.abs(frame.vision?.lateralBalance ?? 0), 0) / visionFrames.length).toFixed(2)}`
+        : '';
+      return `${label}: MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}${visionSummary}`;
     };
 
     const context = `Compare these two laps on ${THUNDERHILL_EAST.name}:
@@ -46,11 +52,13 @@ ${summarize(lap2Frames, 'Lap B')}
 Lap A sample (every 20th frame):
 ${lap1Frames.filter((_, i) => i % 20 === 0).slice(0, 30).map(f =>
   `Speed:${f.speed.toFixed(0)} Thr:${f.throttle.toFixed(0)} Brk:${f.brake.toFixed(0)} GLat:${f.gLat.toFixed(2)}`
+  + (f.vision ? ` Motion:${f.vision.motionEnergy.toFixed(2)} Balance:${f.vision.lateralBalance.toFixed(2)} Contrast:${f.vision.centerContrast.toFixed(2)}` : '')
 ).join('\n')}
 
 Lap B sample (every 20th frame):
 ${lap2Frames.filter((_, i) => i % 20 === 0).slice(0, 30).map(f =>
   `Speed:${f.speed.toFixed(0)} Thr:${f.throttle.toFixed(0)} Brk:${f.brake.toFixed(0)} GLat:${f.gLat.toFixed(2)}`
+  + (f.vision ? ` Motion:${f.vision.motionEnergy.toFixed(2)} Balance:${f.vision.lateralBalance.toFixed(2)} Contrast:${f.vision.centerContrast.toFixed(2)}` : '')
 ).join('\n')}
 
 Compare sector by sector. Identify where the biggest time differences come from.`;
@@ -70,14 +78,14 @@ Compare sector by sector. Identify where the biggest time differences come from.
           <label className="upload-btn upload-lap">
             <Upload size={14} />
             <span>Lap A {lap1Frames.length > 0 ? `(${lap1Frames.length} frames)` : ''}</span>
-            <input type="file" accept=".csv,.txt" onChange={handleFile(setLap1Frames)} hidden />
+            <input type="file" accept=".csv,.txt,.json" onChange={handleFile(setLap1Frames)} hidden />
           </label>
         </div>
         <div className="analysis-upload">
           <label className="upload-btn upload-lap">
             <Upload size={14} />
             <span>Lap B {lap2Frames.length > 0 ? `(${lap2Frames.length} frames)` : ''}</span>
-            <input type="file" accept=".csv,.txt" onChange={handleFile(setLap2Frames)} hidden />
+            <input type="file" accept=".csv,.txt,.json" onChange={handleFile(setLap2Frames)} hidden />
           </label>
         </div>
         <button

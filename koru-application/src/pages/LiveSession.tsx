@@ -7,6 +7,7 @@ import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
 import GaugeCluster from '../components/GaugeCluster';
 import type {
   LiveBackendStatus,
+  SessionMode,
   TelemetryFrame,
   SSEConnectionStatus,
   TTSProvider,
@@ -14,7 +15,8 @@ import type {
 import { Radio, Unplug } from 'lucide-react';
 import { LiveBackendAdapter } from '../services/liveBackendAdapter';
 import { isNativeBackend } from '../services/sharedPhraseCatalog';
-import { hasAndroidBridge } from '../services/androidBridge';
+import { hasAndroidBridge, subscribeAndroidBridge } from '../services/androidBridge';
+import { storeLatestRecordedSession } from '../services/recordedSessionStore';
 
 interface LiveSessionProps {
   apiKey: string | null;
@@ -29,6 +31,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const [sseUrl, setSseUrl] = useState('');
   const [backendStatus, setBackendStatus] = useState<LiveBackendStatus | null>(null);
   const [nativeMode, setNativeMode] = useState(hasAndroidBridge());
+  const [sessionMode, setSessionMode] = useState<SessionMode>('camera_direct');
 
   const adapterRef = useRef<LiveBackendAdapter | null>(null);
   const audioEnabledRef = useRef(audioEnabled);
@@ -99,13 +102,35 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
     adapterRef.current?.setApiKey(apiKey);
   }, [apiKey]);
 
+  useEffect(() => {
+    if (!hasAndroidBridge()) return;
+
+    return subscribeAndroidBridge((event) => {
+      if (event.type !== 'session_saved') return;
+      storeLatestRecordedSession(event.session);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `saved-${event.session.id}`,
+          path: 'edge',
+          text: `Saved ${event.session.summary.frameCount} camera frames for replay analysis.`,
+          timestamp: Date.now(),
+          backend: 'deterministic',
+          priority: 2,
+        },
+      ]);
+    });
+  }, []);
+
   const handleConnect = useCallback(() => {
     if (status === 'connected') {
       adapterRef.current?.disconnect();
     } else {
-      adapterRef.current?.connect(sseUrl.trim());
+      setFrames([]);
+      setMessages([]);
+      adapterRef.current?.connect(sseUrl.trim(), nativeMode ? sessionMode : 'telemetry');
     }
-  }, [status, sseUrl]);
+  }, [nativeMode, sessionMode, sseUrl, status]);
 
   const handleCoachChange = useCallback((id: string) => {
     setActiveCoach(id);
@@ -119,18 +144,32 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
       <header className="page-header">
         <h1><Radio size={20} /> Live Session</h1>
         <div className="live-controls">
-          <input
-            type="text"
-            placeholder={nativeMode ? 'Optional mock telemetry override' : 'SSE URL or .txt file path'}
-            value={sseUrl}
-            onChange={e => setSseUrl(e.target.value)}
-            className="sse-input"
-          />
+          {nativeMode && (
+            <select
+              className="tts-select"
+              value={sessionMode}
+              onChange={e => setSessionMode(e.target.value as SessionMode)}
+            >
+              <option value="camera_direct">Camera Feedback</option>
+              <option value="telemetry">Telemetry Loop</option>
+            </select>
+          )}
+          {(!nativeMode || sessionMode !== 'camera_direct') && (
+            <input
+              type="text"
+              placeholder={nativeMode ? 'Optional mock telemetry override' : 'SSE URL or .txt file path'}
+              value={sseUrl}
+              onChange={e => setSseUrl(e.target.value)}
+              className="sse-input"
+            />
+          )}
           <button
             className={`connect-btn ${status === 'connected' ? 'connected' : ''}`}
             onClick={handleConnect}
           >
-            {status === 'connected' ? <><Unplug size={14} /> Disconnect</> : <><Radio size={14} /> Connect</>}
+            {status === 'connected'
+              ? <><Unplug size={14} /> {nativeMode && sessionMode === 'camera_direct' ? 'Stop Feedback' : 'Disconnect'}</>
+              : <><Radio size={14} /> {nativeMode && sessionMode === 'camera_direct' ? 'Start Feedback' : 'Connect'}</>}
           </button>
           <span className={`status-badge status-${status}`}>{status}</span>
           {!nativeMode && (

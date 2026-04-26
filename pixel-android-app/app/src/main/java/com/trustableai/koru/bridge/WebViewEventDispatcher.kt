@@ -3,6 +3,7 @@ package com.trustableai.koru.bridge
 import android.webkit.WebView
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.LiveBackendStatus
+import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.TelemetryFrame
 import org.json.JSONObject
 
@@ -17,6 +18,10 @@ class WebViewEventDispatcher(private val webView: WebView) {
 
     fun dispatchStatus(status: LiveBackendStatus) {
         dispatch(BridgePayloads.backendStatus(status))
+    }
+
+    fun dispatchSessionSaved(session: RecordedSessionArtifact) {
+        dispatch(BridgePayloads.sessionSaved(session))
     }
 
     private fun dispatch(jsonPayload: String) {

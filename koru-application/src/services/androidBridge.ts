@@ -1,16 +1,24 @@
-import type { CoachingDecision, LiveBackendStatus, TelemetryFrame } from '../types';
+import type {
+  CoachingDecision,
+  LiveBackendStatus,
+  RecordedSessionArtifact,
+  SessionMode,
+  TelemetryFrame,
+} from '../types';
 
 export interface NativeLiveSessionConfig {
   coachId: string;
   audioEnabled: boolean;
   trackName: string;
+  sessionMode?: SessionMode;
   sourceUrl?: string;
 }
 
 export type AndroidBridgeEvent =
   | { type: 'telemetry_frame'; frame: TelemetryFrame }
   | { type: 'coaching_decision'; decision: CoachingDecision }
-  | { type: 'backend_status'; status: LiveBackendStatus };
+  | { type: 'backend_status'; status: LiveBackendStatus }
+  | { type: 'session_saved'; session: RecordedSessionArtifact };
 
 interface NativeBridgeHost {
   startLiveSession(configJson: string): void;

@@ -5,6 +5,7 @@ import com.trustableai.koru.model.Corner
 import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.DriverState
 import com.trustableai.koru.model.EdgeReasoningWindow
+import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
@@ -303,6 +304,57 @@ class EdgeTriggerEvaluator {
         val vision = frame.vision
 
         val trigger = when {
+            frame.sourceMode == SessionMode.CAMERA_DIRECT &&
+                vision != null &&
+                vision.motionEnergy > 0.16 &&
+                abs(vision.lateralBalance) > 0.14 ->
+                buildWindow(
+                    triggerId = "camera_direct_visual_instability",
+                    action = CoachAction.STABILIZE,
+                    priority = 1,
+                    text = "Visual flow is unstable. Smooth the hands before the next input.",
+                    phase = phase,
+                    driverState = driverState,
+                    skillLevel = driverState.skillLevel,
+                    corner = corner,
+                    frame = frame,
+                )
+
+            frame.sourceMode == SessionMode.CAMERA_DIRECT &&
+                vision != null &&
+                abs(vision.lateralBalance) > 0.24 ->
+                buildWindow(
+                    triggerId = "camera_direct_aim_bias",
+                    action = CoachAction.WAIT,
+                    priority = 2,
+                    text = if (vision.lateralBalance > 0.0) {
+                        "View is loading the left side. Re-center before you commit."
+                    } else {
+                        "View is loading the right side. Re-center before you commit."
+                    },
+                    phase = phase,
+                    driverState = driverState,
+                    skillLevel = driverState.skillLevel,
+                    corner = corner,
+                    frame = frame,
+                )
+
+            frame.sourceMode == SessionMode.CAMERA_DIRECT &&
+                vision != null &&
+                vision.centerContrast < -0.08 &&
+                vision.averageLuma < 0.32 ->
+                buildWindow(
+                    triggerId = "camera_direct_low_contrast",
+                    action = CoachAction.MAINTAIN,
+                    priority = 2,
+                    text = "Image contrast collapsed. Lift the eyes and let the picture open back up.",
+                    phase = phase,
+                    driverState = driverState,
+                    skillLevel = driverState.skillLevel,
+                    corner = corner,
+                    frame = frame,
+                )
+
             frame.brake > 70.0 && frame.gLong < -1.0 -> buildWindow(
                 triggerId = "brake_trace_anomaly",
                 action = CoachAction.SPIKE_BRAKE,

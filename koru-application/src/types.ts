@@ -1,5 +1,7 @@
 // ── Telemetry ──────────────────────────────────────────────
 
+export type SessionMode = 'telemetry' | 'camera_direct';
+
 export interface TelemetryFrame {
   time: number;          // seconds from session start
   latitude: number;
@@ -14,6 +16,7 @@ export interface TelemetryFrame {
   gLong: number;         // longitudinal G
   gear?: number;
   distance?: number;     // cumulative meters
+  sourceMode?: SessionMode;
   vision?: VisionFeatureSnapshot;
 }
 
@@ -99,6 +102,28 @@ export interface Session {
   bestLapId: string;
   weather: 'Sunny' | 'Cloudy' | 'Rain';
   trackTemp: number;
+}
+
+export interface RecordedSessionSummary {
+  sessionId: string;
+  mode: SessionMode;
+  trackName: string;
+  coachId: string;
+  frameCount: number;
+  decisionCount: number;
+  durationSeconds: number;
+}
+
+export interface RecordedSessionArtifact {
+  id: string;
+  mode: SessionMode;
+  trackName: string;
+  coachId: string;
+  startedAt: number;
+  endedAt: number;
+  summary: RecordedSessionSummary;
+  frames: TelemetryFrame[];
+  decisions: CoachingDecision[];
 }
 
 // ── Coaching ───────────────────────────────────────────────

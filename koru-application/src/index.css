@@ -760,6 +760,7 @@ html, body, #root {
 .live-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
 }
@@ -825,6 +826,7 @@ html, body, #root {
 .replay-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
 }
@@ -909,6 +911,7 @@ html, body, #root {
 
 .analysis-upload-grid {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 24px;
   align-items: center;

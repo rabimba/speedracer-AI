@@ -63,6 +63,11 @@ enum class SkillLevel {
     ADVANCED,
 }
 
+enum class SessionMode {
+    TELEMETRY,
+    CAMERA_DIRECT,
+}
+
 data class TelemetryFrame(
     val timeSeconds: Double,
     val latitude: Double,
@@ -77,6 +82,7 @@ data class TelemetryFrame(
     val gLong: Double,
     val gear: Int? = null,
     val distanceMeters: Double? = null,
+    val sourceMode: SessionMode = SessionMode.TELEMETRY,
     val vision: VisionFeatureSnapshot? = null,
 )
 
@@ -162,6 +168,28 @@ data class LiveBackendStatus(
     val supportedPaths: List<CoachingPath>,
 )
 
+data class RecordedSessionSummary(
+    val sessionId: String,
+    val mode: SessionMode,
+    val trackName: String,
+    val coachId: String,
+    val frameCount: Int,
+    val decisionCount: Int,
+    val durationSeconds: Double,
+)
+
+data class RecordedSessionArtifact(
+    val id: String,
+    val mode: SessionMode,
+    val trackName: String,
+    val coachId: String,
+    val startedAtMs: Long,
+    val endedAtMs: Long,
+    val summary: RecordedSessionSummary,
+    val frames: List<TelemetryFrame>,
+    val decisions: List<CoachingDecision>,
+)
+
 data class ModelInstallStatus(
     val version: String,
     val isPresent: Boolean,
@@ -178,3 +206,5 @@ fun CoachingPath.bridgeValue(): String = name.lowercase()
 fun RuntimeBackend.bridgeValue(): String = name.lowercase()
 
 fun LiveBackendState.bridgeValue(): String = name.lowercase()
+
+fun SessionMode.bridgeValue(): String = name.lowercase()
