@@ -108,6 +108,16 @@ data class DriverState(
     val coastingRatio: Double,
 )
 
+data class VisionFeatureSnapshot(
+    val timestampMs: Long,
+    val averageLuma: Double,
+    val motionEnergy: Double,
+    val lateralBalance: Double,
+    val verticalBalance: Double,
+    val centerContrast: Double,
+    val framesPerSecond: Double,
+)
+
 data class EdgeReasoningWindow(
     val triggerId: String,
     val actionHint: CoachAction,

@@ -5,4 +5,7 @@
     <string name="notification_channel_description">Foreground telemetry and on-device coaching session</string>
     <string name="notification_title">Koru live session active</string>
     <string name="notification_content">Processing telemetry and edge coaching on device</string>
+    <string name="camera_lane_waiting">Camera lane waiting for permission</string>
+    <string name="camera_lane_denied">Camera lane disabled: permission denied</string>
+    <string name="camera_lane_ready">Camera lane active</string>
 </resources>

@@ -8,6 +8,7 @@ import com.trustableai.koru.model.EdgeReasoningWindow
 import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
+import com.trustableai.koru.model.VisionFeatureSnapshot
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -298,6 +299,7 @@ class EdgeTriggerEvaluator {
         driverState: DriverState,
         corner: Corner?,
         nowMs: Long,
+        vision: VisionFeatureSnapshot?,
     ): EdgeReasoningWindow? {
         if (nowMs - lastTriggerAtMs < MIN_TRIGGER_INTERVAL_MS) return null
 
@@ -312,6 +314,7 @@ class EdgeTriggerEvaluator {
                 skillLevel = driverState.skillLevel,
                 corner = corner,
                 frame = frame,
+                vision = vision,
             )
 
             (phase == CornerPhase.EXIT || phase == CornerPhase.ACCELERATION) && frame.throttle in 20.0..55.0 ->
@@ -325,6 +328,7 @@ class EdgeTriggerEvaluator {
                     skillLevel = driverState.skillLevel,
                     corner = corner,
                     frame = frame,
+                    vision = vision,
                 )
 
             frame.throttle < 8.0 && frame.brake < 8.0 && frame.speedMph > 55.0 -> {
@@ -341,11 +345,30 @@ class EdgeTriggerEvaluator {
                         skillLevel = driverState.skillLevel,
                         corner = corner,
                         frame = frame,
+                        vision = vision,
                     )
                 } else {
                     null
                 }
             }
+
+            vision != null &&
+                vision.motionEnergy > 0.18 &&
+                abs(vision.lateralBalance) > 0.12 &&
+                abs(frame.gLat) > 0.45 &&
+                frame.speedMph > 45.0 ->
+                buildWindow(
+                    triggerId = "visual_flow_instability",
+                    action = CoachAction.STABILIZE,
+                    priority = 2,
+                    text = "Camera lane sees unstable visual flow. Smooth the hands and settle the car.",
+                    phase = phase,
+                    driverState = driverState,
+                    skillLevel = driverState.skillLevel,
+                    corner = corner,
+                    frame = frame,
+                    vision = vision,
+                )
 
             driverState.cognitiveLoad > 0.72 -> buildWindow(
                 triggerId = "overload_window",
@@ -357,6 +380,7 @@ class EdgeTriggerEvaluator {
                 skillLevel = driverState.skillLevel,
                 corner = corner,
                 frame = frame,
+                vision = vision,
             )
 
             corner != null && phase == CornerPhase.BRAKE_ZONE && frame.speedMph > 70.0 -> buildWindow(
@@ -369,6 +393,7 @@ class EdgeTriggerEvaluator {
                 skillLevel = driverState.skillLevel,
                 corner = corner,
                 frame = frame,
+                vision = vision,
             )
 
             else -> null
@@ -390,7 +415,25 @@ class EdgeTriggerEvaluator {
         skillLevel: SkillLevel,
         corner: Corner?,
         frame: TelemetryFrame,
+        vision: VisionFeatureSnapshot?,
     ): EdgeReasoningWindow {
+        val features = mutableMapOf(
+            "speed_mph" to frame.speedMph,
+            "throttle" to frame.throttle,
+            "brake" to frame.brake,
+            "g_lat" to frame.gLat,
+            "g_long" to frame.gLong,
+            "coasting_ratio" to driverState.coastingRatio,
+            "cognitive_load" to driverState.cognitiveLoad,
+        )
+        vision?.let { snapshot ->
+            features["vision_avg_luma"] = snapshot.averageLuma
+            features["vision_motion_energy"] = snapshot.motionEnergy
+            features["vision_lateral_balance"] = snapshot.lateralBalance
+            features["vision_vertical_balance"] = snapshot.verticalBalance
+            features["vision_center_contrast"] = snapshot.centerContrast
+            features["vision_fps"] = snapshot.framesPerSecond
+        }
         return EdgeReasoningWindow(
             triggerId = triggerId,
             actionHint = action,
@@ -399,15 +442,7 @@ class EdgeTriggerEvaluator {
             phase = phase,
             skillLevel = skillLevel,
             cornerName = corner?.name,
-            features = mapOf(
-                "speed_mph" to frame.speedMph,
-                "throttle" to frame.throttle,
-                "brake" to frame.brake,
-                "g_lat" to frame.gLat,
-                "g_long" to frame.gLong,
-                "coasting_ratio" to driverState.coastingRatio,
-                "cognitive_load" to driverState.cognitiveLoad,
-            ),
+            features = features,
         )
     }
 

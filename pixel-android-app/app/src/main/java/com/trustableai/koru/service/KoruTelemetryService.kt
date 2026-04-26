@@ -10,6 +10,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.trustableai.koru.R
 import com.trustableai.koru.audio.CoachAudioDispatcher
+import com.trustableai.koru.camera.VisionFeatureStore
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
@@ -131,7 +132,7 @@ class KoruTelemetryService : Service() {
                 val rawFrame = telemetrySource.nextFrame(step, track, elapsedSeconds)
                 val frame = fusionEngine.fuse(rawFrame)
                 KoruSessionBus.tryEmitFrame(frame)
-                engine.processFrame(frame).forEach { decision ->
+                engine.processFrame(frame, VisionFeatureStore.latest.value).forEach { decision ->
                     KoruSessionBus.tryEmitDecision(decision)
                     if (audioEnabled) {
                         audioDispatcher.speak(decision.text, "${decision.path.bridgeValue()}-${decision.timestampMs}")

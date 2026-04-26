@@ -2,4 +2,5 @@
 <resources>
     <color name="koru_bg">#050816</color>
     <color name="koru_fg">#F8FAFC</color>
+    <color name="koru_panel">#CC0B1224</color>
 </resources>
