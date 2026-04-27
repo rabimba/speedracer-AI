@@ -2,39 +2,52 @@ package com.trustableai.koru.bridge
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.webkit.JavascriptInterface
 
 class KoruJsBridge(
-    private val startLiveSession: (String) -> Unit,
-    private val stopLiveSession: () -> Unit,
-    private val setActiveCoach: (String) -> Unit,
-    private val setAudioEnabled: (Boolean) -> Unit,
-    private val requestBackendStatus: () -> Unit,
+    private val onStartLiveSession: (String) -> Unit,
+    private val onStopLiveSession: () -> Unit,
+    private val onSetActiveCoach: (String) -> Unit,
+    private val onSetAudioEnabled: (Boolean) -> Unit,
+    private val onRequestBackendStatus: () -> Unit,
 ) {
+    private val logTag = "KoruMainActivity"
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @JavascriptInterface
     fun startLiveSession(configJson: String) {
-        mainHandler.post { startLiveSession(configJson) }
+        Log.d(logTag, "Bridge startLiveSession payload=$configJson")
+        mainHandler.post { onStartLiveSession(configJson) }
     }
 
     @JavascriptInterface
     fun stopLiveSession() {
-        mainHandler.post(stopLiveSession)
+        Log.d(logTag, "Bridge stopLiveSession")
+        mainHandler.post(onStopLiveSession)
     }
 
     @JavascriptInterface
     fun setActiveCoach(coachId: String) {
-        mainHandler.post { setActiveCoach(coachId) }
+        Log.d(logTag, "Bridge setActiveCoach coach=$coachId")
+        mainHandler.post { onSetActiveCoach(coachId) }
     }
 
     @JavascriptInterface
     fun setAudioEnabled(enabled: Boolean) {
-        mainHandler.post { setAudioEnabled(enabled) }
+        Log.d(logTag, "Bridge setAudioEnabled enabled=$enabled")
+        mainHandler.post { onSetAudioEnabled(enabled) }
     }
 
     @JavascriptInterface
     fun requestBackendStatus() {
-        mainHandler.post(requestBackendStatus)
+        Log.d(logTag, "Bridge requestBackendStatus")
+        mainHandler.post(onRequestBackendStatus)
+    }
+
+    @JavascriptInterface
+    fun getBridgeVersion(): String {
+        Log.d(logTag, "Bridge getBridgeVersion -> android-bridge-2")
+        return "android-bridge-2"
     }
 }

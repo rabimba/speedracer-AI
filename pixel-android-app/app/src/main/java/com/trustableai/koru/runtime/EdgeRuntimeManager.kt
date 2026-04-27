@@ -2,6 +2,8 @@ package com.trustableai.koru.runtime
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.RuntimeBackend
@@ -16,6 +18,7 @@ class EdgeRuntimeManager(
     private val phraseCatalog: PhraseCatalog,
     initialCoachId: String,
 ) {
+    private val tag = "KoruEdgeRuntime"
     private val preferences: SharedPreferences =
         context.getSharedPreferences("koru_edge_runtime", Context.MODE_PRIVATE)
     private val aiCoreReasoner = AiCoreReasoner(context, phraseCatalog, initialCoachId)
@@ -31,7 +34,7 @@ class EdgeRuntimeManager(
     )
 
     suspend fun warmupPreferredBackend(): LiveBackendStatus {
-        val aiCoreStatus = aiCoreReasoner.warmup()
+        val aiCoreStatus = safeWarmup(aiCoreReasoner, "AICore")
         if (aiCoreStatus.state != LiveBackendState.UNAVAILABLE && aiCoreStatus.state != LiveBackendState.ERROR) {
             activeReasoner = aiCoreReasoner
             currentStatus = aiCoreStatus
@@ -39,7 +42,7 @@ class EdgeRuntimeManager(
             return currentStatus
         }
 
-        val liteRtStatus = liteRtLmReasoner.warmup()
+        val liteRtStatus = safeWarmup(liteRtLmReasoner, "LiteRT-LM")
         if (liteRtStatus.state != LiveBackendState.UNAVAILABLE && liteRtStatus.state != LiveBackendState.ERROR) {
             activeReasoner = liteRtLmReasoner
             currentStatus = liteRtStatus
@@ -61,6 +64,19 @@ class EdgeRuntimeManager(
     fun updateCoach(coachId: String) {
         aiCoreReasoner.setCoach(coachId)
         liteRtLmReasoner.setCoach(coachId)
+    }
+
+    private suspend fun safeWarmup(reasoner: OnDeviceReasoner, label: String): LiveBackendStatus {
+        return runCatching { reasoner.warmup() }.getOrElse { error ->
+            Log.e(tag, "$label warmup failed", error)
+            LiveBackendStatus(
+                backend = reasoner.backend,
+                state = LiveBackendState.ERROR,
+                detail = "$label warmup failed: ${error.message ?: "unknown error"}",
+                usesOnDeviceModel = false,
+                supportedPaths = listOf(CoachingPath.EDGE),
+            )
+        }
     }
 
     private fun persistBackend(backend: RuntimeBackend) {

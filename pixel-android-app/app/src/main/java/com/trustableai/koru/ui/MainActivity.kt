@@ -119,11 +119,11 @@ class MainActivity : AppCompatActivity() {
 
         webView.addJavascriptInterface(
             KoruJsBridge(
-                startLiveSession = ::startLiveSession,
-                stopLiveSession = ::stopLiveSession,
-                setActiveCoach = ::setActiveCoach,
-                setAudioEnabled = ::setAudioEnabled,
-                requestBackendStatus = ::requestBackendStatus,
+                onStartLiveSession = ::startLiveSession,
+                onStopLiveSession = ::stopLiveSession,
+                onSetActiveCoach = ::setActiveCoach,
+                onSetAudioEnabled = ::setAudioEnabled,
+                onRequestBackendStatus = ::requestBackendStatus,
             ),
             "AndroidBridge",
         )

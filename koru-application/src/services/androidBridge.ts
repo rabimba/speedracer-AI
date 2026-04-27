@@ -26,6 +26,7 @@ interface NativeBridgeHost {
   setActiveCoach(coachId: string): void;
   setAudioEnabled(enabled: boolean): void;
   requestBackendStatus(): void;
+  getBridgeVersion(): string;
 }
 
 declare global {
@@ -37,6 +38,28 @@ declare global {
 }
 
 const BRIDGE_EVENT_NAME = 'koru-android';
+const REQUIRED_ANDROID_BRIDGE_VERSION = 'android-bridge-2';
+
+function getNativeBridgeHost(): NativeBridgeHost | null {
+  if (typeof window === 'undefined') return null;
+  return window.AndroidBridge ?? null;
+}
+
+function logBridge(message: string, detail?: unknown): void {
+  if (detail === undefined) {
+    console.info(`[KoruBridge] ${message}`);
+    return;
+  }
+  console.info(`[KoruBridge] ${message}`, detail);
+}
+
+function warnBridge(message: string, detail?: unknown): void {
+  if (detail === undefined) {
+    console.warn(`[KoruBridge] ${message}`);
+    return;
+  }
+  console.warn(`[KoruBridge] ${message}`, detail);
+}
 
 function normalizeBridgeEvent(payload: AndroidBridgeEvent | string): AndroidBridgeEvent | null {
   if (typeof payload === 'string') {
@@ -49,8 +72,20 @@ function normalizeBridgeEvent(payload: AndroidBridgeEvent | string): AndroidBrid
   return payload;
 }
 
+export function getAndroidBridgeVersion(): string | null {
+  const bridge = getNativeBridgeHost();
+  if (!bridge || typeof bridge.getBridgeVersion !== 'function') return null;
+
+  try {
+    return bridge.getBridgeVersion();
+  } catch (error) {
+    warnBridge('Failed to read native bridge version', error);
+    return null;
+  }
+}
+
 export function hasAndroidBridge(): boolean {
-  return typeof window !== 'undefined' && typeof window.AndroidBridge !== 'undefined';
+  return getAndroidBridgeVersion() === REQUIRED_ANDROID_BRIDGE_VERSION;
 }
 
 export function installAndroidBridgeDispatcher(): void {
@@ -82,21 +117,79 @@ export function subscribeAndroidBridge(
 }
 
 export function startAndroidLiveSession(config: NativeLiveSessionConfig): void {
-  window.AndroidBridge?.startLiveSession(JSON.stringify(config));
+  const bridge = getNativeBridgeHost();
+  const version = getAndroidBridgeVersion();
+  if (!bridge || version !== REQUIRED_ANDROID_BRIDGE_VERSION) {
+    warnBridge('Skipping startLiveSession because the native bridge is unavailable or stale', {
+      expected: REQUIRED_ANDROID_BRIDGE_VERSION,
+      actual: version,
+      config,
+    });
+    return;
+  }
+
+  logBridge(`startLiveSession version=${version}`, config);
+  bridge.startLiveSession(JSON.stringify(config));
 }
 
 export function stopAndroidLiveSession(): void {
-  window.AndroidBridge?.stopLiveSession();
+  const bridge = getNativeBridgeHost();
+  const version = getAndroidBridgeVersion();
+  if (!bridge || version !== REQUIRED_ANDROID_BRIDGE_VERSION) {
+    warnBridge('Skipping stopLiveSession because the native bridge is unavailable or stale', {
+      expected: REQUIRED_ANDROID_BRIDGE_VERSION,
+      actual: version,
+    });
+    return;
+  }
+
+  logBridge(`stopLiveSession version=${version}`);
+  bridge.stopLiveSession();
 }
 
 export function setAndroidCoach(coachId: string): void {
-  window.AndroidBridge?.setActiveCoach(coachId);
+  const bridge = getNativeBridgeHost();
+  const version = getAndroidBridgeVersion();
+  if (!bridge || version !== REQUIRED_ANDROID_BRIDGE_VERSION) {
+    warnBridge('Skipping setActiveCoach because the native bridge is unavailable or stale', {
+      expected: REQUIRED_ANDROID_BRIDGE_VERSION,
+      actual: version,
+      coachId,
+    });
+    return;
+  }
+
+  logBridge(`setActiveCoach version=${version} coach=${coachId}`);
+  bridge.setActiveCoach(coachId);
 }
 
 export function setAndroidAudioEnabled(enabled: boolean): void {
-  window.AndroidBridge?.setAudioEnabled(enabled);
+  const bridge = getNativeBridgeHost();
+  const version = getAndroidBridgeVersion();
+  if (!bridge || version !== REQUIRED_ANDROID_BRIDGE_VERSION) {
+    warnBridge('Skipping setAudioEnabled because the native bridge is unavailable or stale', {
+      expected: REQUIRED_ANDROID_BRIDGE_VERSION,
+      actual: version,
+      enabled,
+    });
+    return;
+  }
+
+  logBridge(`setAudioEnabled version=${version} enabled=${enabled}`);
+  bridge.setAudioEnabled(enabled);
 }
 
 export function requestAndroidBackendStatus(): void {
-  window.AndroidBridge?.requestBackendStatus();
+  const bridge = getNativeBridgeHost();
+  const version = getAndroidBridgeVersion();
+  if (!bridge || version !== REQUIRED_ANDROID_BRIDGE_VERSION) {
+    warnBridge('Skipping requestBackendStatus because the native bridge is unavailable or stale', {
+      expected: REQUIRED_ANDROID_BRIDGE_VERSION,
+      actual: version,
+    });
+    return;
+  }
+
+  logBridge(`requestBackendStatus version=${version}`);
+  bridge.requestBackendStatus();
 }

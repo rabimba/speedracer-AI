@@ -3,6 +3,7 @@ package com.trustableai.koru.runtime
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.util.Log
 import com.trustableai.koru.BuildConfig
 import com.trustableai.koru.model.ModelInstallStatus
 import java.io.File
@@ -10,6 +11,7 @@ import java.io.FileInputStream
 import java.security.MessageDigest
 
 class ModelAssetManager(private val context: Context) {
+    private val tag = "KoruModelAssets"
     private val modelRoot: File by lazy {
         File(context.filesDir, "models").apply { mkdirs() }
     }
@@ -92,10 +94,15 @@ class ModelAssetManager(private val context: Context) {
     }
 
     private fun isUnmeteredNetworkAvailable(): Boolean {
-        val connectivityManager = context.getSystemService(ConnectivityManager::class.java) ?: return false
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        return try {
+            val connectivityManager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        } catch (securityException: SecurityException) {
+            Log.w(tag, "ACCESS_NETWORK_STATE unavailable during model status check", securityException)
+            false
+        }
     }
 }
