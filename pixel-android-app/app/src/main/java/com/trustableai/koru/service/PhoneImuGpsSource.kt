@@ -92,11 +92,22 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
                 )
             }
 
-        val speedMph = snapshot.speedMps * METERS_PER_SECOND_TO_MPH
-        val gLong = blendLongitudinalG(snapshot.gpsLongG, snapshot.imuLongG).coerceIn(-2.5, 2.5)
-        val gLat = blendLateralG(snapshot.gpsLatG, snapshot.imuLatG).coerceIn(-2.5, 2.5)
-        val brake = estimateBrake(gLong)
-        val throttle = estimateThrottle(speedMph, gLat, gLong, brake)
+        val speedMph = normalizeSpeedMph(snapshot.speedMps * METERS_PER_SECOND_TO_MPH)
+        val motionEligible = speedMph >= MIN_MOTION_SPEED_MPH
+        val gLong =
+            if (motionEligible) {
+                blendLongitudinalG(snapshot.gpsLongG, snapshot.imuLongG).coerceIn(-2.5, 2.5)
+            } else {
+                0.0
+            }
+        val gLat =
+            if (motionEligible) {
+                blendLateralG(snapshot.gpsLatG, snapshot.imuLatG).coerceIn(-2.5, 2.5)
+            } else {
+                0.0
+            }
+        val brake = if (motionEligible) estimateBrake(gLong) else 0.0
+        val throttle = if (motionEligible) estimateThrottle(speedMph, gLat, gLong, brake) else 0.0
         val gear = estimateGear(speedMph)
 
         return TelemetryFrame(
@@ -192,7 +203,18 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
                 .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
                 .maxByOrNull { it.time }
         if (lastKnown != null) {
-            updateFromLocation(lastKnown)
+            synchronized(stateLock) {
+                latestLatitude = lastKnown.latitude
+                latestLongitude = lastKnown.longitude
+                latestAltitude = if (lastKnown.hasAltitude()) lastKnown.altitude else latestAltitude
+                latestSpeedMps = 0.0
+                latestHeadingDegrees = if (lastKnown.hasBearing()) lastKnown.bearing.toDouble() else 0.0
+                latestGpsLatG = 0.0
+                latestGpsLongG = 0.0
+                latestImuLatG = 0.0
+                latestImuLongG = 0.0
+                lastLocation = Location(lastKnown)
+            }
         }
     }
 
@@ -205,8 +227,9 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
                     val previousNanos = previous.elapsedRealtimeNanos.takeIf { it > 0L } ?: timestampNanos
                     ((timestampNanos - previousNanos) / 1_000_000_000.0).takeIf { it in 0.1..5.0 }
                 }
-            val deltaDistanceMeters =
+            val rawDeltaDistanceMeters =
                 previousLocation?.distanceTo(location)?.toDouble()?.takeIf { it >= 0.0 } ?: 0.0
+            val deltaDistanceMeters = if (rawDeltaDistanceMeters >= MIN_DISTANCE_DELTA_METERS) rawDeltaDistanceMeters else 0.0
             val derivedSpeedMps =
                 deltaSeconds?.let { seconds ->
                     if (seconds > 0.0) deltaDistanceMeters / seconds else 0.0
@@ -218,10 +241,10 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
                 location.hasSpeed() && location.speed.isFinite() -> location.speed.toDouble()
                 derivedSpeedMps != null -> derivedSpeedMps
                 else -> previousSpeedMps
-            }
+            }.let(::normalizeSpeedMpsRaw)
             val headingDegrees = when {
                 location.hasBearing() -> location.bearing.toDouble()
-                previousLocation != null && deltaDistanceMeters > 2.0 ->
+                previousLocation != null && deltaDistanceMeters > 5.0 ->
                     bearingDegrees(
                         previousLocation.latitude,
                         previousLocation.longitude,
@@ -311,6 +334,14 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
         return (baseRpm + throttle * 18.0).roundToInt().coerceIn(1100, 8800)
     }
 
+    private fun normalizeSpeedMph(speedMph: Double): Double {
+        return if (speedMph < MIN_MOTION_SPEED_MPH) 0.0 else speedMph
+    }
+
+    private fun normalizeSpeedMpsRaw(speedMps: Double): Double {
+        return if (speedMps < MIN_MOTION_SPEED_MPS) 0.0 else speedMps
+    }
+
     private fun smooth(previous: Double, sample: Double): Double {
         return (previous * 0.7 + sample * 0.3).coerceIn(-2.5, 2.5)
     }
@@ -346,6 +377,9 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
     companion object {
         private const val STANDARD_GRAVITY_METERS_PER_SECOND = 9.80665
         private const val METERS_PER_SECOND_TO_MPH = 2.2369362920544
+        private const val MIN_DISTANCE_DELTA_METERS = 3.0
+        private const val MIN_MOTION_SPEED_MPH = 8.0
+        private const val MIN_MOTION_SPEED_MPS = 3.57632
 
         fun hasFineLocationPermission(context: Context): Boolean {
             return ContextCompat.checkSelfPermission(

@@ -268,22 +268,23 @@ class DriverModel {
 object DecisionMatrix {
     fun evaluate(frame: TelemetryFrame): CoachAction? {
         val absGLat = abs(frame.gLat)
+        if (!isTelemetryMotionArmed(frame)) return null
         return when {
             absGLat > 0.7 && frame.gLong < -0.3 && frame.throttle < 5.0 && frame.speedMph > 40.0 ->
                 CoachAction.OVERSTEER_RECOVERY
-            frame.brake > 50.0 && frame.gLong < -0.8 -> CoachAction.THRESHOLD
-            frame.brake > 10.0 && absGLat > 0.4 -> CoachAction.TRAIL_BRAKE
-            absGLat > 1.0 && frame.throttle < 20.0 -> CoachAction.COMMIT
-            absGLat > 0.6 && frame.throttle < 50.0 -> CoachAction.THROTTLE
-            frame.throttle > 80.0 && absGLat < 0.3 -> CoachAction.PUSH
+            frame.brake > 50.0 && frame.gLong < -0.8 && frame.speedMph > 25.0 -> CoachAction.THRESHOLD
+            frame.brake > 10.0 && absGLat > 0.4 && frame.speedMph > 20.0 -> CoachAction.TRAIL_BRAKE
+            absGLat > 1.0 && frame.throttle < 20.0 && frame.speedMph > 35.0 -> CoachAction.COMMIT
+            absGLat > 0.6 && frame.throttle < 50.0 && frame.speedMph > 25.0 -> CoachAction.THROTTLE
+            frame.throttle > 80.0 && absGLat < 0.3 && frame.speedMph > 35.0 -> CoachAction.PUSH
             frame.throttle < 10.0 && frame.brake < 10.0 && frame.speedMph > 60.0 -> CoachAction.COAST
             (frame.brake > 40.0 && frame.speedMph < 45.0) ||
                 (frame.throttle < 15.0 && frame.brake < 5.0 && frame.speedMph > 80.0 && absGLat < 0.3) ->
                 CoachAction.HESITATION
-            absGLat < 0.2 && frame.gLong > 0.1 && frame.throttle > 70.0 -> CoachAction.FULL_THROTTLE
-            frame.throttle > 30.0 && absGLat > 0.6 && frame.gLong < -0.1 -> CoachAction.EARLY_THROTTLE
+            absGLat < 0.2 && frame.gLong > 0.1 && frame.throttle > 70.0 && frame.speedMph > 35.0 -> CoachAction.FULL_THROTTLE
+            frame.throttle > 30.0 && absGLat > 0.6 && frame.gLong < -0.1 && frame.speedMph > 35.0 -> CoachAction.EARLY_THROTTLE
             frame.throttle < 5.0 && absGLat > 0.4 && frame.speedMph > 50.0 -> CoachAction.LIFT_MID_CORNER
-            frame.brake > 70.0 && frame.gLong < -1.2 -> CoachAction.SPIKE_BRAKE
+            frame.brake > 70.0 && frame.gLong < -1.2 && frame.speedMph > 25.0 -> CoachAction.SPIKE_BRAKE
             else -> null
         }
     }
@@ -301,6 +302,7 @@ class EdgeTriggerEvaluator {
         nowMs: Long,
     ): EdgeReasoningWindow? {
         if (nowMs - lastTriggerAtMs < MIN_TRIGGER_INTERVAL_MS) return null
+        if (!isTelemetryMotionArmed(frame)) return null
         val vision = frame.vision
 
         val trigger = when {
@@ -494,6 +496,11 @@ class EdgeTriggerEvaluator {
     companion object {
         private const val MIN_TRIGGER_INTERVAL_MS = 1500L
     }
+}
+
+private fun isTelemetryMotionArmed(frame: TelemetryFrame): Boolean {
+    if (frame.sourceMode == SessionMode.CAMERA_DIRECT) return true
+    return frame.speedMph >= 18.0
 }
 
 private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
