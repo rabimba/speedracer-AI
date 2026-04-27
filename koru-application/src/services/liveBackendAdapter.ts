@@ -47,7 +47,6 @@ const BROWSER_STATUS: LiveBackendStatus = {
 };
 
 export class LiveBackendAdapter {
-  private readonly options: LiveBackendAdapterOptions;
   private readonly nativeMode = hasAndroidBridge();
   private readonly frameListeners = new Set<Listener<TelemetryFrame>>();
   private readonly statusListeners = new Set<Listener<SSEConnectionStatus>>();
@@ -59,11 +58,12 @@ export class LiveBackendAdapter {
   private cleanup: Array<() => void> = [];
   private coachId: string;
   private audioEnabled: boolean;
+  private track: Track;
 
   constructor(options: LiveBackendAdapterOptions) {
-    this.options = options;
     this.coachId = options.coachId;
     this.audioEnabled = options.audioEnabled;
+    this.track = options.track;
 
     if (this.nativeMode) {
       const unsubscribe = subscribeAndroidBridge((event) => {
@@ -87,7 +87,7 @@ export class LiveBackendAdapter {
 
     if (!this.stream || !this.coach) return;
 
-    this.coach.setTrack(options.track);
+    this.coach.setTrack(this.track);
     this.coach.setCoach(options.coachId);
     if (options.apiKey) this.coach.setApiKey(options.apiKey);
 
@@ -140,7 +140,7 @@ export class LiveBackendAdapter {
       startAndroidLiveSession({
         coachId: this.coachId,
         audioEnabled: this.audioEnabled,
-        trackName: sessionMode === 'device_test' ? 'Device GPS Test' : this.options.track.name,
+        trackName: sessionMode === 'device_test' ? 'Device GPS Test' : this.track.name,
         sessionMode,
         telemetrySource,
         sourceUrl: sourceUrl?.trim() || undefined,
@@ -169,6 +169,13 @@ export class LiveBackendAdapter {
       return;
     }
     this.coach?.setCoach(coachId);
+  }
+
+  setTrack(track: Track): void {
+    this.track = track;
+    if (!this.nativeMode) {
+      this.coach?.setTrack(track);
+    }
   }
 
   setApiKey(apiKey: string | null): void {

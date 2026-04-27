@@ -67,7 +67,7 @@ class KoruTelemetryService : Service() {
         modelAssetManager = ModelAssetManager(this)
         runtimeManager = EdgeRuntimeManager(this, modelAssetManager, phraseCatalog, activeCoachId)
         sessionRecorder = RecordedSessionRecorder(this)
-        engine = createRealtimeEngine(TrackCatalog.thunderhillEast)
+        engine = createRealtimeEngine(TrackCatalog.defaultTrack)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -252,7 +252,7 @@ class KoruTelemetryService : Service() {
         activeTelemetrySource.start()
         Log.d(tag, "Telemetry loop started source=${telemetrySelection.active.bridgeValue()} cameraFusion=true")
         var step = 0
-        val activeTrack = track ?: TrackCatalog.thunderhillEast
+        val activeTrack = track ?: TrackCatalog.defaultTrack
         while (currentCoroutineContext().isActive) {
             val elapsedSeconds = step / 10.0
             val rawFrame = activeTelemetrySource.nextFrame(step, activeTrack, elapsedSeconds)

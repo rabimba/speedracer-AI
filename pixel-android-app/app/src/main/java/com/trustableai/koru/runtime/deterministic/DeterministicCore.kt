@@ -9,6 +9,7 @@ import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
+import com.trustableai.koru.runtime.TrackExpertiseCatalog
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -298,6 +299,7 @@ class EdgeTriggerEvaluator {
         frame: TelemetryFrame,
         phase: CornerPhase,
         driverState: DriverState,
+        track: Track?,
         corner: Corner?,
         nowMs: Long,
     ): EdgeReasoningWindow? {
@@ -318,6 +320,7 @@ class EdgeTriggerEvaluator {
                     phase = phase,
                     driverState = driverState,
                     skillLevel = driverState.skillLevel,
+                    track = track,
                     corner = corner,
                     frame = frame,
                 )
@@ -337,6 +340,7 @@ class EdgeTriggerEvaluator {
                     phase = phase,
                     driverState = driverState,
                     skillLevel = driverState.skillLevel,
+                    track = track,
                     corner = corner,
                     frame = frame,
                 )
@@ -353,6 +357,7 @@ class EdgeTriggerEvaluator {
                     phase = phase,
                     driverState = driverState,
                     skillLevel = driverState.skillLevel,
+                    track = track,
                     corner = corner,
                     frame = frame,
                 )
@@ -365,6 +370,7 @@ class EdgeTriggerEvaluator {
                 phase = phase,
                 driverState = driverState,
                 skillLevel = driverState.skillLevel,
+                track = track,
                 corner = corner,
                 frame = frame,
             )
@@ -378,6 +384,7 @@ class EdgeTriggerEvaluator {
                     phase = phase,
                     driverState = driverState,
                     skillLevel = driverState.skillLevel,
+                    track = track,
                     corner = corner,
                     frame = frame,
                 )
@@ -394,6 +401,7 @@ class EdgeTriggerEvaluator {
                         phase = phase,
                         driverState = driverState,
                         skillLevel = driverState.skillLevel,
+                        track = track,
                         corner = corner,
                         frame = frame,
                     )
@@ -415,6 +423,7 @@ class EdgeTriggerEvaluator {
                     phase = phase,
                     driverState = driverState,
                     skillLevel = driverState.skillLevel,
+                    track = track,
                     corner = corner,
                     frame = frame,
                 )
@@ -427,6 +436,7 @@ class EdgeTriggerEvaluator {
                 phase = phase,
                 driverState = driverState,
                 skillLevel = driverState.skillLevel,
+                track = track,
                 corner = corner,
                 frame = frame,
             )
@@ -439,6 +449,7 @@ class EdgeTriggerEvaluator {
                 phase = phase,
                 driverState = driverState,
                 skillLevel = driverState.skillLevel,
+                track = track,
                 corner = corner,
                 frame = frame,
             )
@@ -460,6 +471,7 @@ class EdgeTriggerEvaluator {
         phase: CornerPhase,
         driverState: DriverState,
         skillLevel: SkillLevel,
+        track: Track?,
         corner: Corner?,
         frame: TelemetryFrame,
     ): EdgeReasoningWindow {
@@ -481,11 +493,20 @@ class EdgeTriggerEvaluator {
             features["vision_center_contrast"] = snapshot.centerContrast
             features["vision_fps"] = snapshot.framesPerSecond
         }
+        val suggestion =
+            TrackExpertiseCatalog.edgeText(
+                track = track,
+                corner = corner,
+                triggerId = triggerId,
+                defaultText = text,
+                skillLevel = skillLevel,
+                phase = phase,
+            )
         return EdgeReasoningWindow(
             triggerId = triggerId,
             actionHint = action,
             priority = priority,
-            suggestedText = text,
+            suggestedText = suggestion,
             phase = phase,
             skillLevel = skillLevel,
             cornerName = corner?.name,

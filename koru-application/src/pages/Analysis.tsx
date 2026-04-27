@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useGeminiCloud } from '../hooks/useGeminiCloud';
 import { parseTelemetryCaptureInput } from '../utils/sessionCapture';
 import TelemetryCharts from '../components/TelemetryCharts';
-import { THUNDERHILL_EAST } from '../data/trackData';
+import { DEFAULT_TRACK } from '../data/trackData';
 import type { TelemetryFrame } from '../types';
 import { BarChart3, Upload, Loader } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -43,7 +43,7 @@ export default function Analysis() {
       return `${label}: MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}${visionSummary}`;
     };
 
-    const context = `Compare these two laps on ${THUNDERHILL_EAST.name}:
+    const context = `Compare these two laps on ${DEFAULT_TRACK.name}:
 
 ${summarize(lap1Frames, 'Lap A')}
 

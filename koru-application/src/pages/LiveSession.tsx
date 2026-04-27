@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTTS } from '../hooks/useTTS';
-import { THUNDERHILL_EAST } from '../data/trackData';
+import { DEFAULT_TRACK, TRACKS, getTrackByName } from '../data/trackData';
 import TelemetryCharts from '../components/TelemetryCharts';
 import TrackMap from '../components/TrackMap';
 import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
@@ -34,12 +34,14 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const [nativeMode, setNativeMode] = useState(() => hasAndroidBridge());
   const [sessionMode, setSessionMode] = useState<SessionMode>('telemetry');
   const [telemetrySource, setTelemetrySource] = useState<TelemetrySourceKind>('phone_imu_gps');
+  const [trackName, setTrackName] = useState(DEFAULT_TRACK.name);
 
   const adapterRef = useRef<LiveBackendAdapter | null>(null);
   const audioEnabledRef = useRef(audioEnabled);
   const initialConfigRef = useRef({ apiKey, activeCoach, audioEnabled });
   const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
   const speakRef = useRef(speak);
+  const selectedTrack = getTrackByName(trackName);
 
   useEffect(() => {
     speakRef.current = speak;
@@ -56,7 +58,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
       apiKey: initialConfig.apiKey,
       coachId: initialConfig.activeCoach,
       audioEnabled: initialConfig.audioEnabled,
-      track: THUNDERHILL_EAST,
+      track: DEFAULT_TRACK,
     });
     adapterRef.current = adapter;
     setNativeMode(adapter.isNativeMode());
@@ -105,6 +107,10 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   }, [apiKey]);
 
   useEffect(() => {
+    adapterRef.current?.setTrack(selectedTrack);
+  }, [selectedTrack]);
+
+  useEffect(() => {
     if (!nativeMode) return;
 
     return subscribeAndroidBridge((event) => {
@@ -150,6 +156,17 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
       <header className="page-header">
         <h1><Radio size={20} /> Live Session</h1>
         <div className="live-controls">
+          <select
+            className="tts-select"
+            value={trackName}
+            onChange={e => setTrackName(e.target.value)}
+          >
+            {TRACKS.map((track) => (
+              <option key={track.name} value={track.name}>
+                {track.name}
+              </option>
+            ))}
+          </select>
           {nativeMode && (
             <select
               className="tts-select"
@@ -228,7 +245,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
               </p>
             </div>
           ) : (
-            <TrackMap track={THUNDERHILL_EAST} currentFrame={currentFrame ?? undefined} />
+            <TrackMap track={selectedTrack} currentFrame={currentFrame ?? undefined} />
           )}
         </div>
 

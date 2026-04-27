@@ -4,12 +4,12 @@ import { useGeminiCloud } from '../hooks/useGeminiCloud';
 import { useTTS } from '../hooks/useTTS';
 import { usePredictiveCoaching } from '../hooks/usePredictiveCoaching';
 import { loadLatestRecordedSession } from '../services/recordedSessionStore';
+import { DEFAULT_TRACK, getTrackByName } from '../data/trackData';
 import TelemetryCharts from '../components/TelemetryCharts';
 import PlaybackControls from '../components/PlaybackControls';
 import GaugeCluster from '../components/GaugeCluster';
 import TrackMap from '../components/TrackMap';
 import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
-import { THUNDERHILL_EAST } from '../data/trackData';
 import type { RecordedSessionArtifact, TelemetryFrame, TTSProvider } from '../types';
 import { Upload } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -29,10 +29,11 @@ export default function Replay({ apiKey }: ReplayProps) {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [analysisResult, setAnalysisResult] = useState('');
   const [recordedSession, setRecordedSession] = useState<RecordedSessionArtifact | null>(null);
+  const activeTrack = getTrackByName(recordedSession?.trackName ?? DEFAULT_TRACK.name);
 
   const { generateFeedback, status: cloudStatus } = useGeminiCloud();
   const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
-  const { checkLookahead } = usePredictiveCoaching();
+  const { checkLookahead } = usePredictiveCoaching(activeTrack);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const coachRef = useRef(new CoachingService());
@@ -41,6 +42,10 @@ export default function Replay({ apiKey }: ReplayProps) {
   useEffect(() => {
     if (apiKey) coachRef.current.setApiKey(apiKey);
   }, [apiKey]);
+
+  useEffect(() => {
+    coachRef.current.setTrack(activeTrack);
+  }, [activeTrack]);
 
   useEffect(() => {
     coachRef.current.setCoach(activeCoach);
@@ -248,7 +253,7 @@ export default function Replay({ apiKey }: ReplayProps) {
           <div className="replay-grid">
             <div className="replay-left">
               <GaugeCluster frame={currentFrame} />
-              <TrackMap track={THUNDERHILL_EAST} currentFrame={currentFrame ?? undefined} />
+              <TrackMap track={activeTrack} currentFrame={currentFrame ?? undefined} />
             </div>
             <div className="replay-center">
               <TelemetryCharts frames={frames.slice(Math.max(0, currentIdx - 100), currentIdx + 1)} />

@@ -18,7 +18,7 @@ data class LiveSessionConfig(
             return LiveSessionConfig(
                 coachId = root.optString("coachId", "superaj"),
                 audioEnabled = root.optBoolean("audioEnabled", true),
-                trackName = root.optString("trackName", TrackCatalog.thunderhillEast.name),
+                trackName = root.optString("trackName", TrackCatalog.defaultTrack.name),
                 sessionMode = when (root.optString("sessionMode", "telemetry")) {
                     "device_test" -> SessionMode.DEVICE_TEST
                     "camera_direct" -> SessionMode.CAMERA_DIRECT

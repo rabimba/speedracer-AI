@@ -1,10 +1,10 @@
 import { Activity, Radio, PlayCircle, BarChart3, Zap, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { THUNDERHILL_EAST } from '../data/trackData';
+import { DEFAULT_TRACK } from '../data/trackData';
 import TrackMap from '../components/TrackMap';
 
 export default function Dashboard() {
-  const track = THUNDERHILL_EAST;
+  const track = DEFAULT_TRACK;
 
   return (
     <div className="page dashboard">

@@ -58,9 +58,7 @@ class LiteRtLmReasoner(
         if (!usable) return null
         val phraseId = phraseCatalog.phraseIdFor(window.actionHint, window.skillLevel, coachId)
         return structuredFallbackDecision(
-            window = window.copy(
-                suggestedText = phraseCatalog.render(window.actionHint, window.skillLevel, coachId),
-            ),
+            window = window,
             backend = backend,
             phraseId = phraseId,
             confidence = 0.72,

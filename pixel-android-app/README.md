@@ -6,6 +6,8 @@ This Android app now supports three native live-session lanes:
 - `Device Camera + GPS Test`
 - `Camera Feedback (Debug)`
 
+The current deployment target in this branch is Sonoma Raceway. The native track catalog and coaching runtime now include Sonoma-specific corner guidance derived from the sector map plus coaching notes.
+
 The first two run through the foreground-service telemetry pathway. The debug lane uses the activity-local camera-direct pathway.
 
 ## Model choice
@@ -70,10 +72,11 @@ The complete flow you can test now is:
    - future `racebox_ble` / `obd_bluetooth`
 4. CameraX captures live camera frames and extracts lightweight vision features
 5. telemetry frames are fused with the latest vision snapshot when the session mode uses telemetry
-6. the on-device runtime chooses `litertlm` when available, otherwise deterministic fallback
-7. native bridge sends frames and decisions into the WebView UI
-8. native TTS plays coaching audio
-9. the recorded session artifact is saved for replay and analysis
+6. Sonoma-specific corner/feedforward guidance is applied when the selected track is Sonoma Raceway
+7. the on-device runtime chooses `litertlm` when available, otherwise deterministic fallback
+8. native bridge sends frames and decisions into the WebView UI
+9. native TTS plays coaching audio
+10. the recorded session artifact is saved for replay and analysis
 
 ## Current limitations
 
@@ -92,7 +95,7 @@ Use `Device Camera + GPS Test` when you want to validate end-to-end realtime beh
 
 ### 2. Main fused Android lane
 
-Use `Telemetry + Camera Fusion` with `Phone IMU + GPS` as the current real on-device telemetry source.
+Use `Telemetry + Camera Fusion` with `Phone IMU + GPS` as the current real on-device telemetry source. This is the main Sonoma-specific fused coaching path in the current branch.
 
 ### 3. Camera lane debugging
 

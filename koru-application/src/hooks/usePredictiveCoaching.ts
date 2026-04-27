@@ -1,6 +1,5 @@
 import { useRef, useCallback } from 'react';
-import type { TelemetryFrame, Corner } from '../types';
-import { THUNDERHILL_EAST } from '../data/trackData';
+import type { TelemetryFrame, Corner, Track } from '../types';
 
 interface MistakeZone {
   distance: number;
@@ -13,7 +12,7 @@ interface MistakeZone {
  * Predictive coaching: compares recent completed lap vs ideal lap
  * to find "Mistake Zones" and alert the driver before they arrive.
  */
-export const usePredictiveCoaching = () => {
+export const usePredictiveCoaching = (track: Track) => {
   const mistakeZonesRef = useRef<MistakeZone[]>([]);
   const lastTriggeredRef = useRef<string | null>(null);
 
@@ -35,7 +34,7 @@ export const usePredictiveCoaching = () => {
 
       const delta = recentSpeed - idealSpeed;
       if (delta < -15) { // Lost 15+ mph vs ideal
-        const corner = findNearestCorner(dist);
+        const corner = findNearestCorner(track, dist);
         zones.push({
           distance: dist,
           speedDelta: delta,
@@ -57,7 +56,7 @@ export const usePredictiveCoaching = () => {
     mistakeZonesRef.current = Array.from(byCorner.values());
     lastTriggeredRef.current = null;
     return mistakeZonesRef.current;
-  }, []);
+  }, [track]);
 
   /** Check if the current position is approaching a mistake zone */
   const checkLookahead = useCallback((currentFrame: TelemetryFrame): MistakeZone | null => {
@@ -107,8 +106,7 @@ function alignByDistance(frames: TelemetryFrame[]): Map<number, number> {
   return map;
 }
 
-function findNearestCorner(distance: number): Corner | null {
-  const track = THUNDERHILL_EAST;
+function findNearestCorner(track: Track, distance: number): Corner | null {
   for (const c of track.corners) {
     if (Math.abs(distance - c.apexDist) < 150) return c;
   }

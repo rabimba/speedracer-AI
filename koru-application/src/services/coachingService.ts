@@ -1,5 +1,6 @@
 import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal } from '../types';
 import { COACHES, DEFAULT_COACH, DECISION_MATRIX, RACING_PHYSICS_KNOWLEDGE } from '../utils/coachingKnowledge';
+import { getTrackFeedforwardMessage, getTrackPromptContext } from '../data/trackExpertise';
 import { haversineDistance, isValidGps } from '../utils/geoUtils';
 import { CornerPhaseDetector } from './cornerPhaseDetector';
 import { TimingGate } from './timingGate';
@@ -555,9 +556,18 @@ export class CoachingService {
         instruction = 'Give a technique instruction with a brief physics explanation. Under 20 words.';
     }
 
+    const trackContext = getTrackPromptContext(
+      this.track,
+      this.lastCorner,
+      skillLevel,
+      this.sessionPhase,
+    );
+
     const prompt = `${coach.systemPrompt}
 
 ${RACING_PHYSICS_KNOWLEDGE}
+
+${trackContext}
 
 Current Telemetry:
 Speed: ${frame.speed.toFixed(1)} mph | Brake: ${frame.brake.toFixed(0)}% | Throttle: ${frame.throttle.toFixed(0)}%
@@ -604,7 +614,12 @@ ${instruction}`;
       this.lastCorner = nearest;
       this.coachingQueue.enqueue({
         path: 'feedforward',
-        text: `📍 ${nearest.name}: ${nearest.advice}`,
+        text: `📍 ${getTrackFeedforwardMessage(
+          this.track,
+          nearest,
+          this.driverModel.getSkillLevel(),
+          this.sessionPhase,
+        )}`,
         priority: 1,
         cornerPhase: this.currentPhase,
         timestamp: Date.now(),

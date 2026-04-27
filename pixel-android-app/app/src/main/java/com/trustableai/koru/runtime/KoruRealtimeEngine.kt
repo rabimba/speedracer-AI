@@ -21,6 +21,7 @@ class KoruRealtimeEngine(
     private val phraseCatalog: PhraseCatalog,
     private val reasonerProvider: () -> OnDeviceReasoner,
 ) {
+    private val track = track
     private val cornerDetector = CornerPhaseDetector(track)
     private val timingGate = TimingGate()
     private val queue = CoachingQueue()
@@ -62,7 +63,7 @@ class KoruRealtimeEngine(
                 CoachingQueue.QueuedDecision(
                     action = null,
                     path = CoachingPath.FEEDFORWARD.bridgeValue(),
-                    text = "${corner.name}: ${corner.advice}",
+                    text = TrackExpertiseCatalog.feedforwardText(track = track, corner = corner, skillLevel = driverState.skillLevel),
                     priority = 1,
                     cornerPhase = currentPhase,
                     timestampMs = nowMs,
@@ -72,7 +73,7 @@ class KoruRealtimeEngine(
         }
 
         val reasoner = reasonerProvider()
-        edgeTriggerEvaluator.evaluate(frame, currentPhase, driverState, detection.corner, nowMs)?.let { window ->
+        edgeTriggerEvaluator.evaluate(frame, currentPhase, driverState, track, detection.corner, nowMs)?.let { window ->
             reasoner.reason(window)?.let { result ->
                 queue.enqueue(
                     CoachingQueue.QueuedDecision(
