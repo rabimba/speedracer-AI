@@ -140,7 +140,7 @@ export class LiveBackendAdapter {
       startAndroidLiveSession({
         coachId: this.coachId,
         audioEnabled: this.audioEnabled,
-        trackName: this.options.track.name,
+        trackName: sessionMode === 'device_test' ? 'Device GPS Test' : this.options.track.name,
         sessionMode,
         telemetrySource,
         sourceUrl: sourceUrl?.trim() || undefined,

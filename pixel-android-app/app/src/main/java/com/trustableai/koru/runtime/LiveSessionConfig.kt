@@ -20,6 +20,7 @@ data class LiveSessionConfig(
                 audioEnabled = root.optBoolean("audioEnabled", true),
                 trackName = root.optString("trackName", TrackCatalog.thunderhillEast.name),
                 sessionMode = when (root.optString("sessionMode", "telemetry")) {
+                    "device_test" -> SessionMode.DEVICE_TEST
                     "camera_direct" -> SessionMode.CAMERA_DIRECT
                     else -> SessionMode.TELEMETRY
                 },

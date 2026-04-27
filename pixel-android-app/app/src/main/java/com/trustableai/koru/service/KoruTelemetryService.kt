@@ -113,6 +113,7 @@ class KoruTelemetryService : Service() {
         ensureForeground(
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Running direct camera feedback on device"
+                SessionMode.DEVICE_TEST -> "Running device camera plus GPS test on device"
                 SessionMode.TELEMETRY -> getString(R.string.notification_content)
             },
         )
@@ -122,15 +123,17 @@ class KoruTelemetryService : Service() {
         audioDispatcher.setEnabled(audioEnabled)
         phraseCatalog.ensureLoaded()
         runtimeManager.updateCoach(activeCoachId)
-        val track = TrackCatalog.fromName(config.trackName)
+        val track = if (config.sessionMode == SessionMode.DEVICE_TEST) null else TrackCatalog.fromName(config.trackName)
+        val sessionLabel = if (config.sessionMode == SessionMode.DEVICE_TEST) "Device GPS Test" else (track?.name ?: config.trackName)
         engine = createRealtimeEngine(track)
         engine.setActiveCoach(activeCoachId)
         val telemetrySelection = when (config.sessionMode) {
             SessionMode.CAMERA_DIRECT -> null
+            SessionMode.DEVICE_TEST -> TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS)
             SessionMode.TELEMETRY -> TelemetrySourceFactory.select(applicationContext, config.telemetrySource)
         }
         activeTelemetrySource = telemetrySelection?.source ?: SyntheticTrackSource()
-        if (config.sessionMode == SessionMode.TELEMETRY && telemetrySelection != null) {
+        if ((config.sessionMode == SessionMode.TELEMETRY || config.sessionMode == SessionMode.DEVICE_TEST) && telemetrySelection != null) {
             Log.d(
                 tag,
                 "Telemetry session requested=${telemetrySelection.requested.bridgeValue()} active=${telemetrySelection.active.bridgeValue()} fallback=${telemetrySelection.isFallback}",
@@ -142,12 +145,15 @@ class KoruTelemetryService : Service() {
             state = LiveBackendState.STARTING,
             detail = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Starting direct camera reasoning session on device"
+                SessionMode.DEVICE_TEST -> telemetrySelection?.detail
+                    ?: "Starting device GPS plus camera test path on device"
                 SessionMode.TELEMETRY -> telemetrySelection?.detail
                     ?: "Starting telemetry service with live camera fusion enabled"
             },
             usesOnDeviceModel = false,
             supportedPaths = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> listOf(CoachingPath.EDGE)
+                SessionMode.DEVICE_TEST -> listOf(CoachingPath.HOT, CoachingPath.EDGE)
                 SessionMode.TELEMETRY -> listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE)
             },
         )
@@ -161,6 +167,21 @@ class KoruTelemetryService : Service() {
                         detail = "Edge runtime warmed. Waiting for camera lane frames",
                         supportedPaths = listOf(CoachingPath.EDGE),
                     )
+                SessionMode.DEVICE_TEST -> {
+                    val sourceDetail = telemetrySelection?.detail
+                        ?: "Using phone GPS and IMU with live camera fusion."
+                    selectedBackend.copy(
+                        state = when {
+                            telemetrySelection?.isFallback == true &&
+                                selectedBackend.state == LiveBackendState.READY -> LiveBackendState.DEGRADED
+                            telemetrySelection?.isFallback == true &&
+                                selectedBackend.state == LiveBackendState.STARTING -> LiveBackendState.DEGRADED
+                            else -> selectedBackend.state
+                        },
+                        detail = "${selectedBackend.detail} $sourceDetail Track feedforward is disabled in this test lane.",
+                        supportedPaths = listOf(CoachingPath.HOT, CoachingPath.EDGE),
+                    )
+                }
                 SessionMode.TELEMETRY -> {
                     val sourceDetail = telemetrySelection?.detail
                         ?: "Telemetry source not selected. Using fused camera vision with telemetry frames."
@@ -178,10 +199,11 @@ class KoruTelemetryService : Service() {
             },
         )
 
-        sessionRecorder.start(config.sessionMode, track.name, activeCoachId)
+        sessionRecorder.start(config.sessionMode, sessionLabel, activeCoachId)
         updateNotification(
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Direct camera feedback active (${selectedBackend.backend.bridgeValue()})"
+                SessionMode.DEVICE_TEST -> "Device GPS + camera test active (${selectedBackend.backend.bridgeValue()})"
                 SessionMode.TELEMETRY -> {
                     val activeSourceLabel = telemetrySelection?.active?.bridgeValue() ?: "synthetic"
                     "Telemetry ${activeSourceLabel} + camera fusion active (${selectedBackend.backend.bridgeValue()})"
@@ -191,6 +213,7 @@ class KoruTelemetryService : Service() {
         sessionJob = serviceScope.launch {
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> runCameraDirectLoop(selectedBackend)
+                SessionMode.DEVICE_TEST -> runTelemetryLoop(track, telemetrySelection ?: TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS))
                 SessionMode.TELEMETRY -> runTelemetryLoop(track, telemetrySelection ?: TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.SYNTHETIC))
             }
         }
@@ -222,16 +245,17 @@ class KoruTelemetryService : Service() {
     }
 
     private suspend fun runTelemetryLoop(
-        track: com.trustableai.koru.model.Track,
+        track: com.trustableai.koru.model.Track?,
         telemetrySelection: TelemetrySourceSelection,
     ) {
         activeTelemetrySource = telemetrySelection.source
         activeTelemetrySource.start()
         Log.d(tag, "Telemetry loop started source=${telemetrySelection.active.bridgeValue()} cameraFusion=true")
         var step = 0
+        val activeTrack = track ?: TrackCatalog.thunderhillEast
         while (currentCoroutineContext().isActive) {
             val elapsedSeconds = step / 10.0
-            val rawFrame = activeTelemetrySource.nextFrame(step, track, elapsedSeconds)
+            val rawFrame = activeTelemetrySource.nextFrame(step, activeTrack, elapsedSeconds)
             val frame = fusionEngine.fuse(rawFrame, VisionFeatureStore.latest.value)
             emitFrameAndDecisions(frame)
             step += 1
@@ -311,7 +335,7 @@ class KoruTelemetryService : Service() {
         return artifact
     }
 
-    private fun createRealtimeEngine(track: com.trustableai.koru.model.Track): KoruRealtimeEngine {
+    private fun createRealtimeEngine(track: com.trustableai.koru.model.Track?): KoruRealtimeEngine {
         return KoruRealtimeEngine(track, phraseCatalog) {
             runtimeManager.currentReasoner()
         }

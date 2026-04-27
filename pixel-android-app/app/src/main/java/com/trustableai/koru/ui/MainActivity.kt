@@ -180,7 +180,7 @@ class MainActivity : AppCompatActivity() {
     private fun startLiveSession(configJson: String) {
         val config = LiveSessionConfig.fromJson(configJson)
         if (
-            config.sessionMode == SessionMode.TELEMETRY &&
+            (config.sessionMode == SessionMode.TELEMETRY || config.sessionMode == SessionMode.DEVICE_TEST) &&
             config.telemetrySource == TelemetrySourceKind.PHONE_IMU_GPS &&
             !hasFineLocationPermission()
         ) {
@@ -201,7 +201,8 @@ class MainActivity : AppCompatActivity() {
         Log.d(tag, "startLiveSession mode=${config.sessionMode} track=${config.trackName}")
         when (config.sessionMode) {
             SessionMode.CAMERA_DIRECT -> cameraDirectController.start(config)
-            SessionMode.TELEMETRY -> ContextCompat.startForegroundService(this, KoruTelemetryService.startIntent(this, configJson))
+            SessionMode.DEVICE_TEST, SessionMode.TELEMETRY ->
+                ContextCompat.startForegroundService(this, KoruTelemetryService.startIntent(this, configJson))
         }
     }
 
@@ -209,7 +210,7 @@ class MainActivity : AppCompatActivity() {
         Log.d(tag, "stopLiveSession mode=$activeSessionMode")
         when (activeSessionMode) {
             SessionMode.CAMERA_DIRECT -> cameraDirectController.stop()
-            SessionMode.TELEMETRY -> dispatchServiceIntent(KoruTelemetryService.stopIntent(this))
+            SessionMode.DEVICE_TEST, SessionMode.TELEMETRY -> dispatchServiceIntent(KoruTelemetryService.stopIntent(this))
             null -> Unit
         }
         activeSessionMode = null
@@ -217,14 +218,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun setActiveCoach(coachId: String) {
         cameraDirectController.setActiveCoach(coachId)
-        if (activeSessionMode == SessionMode.TELEMETRY) {
+        if (activeSessionMode == SessionMode.TELEMETRY || activeSessionMode == SessionMode.DEVICE_TEST) {
             dispatchServiceIntent(KoruTelemetryService.setCoachIntent(this, coachId))
         }
     }
 
     private fun setAudioEnabled(enabled: Boolean) {
         cameraDirectController.setAudioEnabled(enabled)
-        if (activeSessionMode == SessionMode.TELEMETRY) {
+        if (activeSessionMode == SessionMode.TELEMETRY || activeSessionMode == SessionMode.DEVICE_TEST) {
             dispatchServiceIntent(KoruTelemetryService.setAudioIntent(this, enabled))
         }
     }

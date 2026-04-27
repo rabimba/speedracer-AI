@@ -1,6 +1,6 @@
 // ── Telemetry ──────────────────────────────────────────────
 
-export type SessionMode = 'telemetry' | 'camera_direct';
+export type SessionMode = 'telemetry' | 'device_test' | 'camera_direct';
 export type TelemetrySourceKind = 'synthetic' | 'phone_imu_gps' | 'racebox_ble' | 'obd_bluetooth';
 
 export interface TelemetryFrame {

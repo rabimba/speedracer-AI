@@ -157,6 +157,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
               onChange={e => setSessionMode(e.target.value as SessionMode)}
             >
               <option value="telemetry">Telemetry + Camera Fusion</option>
+              <option value="device_test">Device Camera + GPS Test</option>
               <option value="camera_direct">Camera Feedback (Debug)</option>
             </select>
           )}
@@ -186,8 +187,20 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
             onClick={handleConnect}
           >
             {status !== 'disconnected'
-              ? <><Unplug size={14} /> {nativeMode && sessionMode === 'camera_direct' ? 'Stop Feedback' : 'Disconnect'}</>
-              : <><Radio size={14} /> {nativeMode && sessionMode === 'camera_direct' ? 'Start Feedback' : 'Connect'}</>}
+              ? <><Unplug size={14} /> {
+                nativeMode && sessionMode === 'camera_direct'
+                  ? 'Stop Feedback'
+                  : nativeMode && sessionMode === 'device_test'
+                    ? 'Stop Device Test'
+                    : 'Disconnect'
+              }</>
+              : <><Radio size={14} /> {
+                nativeMode && sessionMode === 'camera_direct'
+                  ? 'Start Feedback'
+                  : nativeMode && sessionMode === 'device_test'
+                    ? 'Start Device Test'
+                    : 'Connect'
+              }</>}
           </button>
           <span className={`status-badge status-${status}`}>{status}</span>
           {!nativeMode && (
@@ -207,7 +220,16 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
         {/* Left: Gauges + Track */}
         <div className="live-left">
           <GaugeCluster frame={currentFrame} />
-          <TrackMap track={THUNDERHILL_EAST} currentFrame={currentFrame ?? undefined} />
+          {nativeMode && sessionMode === 'device_test' ? (
+            <div className="panel" style={{ padding: '1rem' }}>
+              <strong>Device Test Mode</strong>
+              <p style={{ marginTop: '0.5rem' }}>
+                Using phone camera, GPS, and IMU only. Track-specific feedforward is disabled in this lane.
+              </p>
+            </div>
+          ) : (
+            <TrackMap track={THUNDERHILL_EAST} currentFrame={currentFrame ?? undefined} />
+          )}
         </div>
 
         {/* Center: Charts */}

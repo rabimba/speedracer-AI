@@ -65,6 +65,7 @@ enum class SkillLevel {
 
 enum class SessionMode {
     TELEMETRY,
+    DEVICE_TEST,
     CAMERA_DIRECT,
 }
 

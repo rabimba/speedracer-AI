@@ -17,7 +17,7 @@ import com.trustableai.koru.runtime.deterministic.TimingGate
 import com.trustableai.koru.runtime.reasoner.OnDeviceReasoner
 
 class KoruRealtimeEngine(
-    track: Track,
+    track: Track?,
     private val phraseCatalog: PhraseCatalog,
     private val reasonerProvider: () -> OnDeviceReasoner,
 ) {
