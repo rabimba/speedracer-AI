@@ -1,0 +1,15 @@
+.DS_Store
+
+# IDE caches
+.idea/caches/
+
+# Android local build state
+pixel-android-app/.gradle/
+pixel-android-app/build/
+pixel-android-app/app/build/
+*.apk
+
+# Local on-device model artifacts
+pixel-android-app/models/**/*.litertlm
+pixel-android-app/models/**/*.partial
+pixel-android-app/models/**/*.task
