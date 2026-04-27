@@ -14,12 +14,19 @@ class DeterministicOnlyReasoner : OnDeviceReasoner {
         return LiveBackendStatus(
             backend = backend,
             state = LiveBackendState.READY,
-            detail = "Deterministic hot/feedforward coaching only",
+            detail = "Deterministic on-device coaching active for hot, feedforward, and edge fallback paths",
             model = null,
             usesOnDeviceModel = false,
-            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD),
+            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
         )
     }
 
-    override suspend fun reason(window: EdgeReasoningWindow): ReasonerDecision? = null
+    override suspend fun reason(window: EdgeReasoningWindow): ReasonerDecision {
+        return structuredFallbackDecision(
+            window = window,
+            backend = backend,
+            phraseId = "deterministic-edge/${window.triggerId}",
+            confidence = 0.62,
+        )
+    }
 }

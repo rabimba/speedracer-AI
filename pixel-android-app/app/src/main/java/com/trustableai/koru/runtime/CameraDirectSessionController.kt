@@ -134,6 +134,10 @@ class CameraDirectSessionController(context: Context) {
                 sessionRecorder.recordFrame(frame)
                 KoruSessionBus.tryEmitFrame(frame)
                 currentEngine.processFrame(frame).forEach { decision ->
+                    Log.d(
+                        tag,
+                        "Live decision path=${decision.path.bridgeValue()} backend=${decision.backend.bridgeValue()} text=${decision.text}",
+                    )
                     sessionRecorder.recordDecision(decision)
                     KoruSessionBus.tryEmitDecision(decision)
                     if (audioEnabled) {
