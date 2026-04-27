@@ -11,6 +11,7 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 
 ## Table of Contents
 
+- [Current Status](#current-status)
 - [Roadmap](#roadmap)
   - [Data Reasoning](#data-reasoning)
   - [Edge / Telemetry](#edge--telemetry)
@@ -29,6 +30,38 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 
 ---
 
+## Current Status
+
+The repo now supports both the original browser flow and a native Android on-device flow.
+
+### Implemented Today
+
+- Native Android host app with a WebView bridge for the React UI.
+- CameraX-based live camera lane with lightweight on-device vision feature extraction.
+- Three Android live-session modes:
+  - `Telemetry + Camera Fusion`
+  - `Device Camera + GPS Test`
+  - `Camera Feedback (Debug)`
+- Selectable telemetry source abstraction in Android.
+- First real native telemetry source: `phone_imu_gps`.
+- Always-on camera fusion for telemetry sessions, so live telemetry frames can carry vision features.
+- Realtime on-device coaching through the native runtime, recorded session artifacts, and replay loading.
+
+### Works Now
+
+- Browser SSE flow still works for mock telemetry and replay.
+- Native Android live sessions start, stop, speak coaching cues, and save recorded sessions.
+- `Telemetry + Camera Fusion` runs on device using phone GPS/IMU plus camera-derived vision features.
+- `Device Camera + GPS Test` runs a trackless device-only validation lane for realtime performance testing.
+- `Camera Feedback (Debug)` runs a vision-only debug lane to validate the camera pathway independently.
+
+### Still In Progress
+
+- RaceBox BLE telemetry ingestion.
+- OBD Bluetooth telemetry ingestion.
+- Rich racing semantics from vision beyond low-level motion and balance features.
+- Production-grade race coaching quality from fused hardware telemetry.
+
 ## Roadmap
 
 ### Data Reasoning
@@ -41,6 +74,11 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 
 ### Edge / Telemetry
 
+- [x] **Native Android live host** — WebView bridge, on-device audio path, recorded-session pipeline, and native live backend status reporting.
+- [x] **Camera lane** — CameraX preview + analyzer, lightweight vision features, and camera-direct realtime feedback loop.
+- [x] **Selectable Android live modes** — `Telemetry + Camera Fusion`, `Device Camera + GPS Test`, and `Camera Feedback (Debug)` now route through the native Android host.
+- [x] **Selectable telemetry source abstraction** — Native sessions can request `synthetic`, `phone_imu_gps`, `racebox_ble`, or `obd_bluetooth` without changing the reasoning engine contract.
+- [x] **Phone IMU + GPS telemetry source** — First real native source implemented for on-device fused testing without external hardware.
 - [ ] **Data fusion and time sync** — Implement cross-correlation calibration (hard throttle blip → RPM spike vs IMU G spike) to align RaceBox GPS epoch timestamps with Android SystemClock. Expected offset: 20-80ms. Upsample OBD channels (5-8Hz) to RaceBox rate (25Hz) via linear interpolation (continuous) and zero-order hold (discrete).
 - [ ] **Pre-rendered MP3s for safety-critical actions** — Record or source audio clips for BRAKE, OVERSTEER_RECOVERY, COMMIT per coach persona. The audioService already supports AudioContext pre-caching; this needs the actual MP3 files and integration to bypass TTS latency for time-critical calls.
 - [ ] **Bluetooth telemetry bridge** — RaceBox Mini connects via BLE 5.2 (7.5-15ms latency at high priority). OBDLink MX+ connects via Bluetooth Classic 3.0. Both streams must run in an Android foreground Service with persistent notification. Call `requestConnectionPriority(CONNECTION_PRIORITY_HIGH)` on RaceBox immediately after connecting.
@@ -66,7 +104,7 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 - [ ] **Track auto-detection** — Detect corners on unknown tracks from heading change rate alone, without pre-loaded track data. Enables track-agnostic coaching for any track day.
 - [ ] **Corner-specific coaching** — Integrate real coach knowledge (T-Rod session notes, Ross Bentley curriculum) into feedforward path for known tracks. For unknown tracks, determine whether telemetry-only analysis is sufficient or human coaching input is required.
 - [ ] **Two-way conversational dialog** — Enable real-time back-and-forth between the driver and the AI coach. This is the pinnacle for advanced drivers, where coaching becomes a discussion about minute nuances, setup adjustments, and driving strategy rather than one-way instructions.
-- [ ] **Native Android app** — Move from PWA to a native Android application on the Pixel 10. Native access to Bluetooth/USB for direct hardware communication, background audio, and on-device Gemma 4 inference without browser limitations.
+- [ ] **Productionize the native Android app** — Replace phone-only inferred telemetry with RaceBox/OBD/CAN-grade feeds, add richer vision semantics, and harden the on-device runtime for field use.
 
 ---
 
@@ -120,7 +158,12 @@ Total:                      ~200 - 425 ms
 
 ## Architecture
 
-Two components work together: a **telemetry server** streams GPS/vehicle data over SSE, and a **web application** processes that stream through a split-brain coaching engine that decides what to say and when.
+The repo now supports two execution surfaces:
+
+- a **browser application** that consumes SSE and replay files
+- a **native Android host** that runs on-device camera, phone telemetry, and fused coaching paths
+
+Both surfaces use the same split-brain coaching concepts, but the Android path can now run local realtime testing without requiring the browser SSE server.
 
 ```
                          ┌─────────────────────────────────────────────┐
@@ -214,7 +257,27 @@ npm run dev
 
 Open `http://localhost:5173`. Click **Open Dashboard** to enter the app.
 
-### 3. Configure Gemini (optional)
+### 3. Run the Native Android App (optional but recommended for on-device testing)
+
+Prepare the Android bundle and on-device model:
+
+```bash
+cd koru-application
+npm run pixel:e2e:prepare
+```
+
+Then:
+
+1. Open [pixel-android-app](/Users/rkaranjai/Documents/trustable-ai-codelab/pixel-android-app) in Android Studio.
+2. Connect a Pixel device with USB debugging enabled.
+3. Run the `app` module.
+4. Open `Live Session` in the app.
+5. Choose one of:
+   - `Telemetry + Camera Fusion`
+   - `Device Camera + GPS Test`
+   - `Camera Feedback (Debug)`
+
+### 4. Configure Gemini (optional)
 
 Click the gear icon in the navbar and paste your Gemini API key. This enables:
 - Cold path cloud coaching (Gemini Flash)
@@ -223,11 +286,14 @@ Click the gear icon in the navbar and paste your Gemini API key. This enables:
 
 The hot path and feedforward path work without an API key.
 
-### 4. Run a Session
+### 5. Run a Session
 
 | Mode | Steps |
 |------|-------|
-| **Live** | Go to Live > paste SSE endpoint (`http://localhost:8000/events`) > pick a coach > drive |
+| **Browser Live** | Go to Live > paste SSE endpoint (`http://localhost:8000/events`) > pick a coach > drive |
+| **Android Telemetry + Camera Fusion** | Open Live Session on device > choose `Telemetry + Camera Fusion` > select `Phone IMU + GPS` or another source > grant permissions > press `Connect` |
+| **Android Device Camera + GPS Test** | Open Live Session on device > choose `Device Camera + GPS Test` > grant permissions > press `Start Device Test` |
+| **Android Camera Feedback (Debug)** | Open Live Session on device > choose `Camera Feedback (Debug)` > grant camera permission > press `Start Feedback` |
 | **Replay** | Go to Replay > upload a CSV from your datalogger > scrub with synced charts |
 | **Analysis** | Go to Analysis > upload two CSVs > click Compare Laps for sector-by-sector AI breakdown |
 
@@ -306,8 +372,11 @@ koru-application/
       Analysis.tsx           # Two-lap AI comparison
     services/
       audioService.ts        # AudioContext pre-caching + Web Speech API fallback
+      androidBridge.ts       # Android WebView bridge bindings
       coachingService.ts     # Split-brain coaching engine (hot/cold/feedforward)
       geminiService.ts       # Gemini REST API wrapper
+      liveBackendAdapter.ts  # Browser vs Android live backend adapter
+      recordedSessionStore.ts # Latest saved native session cache for replay
       telemetryStreamService.ts  # SSE client, CSV/JSON file replay, virtual sensors
     utils/
       audioUtils.ts          # Audio helper utilities
@@ -341,6 +410,20 @@ koru-application/
                                       AudioService (TTS)
 ```
 
+### Native Android Live Modes
+
+The same Live Session page can also be hosted inside the Android app and routed into native execution paths:
+
+| Mode | Purpose | Current Source |
+|------|---------|----------------|
+| `Telemetry + Camera Fusion` | Main on-device fused lane | `phone_imu_gps`, `synthetic`, future BLE/OBD |
+| `Device Camera + GPS Test` | Trackless device-only performance and latency testing | `phone_imu_gps` |
+| `Camera Feedback (Debug)` | Vision-only debug path | CameraX analyzer only |
+
+In the fused Android modes, the runtime path is:
+
+`TelemetrySource -> TelemetryFusionEngine(+vision) -> TelemetryFrame -> KoruRealtimeEngine -> native audio + recorder`
+
 ---
 
 ## Tech Stack
@@ -350,7 +433,9 @@ koru-application/
 | Frontend | React 19 + TypeScript + Vite 8 |
 | Styling | Tailwind CSS 4 |
 | Charts | Recharts |
+| Native Android | Kotlin + WebView + CameraX + foreground service |
 | AI | Gemini 2.0 Flash via `@google/genai` |
+| On-device inference | LiteRT-LM / deterministic fallback |
 | Audio | Web Speech API + Gemini TTS (`gemini-2.5-pro-preview-tts`) |
 | Track rendering | Canvas API |
 | Telemetry server | Python FastAPI + SSE |

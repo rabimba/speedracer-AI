@@ -1,5 +1,13 @@
 # Pixel 10 E2E Testing
 
+This Android app now supports three native live-session lanes:
+
+- `Telemetry + Camera Fusion`
+- `Device Camera + GPS Test`
+- `Camera Feedback (Debug)`
+
+The first two run through the foreground-service telemetry pathway. The debug lane uses the activity-local camera-direct pathway.
+
 ## Model choice
 
 For the native Android backend in this repo, use a native LiteRT-LM artifact such as:
@@ -42,22 +50,50 @@ npm run pixel:e2e:prepare
 1. Open [pixel-android-app](/Users/rkaranjai/Documents/trustable-ai-codelab/pixel-android-app) in Android Studio.
 2. Connect the Pixel 10 with USB debugging enabled.
 3. Run the `app` module to the device.
-4. Open `Live Session` and press `Connect`.
+4. Open `Live Session`.
+5. Choose one of:
+   - `Telemetry + Camera Fusion`
+   - `Device Camera + GPS Test`
+   - `Camera Feedback (Debug)`
+6. Grant camera and/or location permissions when prompted.
+7. Start the selected session.
 
 ## What end-to-end means in the current branch
 
 The complete flow you can test now is:
 
-1. native foreground service starts
-2. synthetic telemetry frames are generated
-3. deterministic engine produces hot/feedforward decisions
-4. LiteRT-LM model asset is discovered on-device
-5. backend selection chooses `litertlm` when the runtime is available
-6. native bridge sends frames and decisions into the WebView UI
-7. native TTS plays coaching audio
+1. the React UI is loaded inside the Android WebView host
+2. the native bridge starts the selected Android live session mode
+3. the native runtime selects a telemetry path:
+   - `phone_imu_gps`
+   - `synthetic`
+   - future `racebox_ble` / `obd_bluetooth`
+4. CameraX captures live camera frames and extracts lightweight vision features
+5. telemetry frames are fused with the latest vision snapshot when the session mode uses telemetry
+6. the on-device runtime chooses `litertlm` when available, otherwise deterministic fallback
+7. native bridge sends frames and decisions into the WebView UI
+8. native TTS plays coaching audio
+9. the recorded session artifact is saved for replay and analysis
 
 ## Current limitations
 
+- `phone_imu_gps` is the first real native telemetry source, but it still infers driving intent from phone sensors and GPS.
 - RaceBox BLE and OBD ingestion are still stubbed.
+- `Camera Feedback (Debug)` is useful for validating the camera lane, but it is not race-grade coaching by itself.
+- Vision features are still low-level and do not yet encode track edges, apexes, or brake markers.
 - AICore is still scaffolded.
 - LiteRT-LM model push is automated, but actual runtime validation still depends on the device having a compatible native inference runtime and a successful app build from Android Studio.
+
+## Recommended test flows
+
+### 1. Device-only fused testing
+
+Use `Device Camera + GPS Test` when you want to validate end-to-end realtime behavior on the phone without a baked track path.
+
+### 2. Main fused Android lane
+
+Use `Telemetry + Camera Fusion` with `Phone IMU + GPS` as the current real on-device telemetry source.
+
+### 3. Camera lane debugging
+
+Use `Camera Feedback (Debug)` to validate camera ingestion, vision features, and on-device audio independently of telemetry.
