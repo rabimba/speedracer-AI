@@ -29,6 +29,7 @@ object BridgePayloads {
                     .put("gear", frame.gear)
                     .put("distance", frame.distanceMeters)
                     .put("sourceMode", frame.sourceMode.bridgeValue())
+                    .put("telemetrySource", frame.telemetrySource?.bridgeValue())
                     .put(
                         "vision",
                         frame.vision?.let { vision ->
@@ -118,6 +119,7 @@ object BridgePayloads {
             .put("gear", frame.gear)
             .put("distance", frame.distanceMeters)
             .put("sourceMode", frame.sourceMode.bridgeValue())
+            .put("telemetrySource", frame.telemetrySource?.bridgeValue())
             .put(
                 "vision",
                 frame.vision?.let { vision ->

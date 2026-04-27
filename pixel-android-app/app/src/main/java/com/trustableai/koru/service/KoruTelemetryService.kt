@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.trustableai.koru.R
 import com.trustableai.koru.audio.CoachAudioDispatcher
@@ -40,9 +41,10 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 class KoruTelemetryService : Service() {
+    private val tag = "KoruTelemetryService"
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val fusionEngine = TelemetryFusionEngine()
-    private val telemetrySource: TelemetrySource = SyntheticTrackSource()
+    private var activeTelemetrySource: TelemetrySource = SyntheticTrackSource()
 
     private lateinit var audioDispatcher: CoachAudioDispatcher
     private lateinit var phraseCatalog: PhraseCatalog
@@ -65,9 +67,7 @@ class KoruTelemetryService : Service() {
         modelAssetManager = ModelAssetManager(this)
         runtimeManager = EdgeRuntimeManager(this, modelAssetManager, phraseCatalog, activeCoachId)
         sessionRecorder = RecordedSessionRecorder(this)
-        engine = KoruRealtimeEngine(TrackCatalog.thunderhillEast, phraseCatalog) {
-            runtimeManager.currentReasoner()
-        }
+        engine = createRealtimeEngine(TrackCatalog.thunderhillEast)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -121,15 +121,29 @@ class KoruTelemetryService : Service() {
         audioEnabled = config.audioEnabled
         audioDispatcher.setEnabled(audioEnabled)
         phraseCatalog.ensureLoaded()
-        engine.setActiveCoach(activeCoachId)
         runtimeManager.updateCoach(activeCoachId)
+        val track = TrackCatalog.fromName(config.trackName)
+        engine = createRealtimeEngine(track)
+        engine.setActiveCoach(activeCoachId)
+        val telemetrySelection = when (config.sessionMode) {
+            SessionMode.CAMERA_DIRECT -> null
+            SessionMode.TELEMETRY -> TelemetrySourceFactory.select(applicationContext, config.telemetrySource)
+        }
+        activeTelemetrySource = telemetrySelection?.source ?: SyntheticTrackSource()
+        if (config.sessionMode == SessionMode.TELEMETRY && telemetrySelection != null) {
+            Log.d(
+                tag,
+                "Telemetry session requested=${telemetrySelection.requested.bridgeValue()} active=${telemetrySelection.active.bridgeValue()} fallback=${telemetrySelection.isFallback}",
+            )
+        }
 
         val startingStatus = LiveBackendStatus(
             backend = RuntimeBackend.DETERMINISTIC,
             state = LiveBackendState.STARTING,
             detail = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Starting direct camera reasoning session on device"
-                SessionMode.TELEMETRY -> "Starting foreground telemetry service and selecting edge runtime backend"
+                SessionMode.TELEMETRY -> telemetrySelection?.detail
+                    ?: "Starting telemetry service with live camera fusion enabled"
             },
             usesOnDeviceModel = false,
             supportedPaths = when (config.sessionMode) {
@@ -144,25 +158,40 @@ class KoruTelemetryService : Service() {
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> selectedBackend.copy(
                     state = LiveBackendState.STARTING,
-                    detail = "Edge runtime warmed. Waiting for camera lane frames",
-                    supportedPaths = listOf(CoachingPath.EDGE),
-                )
-                SessionMode.TELEMETRY -> selectedBackend
+                        detail = "Edge runtime warmed. Waiting for camera lane frames",
+                        supportedPaths = listOf(CoachingPath.EDGE),
+                    )
+                SessionMode.TELEMETRY -> {
+                    val sourceDetail = telemetrySelection?.detail
+                        ?: "Telemetry source not selected. Using fused camera vision with telemetry frames."
+                    selectedBackend.copy(
+                        state = when {
+                            telemetrySelection?.isFallback == true &&
+                                selectedBackend.state == LiveBackendState.READY -> LiveBackendState.DEGRADED
+                            telemetrySelection?.isFallback == true &&
+                                selectedBackend.state == LiveBackendState.STARTING -> LiveBackendState.DEGRADED
+                            else -> selectedBackend.state
+                        },
+                        detail = "${selectedBackend.detail} $sourceDetail",
+                    )
+                }
             },
         )
 
-        val track = TrackCatalog.fromName(config.trackName)
         sessionRecorder.start(config.sessionMode, track.name, activeCoachId)
         updateNotification(
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Direct camera feedback active (${selectedBackend.backend.bridgeValue()})"
-                SessionMode.TELEMETRY -> selectedBackend.detail
+                SessionMode.TELEMETRY -> {
+                    val activeSourceLabel = telemetrySelection?.active?.bridgeValue() ?: "synthetic"
+                    "Telemetry ${activeSourceLabel} + camera fusion active (${selectedBackend.backend.bridgeValue()})"
+                }
             },
         )
         sessionJob = serviceScope.launch {
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> runCameraDirectLoop(selectedBackend)
-                SessionMode.TELEMETRY -> runTelemetryLoop(track)
+                SessionMode.TELEMETRY -> runTelemetryLoop(track, telemetrySelection ?: TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.SYNTHETIC))
             }
         }
     }
@@ -189,15 +218,20 @@ class KoruTelemetryService : Service() {
     private suspend fun stopActiveLoop() {
         sessionJob?.cancelAndJoin()
         sessionJob = null
-        telemetrySource.stop()
+        activeTelemetrySource.stop()
     }
 
-    private suspend fun runTelemetryLoop(track: com.trustableai.koru.model.Track) {
-        telemetrySource.start()
+    private suspend fun runTelemetryLoop(
+        track: com.trustableai.koru.model.Track,
+        telemetrySelection: TelemetrySourceSelection,
+    ) {
+        activeTelemetrySource = telemetrySelection.source
+        activeTelemetrySource.start()
+        Log.d(tag, "Telemetry loop started source=${telemetrySelection.active.bridgeValue()} cameraFusion=true")
         var step = 0
         while (currentCoroutineContext().isActive) {
             val elapsedSeconds = step / 10.0
-            val rawFrame = telemetrySource.nextFrame(step, track, elapsedSeconds)
+            val rawFrame = activeTelemetrySource.nextFrame(step, track, elapsedSeconds)
             val frame = fusionEngine.fuse(rawFrame, VisionFeatureStore.latest.value)
             emitFrameAndDecisions(frame)
             step += 1
@@ -259,6 +293,10 @@ class KoruTelemetryService : Service() {
         sessionRecorder.recordFrame(frame)
         KoruSessionBus.tryEmitFrame(frame)
         engine.processFrame(frame).forEach { decision ->
+            Log.d(
+                tag,
+                "Live decision source=${frame.telemetrySource?.bridgeValue() ?: "none"} path=${decision.path.bridgeValue()} backend=${decision.backend.bridgeValue()} text=${decision.text}",
+            )
             sessionRecorder.recordDecision(decision)
             KoruSessionBus.tryEmitDecision(decision)
             if (audioEnabled) {
@@ -271,6 +309,12 @@ class KoruTelemetryService : Service() {
         val artifact = sessionRecorder.finish() ?: return null
         KoruSessionBus.tryEmitSavedSession(artifact)
         return artifact
+    }
+
+    private fun createRealtimeEngine(track: com.trustableai.koru.model.Track): KoruRealtimeEngine {
+        return KoruRealtimeEngine(track, phraseCatalog) {
+            runtimeManager.currentReasoner()
+        }
     }
 
     private fun createNotificationChannel() {

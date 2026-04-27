@@ -3,6 +3,7 @@ import type {
   LiveBackendStatus,
   RecordedSessionArtifact,
   SessionMode,
+  TelemetrySourceKind,
   TelemetryFrame,
 } from '../types';
 
@@ -11,6 +12,7 @@ export interface NativeLiveSessionConfig {
   audioEnabled: boolean;
   trackName: string;
   sessionMode?: SessionMode;
+  telemetrySource?: TelemetrySourceKind;
   sourceUrl?: string;
 }
 

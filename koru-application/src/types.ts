@@ -1,6 +1,7 @@
 // ── Telemetry ──────────────────────────────────────────────
 
 export type SessionMode = 'telemetry' | 'camera_direct';
+export type TelemetrySourceKind = 'synthetic' | 'phone_imu_gps' | 'racebox_ble' | 'obd_bluetooth';
 
 export interface TelemetryFrame {
   time: number;          // seconds from session start
@@ -17,6 +18,7 @@ export interface TelemetryFrame {
   gear?: number;
   distance?: number;     // cumulative meters
   sourceMode?: SessionMode;
+  telemetrySource?: TelemetrySourceKind;
   vision?: VisionFeatureSnapshot;
 }
 

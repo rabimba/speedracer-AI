@@ -9,6 +9,7 @@ import type {
   LiveBackendStatus,
   SessionMode,
   TelemetryFrame,
+  TelemetrySourceKind,
   SSEConnectionStatus,
   TTSProvider,
 } from '../types';
@@ -30,8 +31,9 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [sseUrl, setSseUrl] = useState('');
   const [backendStatus, setBackendStatus] = useState<LiveBackendStatus | null>(null);
-  const [nativeMode, setNativeMode] = useState(hasAndroidBridge());
-  const [sessionMode, setSessionMode] = useState<SessionMode>('camera_direct');
+  const [nativeMode, setNativeMode] = useState(() => hasAndroidBridge());
+  const [sessionMode, setSessionMode] = useState<SessionMode>('telemetry');
+  const [telemetrySource, setTelemetrySource] = useState<TelemetrySourceKind>('phone_imu_gps');
 
   const adapterRef = useRef<LiveBackendAdapter | null>(null);
   const audioEnabledRef = useRef(audioEnabled);
@@ -103,7 +105,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   }, [apiKey]);
 
   useEffect(() => {
-    if (!hasAndroidBridge()) return;
+    if (!nativeMode) return;
 
     return subscribeAndroidBridge((event) => {
       if (event.type !== 'session_saved') return;
@@ -113,14 +115,14 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
         {
           id: `saved-${event.session.id}`,
           path: 'edge',
-          text: `Saved ${event.session.summary.frameCount} camera frames for replay analysis.`,
+          text: `Saved ${event.session.summary.frameCount} fused frames for replay analysis.`,
           timestamp: Date.now(),
           backend: 'deterministic',
           priority: 2,
         },
       ]);
     });
-  }, []);
+  }, [nativeMode]);
 
   const handleConnect = useCallback(() => {
     if (status !== 'disconnected') {
@@ -128,9 +130,13 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
     } else {
       setFrames([]);
       setMessages([]);
-      adapterRef.current?.connect(sseUrl.trim(), nativeMode ? sessionMode : 'telemetry');
+      adapterRef.current?.connect(
+        sseUrl.trim(),
+        nativeMode ? sessionMode : 'telemetry',
+        telemetrySource,
+      );
     }
-  }, [nativeMode, sessionMode, sseUrl, status]);
+  }, [nativeMode, sessionMode, sseUrl, status, telemetrySource]);
 
   const handleCoachChange = useCallback((id: string) => {
     setActiveCoach(id);
@@ -150,14 +156,26 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
               value={sessionMode}
               onChange={e => setSessionMode(e.target.value as SessionMode)}
             >
-              <option value="camera_direct">Camera Feedback</option>
-              <option value="telemetry">Telemetry Loop</option>
+              <option value="telemetry">Telemetry + Camera Fusion</option>
+              <option value="camera_direct">Camera Feedback (Debug)</option>
             </select>
           )}
-          {(!nativeMode || sessionMode !== 'camera_direct') && (
+          {nativeMode && sessionMode === 'telemetry' && (
+            <select
+              className="tts-select"
+              value={telemetrySource}
+              onChange={e => setTelemetrySource(e.target.value as TelemetrySourceKind)}
+            >
+              <option value="synthetic">Synthetic Telemetry</option>
+              <option value="phone_imu_gps">Phone IMU + GPS</option>
+              <option value="racebox_ble">RaceBox BLE</option>
+              <option value="obd_bluetooth">OBD Bluetooth</option>
+            </select>
+          )}
+          {!nativeMode && (
             <input
               type="text"
-              placeholder={nativeMode ? 'Optional mock telemetry override' : 'SSE URL or .txt file path'}
+              placeholder="SSE URL or .txt file path"
               value={sseUrl}
               onChange={e => setSseUrl(e.target.value)}
               className="sse-input"

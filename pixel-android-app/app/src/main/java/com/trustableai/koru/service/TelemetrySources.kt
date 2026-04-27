@@ -1,6 +1,8 @@
 package com.trustableai.koru.service
 
+import android.content.Context
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.model.Track
 import com.trustableai.koru.model.VisionFeatureSnapshot
 import kotlin.math.PI
@@ -9,6 +11,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 interface TelemetrySource {
+    val kind: TelemetrySourceKind
+
     suspend fun start()
 
     suspend fun stop()
@@ -17,6 +21,8 @@ interface TelemetrySource {
 }
 
 class RaceBoxBleSource : TelemetrySource {
+    override val kind: TelemetrySourceKind = TelemetrySourceKind.RACEBOX_BLE
+
     override suspend fun start() = Unit
 
     override suspend fun stop() = Unit
@@ -27,6 +33,8 @@ class RaceBoxBleSource : TelemetrySource {
 }
 
 class ObdBluetoothSource : TelemetrySource {
+    override val kind: TelemetrySourceKind = TelemetrySourceKind.OBD_BLUETOOTH
+
     override suspend fun start() = Unit
 
     override suspend fun stop() = Unit
@@ -37,6 +45,8 @@ class ObdBluetoothSource : TelemetrySource {
 }
 
 class SyntheticTrackSource : TelemetrySource {
+    override val kind: TelemetrySourceKind = TelemetrySourceKind.SYNTHETIC
+
     override suspend fun start() = Unit
 
     override suspend fun stop() = Unit
@@ -107,7 +117,68 @@ class SyntheticTrackSource : TelemetrySource {
                 else -> 2
             },
             distanceMeters = elapsedSeconds * (speedMph * 0.44704),
+            telemetrySource = kind,
         )
+    }
+}
+
+data class TelemetrySourceSelection(
+    val requested: TelemetrySourceKind,
+    val active: TelemetrySourceKind,
+    val source: TelemetrySource,
+    val detail: String,
+    val isFallback: Boolean,
+)
+
+object TelemetrySourceFactory {
+    fun select(context: Context, requested: TelemetrySourceKind): TelemetrySourceSelection {
+        return when (requested) {
+            TelemetrySourceKind.SYNTHETIC ->
+                TelemetrySourceSelection(
+                    requested = requested,
+                    active = TelemetrySourceKind.SYNTHETIC,
+                    source = SyntheticTrackSource(),
+                    detail = "Using synthetic telemetry with live camera fusion enabled.",
+                    isFallback = false,
+                )
+
+            TelemetrySourceKind.PHONE_IMU_GPS ->
+                if (PhoneImuGpsSource.hasFineLocationPermission(context)) {
+                    TelemetrySourceSelection(
+                        requested = requested,
+                        active = TelemetrySourceKind.PHONE_IMU_GPS,
+                        source = PhoneImuGpsSource(context),
+                        detail = "Using phone GPS + IMU telemetry with live camera fusion enabled.",
+                        isFallback = false,
+                    )
+                } else {
+                    TelemetrySourceSelection(
+                        requested = requested,
+                        active = TelemetrySourceKind.SYNTHETIC,
+                        source = SyntheticTrackSource(),
+                        detail = "Phone IMU + GPS requires precise location permission. Falling back to synthetic telemetry while keeping camera fusion active.",
+                        isFallback = true,
+                    )
+                }
+
+            TelemetrySourceKind.RACEBOX_BLE ->
+                TelemetrySourceSelection(
+                    requested = requested,
+                    active = TelemetrySourceKind.SYNTHETIC,
+                    source = SyntheticTrackSource(),
+                    detail = "RaceBox BLE source is not implemented yet. Falling back to synthetic telemetry while keeping camera fusion active.",
+                    isFallback = true,
+                )
+
+            TelemetrySourceKind.OBD_BLUETOOTH ->
+                TelemetrySourceSelection(
+                    requested = requested,
+                    active = TelemetrySourceKind.SYNTHETIC,
+                    source = SyntheticTrackSource(),
+                    detail = "OBD Bluetooth source is not implemented yet. Falling back to synthetic telemetry while keeping camera fusion active.",
+                    isFallback = true,
+                )
+        }
     }
 }
 
@@ -119,6 +190,7 @@ class TelemetryFusionEngine {
             throttle = frame.throttle.coerceIn(0.0, 100.0),
             brake = frame.brake.coerceIn(0.0, 100.0),
             speedMph = abs(frame.speedMph),
+            telemetrySource = frame.telemetrySource,
             vision = vision,
         )
     }

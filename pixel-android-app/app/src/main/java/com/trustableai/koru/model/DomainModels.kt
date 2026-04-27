@@ -68,6 +68,13 @@ enum class SessionMode {
     CAMERA_DIRECT,
 }
 
+enum class TelemetrySourceKind {
+    SYNTHETIC,
+    PHONE_IMU_GPS,
+    RACEBOX_BLE,
+    OBD_BLUETOOTH,
+}
+
 data class TelemetryFrame(
     val timeSeconds: Double,
     val latitude: Double,
@@ -83,6 +90,7 @@ data class TelemetryFrame(
     val gear: Int? = null,
     val distanceMeters: Double? = null,
     val sourceMode: SessionMode = SessionMode.TELEMETRY,
+    val telemetrySource: TelemetrySourceKind? = null,
     val vision: VisionFeatureSnapshot? = null,
 )
 
@@ -208,3 +216,5 @@ fun RuntimeBackend.bridgeValue(): String = name.lowercase()
 fun LiveBackendState.bridgeValue(): String = name.lowercase()
 
 fun SessionMode.bridgeValue(): String = name.lowercase()
+
+fun TelemetrySourceKind.bridgeValue(): String = name.lowercase()

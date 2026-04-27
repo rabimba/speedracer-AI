@@ -3,6 +3,7 @@ import type {
   LiveBackendStatus,
   SessionMode,
   SSEConnectionStatus,
+  TelemetrySourceKind,
   TelemetryFrame,
   Track,
 } from '../types';
@@ -129,7 +130,11 @@ export class LiveBackendAdapter {
     return () => this.backendListeners.delete(listener);
   }
 
-  connect(sourceUrl?: string, sessionMode: SessionMode = 'telemetry'): void {
+  connect(
+    sourceUrl?: string,
+    sessionMode: SessionMode = 'telemetry',
+    telemetrySource: TelemetrySourceKind = 'phone_imu_gps',
+  ): void {
     if (this.nativeMode) {
       this.statusListeners.forEach((listener) => listener('connecting'));
       startAndroidLiveSession({
@@ -137,6 +142,7 @@ export class LiveBackendAdapter {
         audioEnabled: this.audioEnabled,
         trackName: this.options.track.name,
         sessionMode,
+        telemetrySource,
         sourceUrl: sourceUrl?.trim() || undefined,
       });
       return;

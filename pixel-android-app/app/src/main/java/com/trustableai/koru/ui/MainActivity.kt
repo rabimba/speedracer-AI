@@ -1,6 +1,7 @@
 package com.trustableai.koru.ui
 
 import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -30,7 +31,12 @@ import com.trustableai.koru.camera.CameraLaneAnalyzer
 import com.trustableai.koru.camera.VisionFeatureStore
 import com.trustableai.koru.bridge.KoruJsBridge
 import com.trustableai.koru.bridge.WebViewEventDispatcher
+import com.trustableai.koru.model.CoachingPath
+import com.trustableai.koru.model.LiveBackendState
+import com.trustableai.koru.model.LiveBackendStatus
+import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionMode
+import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.runtime.CameraDirectSessionController
 import com.trustableai.koru.runtime.KoruSessionBus
 import com.trustableai.koru.runtime.LiveSessionConfig
@@ -51,6 +57,25 @@ class MainActivity : AppCompatActivity() {
                 updateCameraStatus(getString(R.string.camera_lane_denied))
             }
         }
+    private val locationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val pendingConfigJson = pendingLocationConfigJson
+            pendingLocationConfigJson = null
+            if (granted && pendingConfigJson != null) {
+                Log.d(tag, "Location permission granted; resuming telemetry session start")
+                startLiveSession(pendingConfigJson)
+            } else if (!granted) {
+                KoruSessionBus.tryEmitStatus(
+                    LiveBackendStatus(
+                        backend = RuntimeBackend.DETERMINISTIC,
+                        state = LiveBackendState.ERROR,
+                        detail = "Phone IMU + GPS requires precise location permission.",
+                        usesOnDeviceModel = false,
+                        supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                    ),
+                )
+            }
+        }
     private lateinit var assetLoader: WebViewAssetLoader
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var cameraPreview: PreviewView
@@ -59,6 +84,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dispatcher: WebViewEventDispatcher
     private lateinit var cameraDirectController: CameraDirectSessionController
     private var activeSessionMode: SessionMode? = null
+    private var pendingLocationConfigJson: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -153,6 +179,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun startLiveSession(configJson: String) {
         val config = LiveSessionConfig.fromJson(configJson)
+        if (
+            config.sessionMode == SessionMode.TELEMETRY &&
+            config.telemetrySource == TelemetrySourceKind.PHONE_IMU_GPS &&
+            !hasFineLocationPermission()
+        ) {
+            pendingLocationConfigJson = configJson
+            KoruSessionBus.tryEmitStatus(
+                LiveBackendStatus(
+                    backend = RuntimeBackend.DETERMINISTIC,
+                    state = LiveBackendState.STARTING,
+                    detail = "Requesting location permission for phone IMU + GPS telemetry.",
+                    usesOnDeviceModel = false,
+                    supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                ),
+            )
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return
+        }
         activeSessionMode = config.sessionMode
         Log.d(tag, "startLiveSession mode=${config.sessionMode} track=${config.trackName}")
         when (config.sessionMode) {
@@ -195,22 +239,27 @@ class MainActivity : AppCompatActivity() {
 
     private fun ensureCameraPermission() {
         when {
-            ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
                 PackageManager.PERMISSION_GRANTED -> {
                 updateCameraStatus(getString(R.string.camera_lane_ready))
                 bindCameraLane()
             }
 
-            shouldShowRequestPermissionRationale(android.Manifest.permission.CAMERA) -> {
+            shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) -> {
                 updateCameraStatus(getString(R.string.camera_lane_waiting))
-                cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
 
             else -> {
                 updateCameraStatus(getString(R.string.camera_lane_waiting))
-                cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
         }
+    }
+
+    private fun hasFineLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
     }
 
     private fun bindCameraLane() {

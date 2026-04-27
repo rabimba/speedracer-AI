@@ -1,6 +1,7 @@
 package com.trustableai.koru.runtime
 
 import com.trustableai.koru.model.SessionMode
+import com.trustableai.koru.model.TelemetrySourceKind
 import org.json.JSONObject
 
 data class LiveSessionConfig(
@@ -8,6 +9,7 @@ data class LiveSessionConfig(
     val audioEnabled: Boolean,
     val trackName: String,
     val sessionMode: SessionMode,
+    val telemetrySource: TelemetrySourceKind,
     val sourceUrl: String?,
 ) {
     companion object {
@@ -20,6 +22,12 @@ data class LiveSessionConfig(
                 sessionMode = when (root.optString("sessionMode", "telemetry")) {
                     "camera_direct" -> SessionMode.CAMERA_DIRECT
                     else -> SessionMode.TELEMETRY
+                },
+                telemetrySource = when (root.optString("telemetrySource", "synthetic")) {
+                    "phone_imu_gps" -> TelemetrySourceKind.PHONE_IMU_GPS
+                    "racebox_ble" -> TelemetrySourceKind.RACEBOX_BLE
+                    "obd_bluetooth" -> TelemetrySourceKind.OBD_BLUETOOTH
+                    else -> TelemetrySourceKind.SYNTHETIC
                 },
                 sourceUrl = root.optString("sourceUrl").ifBlank { null },
             )
