@@ -79,6 +79,8 @@ The repo now supports both the original browser flow and a native Android on-dev
 - [x] **Selectable Android live modes** — `Telemetry + Camera Fusion`, `Device Camera + GPS Test`, and `Camera Feedback (Debug)` now route through the native Android host.
 - [x] **Selectable telemetry source abstraction** — Native sessions can request `synthetic`, `phone_imu_gps`, `racebox_ble`, or `obd_bluetooth` without changing the reasoning engine contract.
 - [x] **Phone IMU + GPS telemetry source** — First real native source implemented for on-device fused testing without external hardware.
+- [x] **Replayable native session capture** — Android live sessions now persist fused frame timelines and decisions, and the web app can load the latest saved capture back into Replay and Analysis.
+- [x] **Bench-safe motion gating** — Phone-only telemetry coaching is now suppressed until real movement is detected, reducing stationary false-positive coaching during device testing.
 - [ ] **Data fusion and time sync** — Implement cross-correlation calibration (hard throttle blip → RPM spike vs IMU G spike) to align RaceBox GPS epoch timestamps with Android SystemClock. Expected offset: 20-80ms. Upsample OBD channels (5-8Hz) to RaceBox rate (25Hz) via linear interpolation (continuous) and zero-order hold (discrete).
 - [ ] **Pre-rendered MP3s for safety-critical actions** — Record or source audio clips for BRAKE, OVERSTEER_RECOVERY, COMMIT per coach persona. The audioService already supports AudioContext pre-caching; this needs the actual MP3 files and integration to bypass TTS latency for time-critical calls.
 - [ ] **Bluetooth telemetry bridge** — RaceBox Mini connects via BLE 5.2 (7.5-15ms latency at high priority). OBDLink MX+ connects via Bluetooth Classic 3.0. Both streams must run in an Android foreground Service with persistent notification. Call `requestConnectionPriority(CONNECTION_PRIORITY_HIGH)` on RaceBox immediately after connecting.
@@ -95,6 +97,8 @@ The repo now supports both the original browser flow and a native Android on-dev
 ### UX / Frontend
 
 - [ ] **Convert to PWA** — Add service worker and manifest for offline support. The hot path and feedforward already run client-side; PWA ensures the UI loads without network at the track.
+- [x] **Native Live Session controls** — The Live Session UI now exposes Android-specific mode switching, telemetry source selection, and a separate `Device Camera + GPS Test` lane for on-device performance validation.
+- [x] **Replay latest Android capture** — Replay can now load the latest saved native session artifact without requiring a manual CSV export first.
 - [ ] **Minimal HUD for track use** — Design a signal-light-only visual (green/yellow/red) for in-car use. The driver cannot look at a screen; audio is primary, but a peripheral color signal adds confirmation without distraction.
 - [ ] **Coach persona selection UX** — Evaluate whether mid-session coach switching is useful or distracting. Consider recommending a persona based on driver skill level from the driver model.
 
