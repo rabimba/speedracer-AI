@@ -81,6 +81,20 @@ That means the consolidated branch should be understood as:
 
 ## 4. Implementation Evaluation by Project
 
+## 4.0 Implementation attribution summary
+
+From an implementation perspective, the consolidated branch should be understood this way:
+
+- **Rabimba** owns the implemented product/runtime work in the current working `trustable-ai-codelab` repository, including the Android runtime, live-session integration, camera fusion, `phone_imu_gps`, saved-session flow, Sonoma integration, pre-race goals, coach recommendation, realtime speech hardening, and the new architecture/documentation package.
+- **Adrian Catalan** should be credited for the browser/data-reasoning reference architecture and the imported latency benchmark that was merged into this branch as a reference artifact.
+- **Madona S Wambua** should be credited for the cross-team planning and user-story artifacts that were merged into this branch as planning/reference material.
+
+So the implementation attribution is intentionally asymmetric:
+
+- **Rabimba** = integrated product implementation
+- **Adrian Catalan** = reference architecture and benchmark attribution
+- **Madona S Wambua** = planning and product-story attribution
+
 ## 4.1 Rabimba working repository: `trustable-ai-codelab`
 
 ### What is implemented
@@ -365,9 +379,9 @@ These are not code owners, but they are source-of-truth stakeholders for coachin
 
 | Repo | Role | What it is best for | What it is missing |
 |---|---|---|---|
-| `Documents/trustable-ai-codelab` | Rabimba | Main implementation base | Full product/runtime implementation | Session archive, raw video, real hardware telemetry |
-| `Downloads/trustable-ai-codelab` | Madona S Wambua | Planning/reference repo | Cross-team product stories | Native/on-device implementation |
-| `Downloads/trustable-ai-codelab-main` | Adrian Catalan | Web/data-reasoning reference snapshot | Data reasoning docs + latency test | Native/on-device implementation |
+| `trustable-ai-codelab` (Rabimba working repo) | Rabimba | Main implementation base | Full product/runtime implementation | Session archive, raw video, real hardware telemetry |
+| `trustable-ai-codelab` (Madona S Wambua downloaded repo) | Madona S Wambua | Planning/reference repo | Cross-team product stories | Native/on-device implementation |
+| `trustable-ai-codelab-main` (Adrian Catalan snapshot) | Adrian Catalan | Web/data-reasoning reference snapshot | Data reasoning docs + latency test | Native/on-device implementation |
 
 ## 8. Next Steps After Consolidation
 

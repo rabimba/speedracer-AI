@@ -34,9 +34,9 @@ The three source projects should be credited this way:
 
 | Project | Attribution | Role in the consolidated system |
 |---|---|---|
-| `trustable-ai-codelab` in this working repo | **Rabimba** | Main implementation base and integration surface |
-| `trustable-ai-codelab` downloaded repo | **Madona S Wambua** | Planning/reference repo and cross-team story source |
-| `trustable-ai-codelab-main` | **Adrian Catalan** | Browser/data-reasoning reference repo and benchmark/doc source |
+| `trustable-ai-codelab` (Rabimba working repo) | **Rabimba** | Main implementation base and integration surface |
+| `trustable-ai-codelab` (Madona S Wambua downloaded repo) | **Madona S Wambua** | Planning/reference repo and cross-team story source |
+| `trustable-ai-codelab-main` (Adrian Catalan snapshot) | **Adrian Catalan** | Browser/data-reasoning reference repo and benchmark/doc source |
 
 Within the consolidated project, the live Android runtime, the product integration work, the pre-race setup flow, the Sonoma deployment work, the saved-session flow, the replay/analysis integration, the new documentation set, and the architecture consolidation itself are all attributed to **Rabimba**.
 
@@ -49,6 +49,32 @@ Within the consolidated project, the live Android runtime, the product integrati
 | Cross-team stories and planning structure | **Madona S Wambua** | Source attribution for user-story framing and planning repo |
 | AGY persistence and session intelligence backend | **Mike / AGY Pipeline** | Future archive, driver profile persistence, stored analytics |
 | Domain coaching expertise | **Ross Bentley, T-Rod, Brian Luc** | Source-of-truth stakeholders for pedagogy, track doctrine, and realtime trust standard |
+
+## 2.3 Implementation attribution matrix
+
+This section answers the implementation question directly: who should be credited for which built pieces in the consolidated project.
+
+| Implemented area | Implementation attribution | Notes |
+|---|---|---|
+| Native Android app, WebView host, JS bridge | **Rabimba** | Implemented in the current working repo |
+| Native live-session runtime and mode routing | **Rabimba** | Includes telemetry, device test, and camera-direct modes |
+| CameraX lane, vision feature extraction, and fusion wiring | **Rabimba** | Implemented in the current working repo |
+| `phone_imu_gps` telemetry source | **Rabimba** | First real native telemetry source in the current working repo |
+| Recorded native session artifacts, replay bridge, and saved-session flow | **Rabimba** | Implemented in the current working repo |
+| Pre-race goals UI and coach recommendation flow | **Rabimba** | Implemented in the current working repo |
+| Goal-aware live coaching integration | **Rabimba** | Implemented in browser and native integrated paths in the current working repo |
+| Sonoma deployment work and doctrine integration | **Rabimba** | Implementation and integration attribution; doctrine content still traces back to Ross/T-Rod sources |
+| Realtime speech hardening and live audio policy | **Rabimba** | Implemented in the current working repo |
+| Replay and Gemini post-session integration | **Rabimba** | Implemented in the current working repo |
+| Consolidation work, architecture docs, implementation history, and audit docs | **Rabimba** | Implemented in this collaboration in the current working repo |
+| Browser/data-reasoning reference architecture | **Adrian Catalan** | Reference attribution, not the primary integrated runtime implementation in this branch |
+| Imported hot-path latency benchmark | **Adrian Catalan** | Brought into the consolidated branch as a reference test artifact |
+| Cross-team user-story framing and planning artifacts | **Madona S Wambua** | Reference attribution for planning and product story structure |
+
+Implementation rule of thumb:
+
+- if it was built or integrated in the current working `trustable-ai-codelab` repository, it should be attributed to **Rabimba**
+- if it was brought in as a benchmark, planning artifact, or reference document from another project, it should keep its original attribution
 
 ## 3. Whole-System Diagram
 
