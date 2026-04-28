@@ -67,7 +67,7 @@ class KoruTelemetryService : Service() {
         modelAssetManager = ModelAssetManager(this)
         runtimeManager = EdgeRuntimeManager(this, modelAssetManager, phraseCatalog, activeCoachId)
         sessionRecorder = RecordedSessionRecorder(this)
-        engine = createRealtimeEngine(TrackCatalog.defaultTrack)
+        engine = createRealtimeEngine(TrackCatalog.defaultTrack, emptyList())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -125,7 +125,7 @@ class KoruTelemetryService : Service() {
         runtimeManager.updateCoach(activeCoachId)
         val track = if (config.sessionMode == SessionMode.DEVICE_TEST) null else TrackCatalog.fromName(config.trackName)
         val sessionLabel = if (config.sessionMode == SessionMode.DEVICE_TEST) "Device GPS Test" else (track?.name ?: config.trackName)
-        engine = createRealtimeEngine(track)
+        engine = createRealtimeEngine(track, config.sessionGoals)
         engine.setActiveCoach(activeCoachId)
         val telemetrySelection = when (config.sessionMode) {
             SessionMode.CAMERA_DIRECT -> null
@@ -199,7 +199,7 @@ class KoruTelemetryService : Service() {
             },
         )
 
-        sessionRecorder.start(config.sessionMode, sessionLabel, activeCoachId)
+        sessionRecorder.start(config.sessionMode, sessionLabel, activeCoachId, config.sessionGoals)
         updateNotification(
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Direct camera feedback active (${selectedBackend.backend.bridgeValue()})"
@@ -335,8 +335,11 @@ class KoruTelemetryService : Service() {
         return artifact
     }
 
-    private fun createRealtimeEngine(track: com.trustableai.koru.model.Track?): KoruRealtimeEngine {
-        return KoruRealtimeEngine(track, phraseCatalog) {
+    private fun createRealtimeEngine(
+        track: com.trustableai.koru.model.Track?,
+        sessionGoals: List<com.trustableai.koru.model.SessionGoal>,
+    ): KoruRealtimeEngine {
+        return KoruRealtimeEngine(track, phraseCatalog, sessionGoals) {
             runtimeManager.currentReasoner()
         }
     }

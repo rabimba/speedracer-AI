@@ -1,6 +1,7 @@
 import type {
   CoachingDecision,
   LiveBackendStatus,
+  SessionGoal,
   SessionMode,
   SSEConnectionStatus,
   TelemetrySourceKind,
@@ -59,6 +60,7 @@ export class LiveBackendAdapter {
   private coachId: string;
   private audioEnabled: boolean;
   private track: Track;
+  private sessionGoals: SessionGoal[] = [];
 
   constructor(options: LiveBackendAdapterOptions) {
     this.coachId = options.coachId;
@@ -143,6 +145,7 @@ export class LiveBackendAdapter {
         trackName: sessionMode === 'device_test' ? 'Device GPS Test' : this.track.name,
         sessionMode,
         telemetrySource,
+        sessionGoals: this.sessionGoals,
         sourceUrl: sourceUrl?.trim() || undefined,
       });
       return;
@@ -181,6 +184,13 @@ export class LiveBackendAdapter {
   setApiKey(apiKey: string | null): void {
     if (!this.nativeMode && apiKey) {
       this.coach?.setApiKey(apiKey);
+    }
+  }
+
+  setSessionGoals(goals: SessionGoal[]): void {
+    this.sessionGoals = goals.slice(0, 3);
+    if (!this.nativeMode) {
+      this.coach?.setSessionGoals(this.sessionGoals);
     }
   }
 

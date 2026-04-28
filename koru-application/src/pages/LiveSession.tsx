@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTTS } from '../hooks/useTTS';
+import { PRE_RACE_GOAL_OPTIONS, buildSessionGoals, recommendCoach } from '../data/preRaceGoals';
 import { DEFAULT_TRACK, TRACKS, getTrackByName } from '../data/trackData';
 import TelemetryCharts from '../components/TelemetryCharts';
 import TrackMap from '../components/TrackMap';
@@ -8,6 +9,7 @@ import GaugeCluster from '../components/GaugeCluster';
 import type {
   LiveBackendStatus,
   SessionMode,
+  SessionGoalFocus,
   TelemetryFrame,
   TelemetrySourceKind,
   SSEConnectionStatus,
@@ -18,6 +20,7 @@ import { LiveBackendAdapter } from '../services/liveBackendAdapter';
 import { isNativeBackend } from '../services/sharedPhraseCatalog';
 import { hasAndroidBridge, subscribeAndroidBridge } from '../services/androidBridge';
 import { storeLatestRecordedSession } from '../services/recordedSessionStore';
+import { COACHES } from '../utils/coachingKnowledge';
 
 interface LiveSessionProps {
   apiKey: string | null;
@@ -35,6 +38,9 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const [sessionMode, setSessionMode] = useState<SessionMode>('telemetry');
   const [telemetrySource, setTelemetrySource] = useState<TelemetrySourceKind>('phone_imu_gps');
   const [trackName, setTrackName] = useState(DEFAULT_TRACK.name);
+  const [selectedGoalFocuses, setSelectedGoalFocuses] = useState<SessionGoalFocus[]>([]);
+  const [customGoalDescription, setCustomGoalDescription] = useState('');
+  const [coachChoiceMode, setCoachChoiceMode] = useState<'auto' | 'manual'>('auto');
 
   const adapterRef = useRef<LiveBackendAdapter | null>(null);
   const audioEnabledRef = useRef(audioEnabled);
@@ -42,6 +48,10 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
   const speakRef = useRef(speak);
   const selectedTrack = getTrackByName(trackName);
+  const sessionGoals = buildSessionGoals(selectedGoalFocuses, customGoalDescription);
+  const coachRecommendation = recommendCoach(sessionGoals, sessionMode);
+  const recommendedCoach = COACHES[coachRecommendation.coachId];
+  const sessionLocked = status !== 'disconnected';
 
   useEffect(() => {
     speakRef.current = speak;
@@ -111,6 +121,17 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   }, [selectedTrack]);
 
   useEffect(() => {
+    adapterRef.current?.setSessionGoals(sessionGoals);
+  }, [sessionGoals]);
+
+  useEffect(() => {
+    if (coachChoiceMode !== 'auto') return;
+    if (activeCoach === coachRecommendation.coachId) return;
+    setActiveCoach(coachRecommendation.coachId);
+    adapterRef.current?.setCoach(coachRecommendation.coachId);
+  }, [activeCoach, coachChoiceMode, coachRecommendation.coachId]);
+
+  useEffect(() => {
     if (!nativeMode) return;
 
     return subscribeAndroidBridge((event) => {
@@ -136,18 +157,40 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
     } else {
       setFrames([]);
       setMessages([]);
+      adapterRef.current?.setSessionGoals(sessionGoals);
       adapterRef.current?.connect(
         sseUrl.trim(),
         nativeMode ? sessionMode : 'telemetry',
         telemetrySource,
       );
     }
-  }, [nativeMode, sessionMode, sseUrl, status, telemetrySource]);
+  }, [nativeMode, sessionGoals, sessionMode, sseUrl, status, telemetrySource]);
 
   const handleCoachChange = useCallback((id: string) => {
+    setCoachChoiceMode('manual');
     setActiveCoach(id);
     adapterRef.current?.setCoach(id);
   }, []);
+
+  const handleGoalToggle = useCallback((focus: SessionGoalFocus) => {
+    if (sessionLocked) return;
+    setSelectedGoalFocuses((previous) => {
+      if (previous.includes(focus)) {
+        return previous.filter((value) => value !== focus);
+      }
+      if (previous.length >= 3) {
+        return previous;
+      }
+      return [...previous, focus];
+    });
+  }, [sessionLocked]);
+
+  const handleUseRecommendedCoach = useCallback(() => {
+    if (sessionLocked) return;
+    setCoachChoiceMode('auto');
+    setActiveCoach(coachRecommendation.coachId);
+    adapterRef.current?.setCoach(coachRecommendation.coachId);
+  }, [coachRecommendation.coachId, sessionLocked]);
 
   const currentFrame = frames[frames.length - 1] || null;
 
@@ -232,6 +275,68 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
           )}
         </div>
       </header>
+
+      <section className="pre-race-panel">
+        <div className="pre-race-panel-header">
+          <div>
+            <h2>Pre-Race Setup</h2>
+            <p>Pick up to 3 focus areas. The live coach will bias realtime cues toward these goals.</p>
+          </div>
+          <div className="pre-race-goal-count">{sessionGoals.length}/3 goals</div>
+        </div>
+
+        <div className="pre-race-goals">
+          {PRE_RACE_GOAL_OPTIONS.map((goal) => {
+            const selected = selectedGoalFocuses.includes(goal.focus);
+            return (
+              <button
+                key={goal.focus}
+                type="button"
+                className={`pre-race-goal-chip ${selected ? 'active' : ''}`}
+                onClick={() => handleGoalToggle(goal.focus)}
+                disabled={sessionLocked}
+              >
+                <strong>{goal.label}</strong>
+                <span>{goal.description}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedGoalFocuses.includes('custom') && (
+          <input
+            className="sse-input pre-race-custom-input"
+            type="text"
+            value={customGoalDescription}
+            onChange={(event) => setCustomGoalDescription(event.target.value)}
+            placeholder="Describe your custom focus for this session"
+            disabled={sessionLocked}
+          />
+        )}
+
+        <div className="pre-race-recommendation">
+          <div className="pre-race-recommendation-copy">
+            <span className="pre-race-recommendation-kicker">Recommended coach</span>
+            <h3>{recommendedCoach?.name ?? coachRecommendation.coachId}</h3>
+            <p className="pre-race-recommendation-title">{coachRecommendation.title}</p>
+            <p>{coachRecommendation.rationale}</p>
+            <p className="pre-race-recommendation-sample">Sample cue: “{coachRecommendation.samplePhrase}”</p>
+            {coachChoiceMode === 'manual' && activeCoach !== coachRecommendation.coachId && (
+              <p className="pre-race-recommendation-note">
+                You are currently overriding the recommendation with {COACHES[activeCoach]?.name ?? activeCoach}.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            className="connect-btn"
+            onClick={handleUseRecommendedCoach}
+            disabled={sessionLocked || activeCoach === coachRecommendation.coachId}
+          >
+            Use Recommended Coach
+          </button>
+        </div>
+      </section>
 
       <div className="live-grid">
         {/* Left: Gauges + Track */}

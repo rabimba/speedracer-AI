@@ -4,6 +4,7 @@ import android.content.Context
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.RecordedSessionSummary
+import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.bridgeValue
@@ -15,12 +16,13 @@ import java.util.Locale
 class RecordedSessionRecorder(private val context: Context) {
     private var activeSession: ActiveSession? = null
 
-    fun start(mode: SessionMode, trackName: String, coachId: String) {
+    fun start(mode: SessionMode, trackName: String, coachId: String, sessionGoals: List<SessionGoal> = emptyList()) {
         activeSession = ActiveSession(
             id = "koru-${mode.bridgeValue()}-${System.currentTimeMillis()}",
             mode = mode,
             trackName = trackName,
             coachId = coachId,
+            sessionGoals = sessionGoals.take(3),
             startedAtMs = System.currentTimeMillis(),
             frames = mutableListOf(),
             decisions = mutableListOf(),
@@ -57,6 +59,7 @@ class RecordedSessionRecorder(private val context: Context) {
             startedAtMs = session.startedAtMs,
             endedAtMs = endedAtMs,
             summary = summary,
+            sessionGoals = session.sessionGoals.toList(),
             frames = session.frames.toList(),
             decisions = session.decisions.toList(),
         )
@@ -96,8 +99,18 @@ class RecordedSessionRecorder(private val context: Context) {
                         String.format(Locale.US, "%.2f", artifact.summary.durationSeconds).toDouble(),
                     ),
             )
+            .put("sessionGoals", JSONArray(artifact.sessionGoals.map(::goalJson)))
             .put("frames", JSONArray(artifact.frames.map(::frameJson)))
             .put("decisions", JSONArray(artifact.decisions.map(::decisionJson)))
+    }
+
+    private fun goalJson(goal: SessionGoal): JSONObject {
+        return JSONObject()
+            .put("id", goal.id)
+            .put("focus", goal.focus.bridgeValue())
+            .put("description", goal.description)
+            .put("source", goal.source.bridgeValue())
+            .put("prioritizedActions", JSONArray(goal.prioritizedActions.map { action -> action.name }))
     }
 
     private fun frameJson(frame: TelemetryFrame): JSONObject {
@@ -151,6 +164,7 @@ class RecordedSessionRecorder(private val context: Context) {
         val mode: SessionMode,
         val trackName: String,
         val coachId: String,
+        val sessionGoals: List<SessionGoal>,
         val startedAtMs: Long,
         val frames: MutableList<TelemetryFrame>,
         val decisions: MutableList<CoachingDecision>,

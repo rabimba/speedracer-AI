@@ -18,7 +18,10 @@ export function normalizeRecordedSessionArtifact(value: unknown): RecordedSessio
   if (!session.frames.every(isTelemetryFrame)) {
     return null;
   }
-  return session as RecordedSessionArtifact;
+  return {
+    ...session,
+    sessionGoals: Array.isArray(session.sessionGoals) ? session.sessionGoals : [],
+  } as RecordedSessionArtifact;
 }
 
 export function parseTelemetryCaptureInput(

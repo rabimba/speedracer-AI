@@ -19,6 +19,9 @@ export function buildRecordedSessionAnalysisContext(
   const decisionCounts = countBy(decisions.map((decision) => decision.path));
   const actionCounts = countBy(decisions.map((decision) => decision.action || 'NONE'));
   const cornerSummaries = summarizeCorners(frames, track).slice(0, 8);
+  const goalsSummary = session.sessionGoals.length > 0
+    ? session.sessionGoals.map((goal) => `- ${goal.focus}: ${goal.description}`).join('\n')
+    : '- No explicit pre-race goals were recorded.';
   const topActions = Object.entries(actionCounts)
     .filter(([action]) => action !== 'NONE')
     .sort((a, b) => b[1] - a[1])
@@ -49,6 +52,9 @@ Coach: ${session.coachId}
 Duration: ${session.summary.durationSeconds.toFixed(1)}s
 Frames: ${frames.length}
 Decisions: ${decisions.length}
+
+Pre-race goals:
+${goalsSummary}
 
 Overall vehicle summary:
 - Avg speed: ${frameSummary.avgSpeed.toFixed(1)} mph

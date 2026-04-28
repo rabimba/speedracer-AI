@@ -797,6 +797,7 @@ html, body, #root {
 
 .connect-btn:hover { border-color: #444; }
 .connect-btn.connected { border-color: var(--green); color: var(--green); }
+.connect-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .status-badge {
   font-size: 11px;
@@ -810,6 +811,151 @@ html, body, #root {
 .status-connecting { color: var(--amber); border-color: rgba(251, 191, 36, 0.3); }
 .status-disconnected { color: var(--text-muted); }
 .status-error { color: var(--red); border-color: rgba(248, 113, 113, 0.3); }
+
+.pre-race-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    var(--bg-card);
+}
+
+.pre-race-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pre-race-panel-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.pre-race-panel-header p {
+  color: var(--text-secondary);
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pre-race-goal-count {
+  padding: 6px 10px;
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: 999px;
+  color: #2dd4bf;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pre-race-goals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.pre-race-goal-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.pre-race-goal-chip strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pre-race-goal-chip span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pre-race-goal-chip:hover:not(:disabled) {
+  border-color: rgba(45, 212, 191, 0.45);
+  transform: translateY(-1px);
+}
+
+.pre-race-goal-chip.active {
+  border-color: rgba(45, 212, 191, 0.55);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.pre-race-goal-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.pre-race-custom-input {
+  max-width: 100%;
+}
+
+.pre-race-recommendation {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.pre-race-recommendation-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pre-race-recommendation-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2dd4bf;
+}
+
+.pre-race-recommendation h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pre-race-recommendation-title {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.pre-race-recommendation p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pre-race-recommendation-sample {
+  color: var(--text-primary);
+  font-style: italic;
+}
+
+.pre-race-recommendation-note {
+  color: var(--amber);
+}
 
 .live-grid, .replay-grid {
   display: grid;
@@ -982,6 +1128,9 @@ html, body, #root {
   .live-grid, .replay-grid {
     grid-template-columns: 1fr;
   }
+  .pre-race-recommendation {
+    flex-direction: column;
+  }
   .dashboard-grid { grid-template-columns: 1fr; }
   .quick-actions { grid-template-columns: 1fr; }
   .features-grid { grid-template-columns: repeat(2, 1fr); }
@@ -992,6 +1141,9 @@ html, body, #root {
 }
 
 @media (max-width: 640px) {
+  .pre-race-panel-header {
+    flex-direction: column;
+  }
   .arch-grid, .steps-grid { grid-template-columns: 1fr; }
   .coaches-grid { grid-template-columns: 1fr; }
   .hero-title { font-size: 32px; }

@@ -5,6 +5,7 @@ import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
 import com.trustableai.koru.model.bridgeValue
@@ -19,6 +20,7 @@ import com.trustableai.koru.runtime.reasoner.OnDeviceReasoner
 class KoruRealtimeEngine(
     track: Track?,
     private val phraseCatalog: PhraseCatalog,
+    private var sessionGoals: List<SessionGoal> = emptyList(),
     private val reasonerProvider: () -> OnDeviceReasoner,
 ) {
     private val track = track
@@ -36,6 +38,10 @@ class KoruRealtimeEngine(
         activeCoachId = coachId
     }
 
+    fun setSessionGoals(goals: List<SessionGoal>) {
+        sessionGoals = goals.take(3)
+    }
+
     suspend fun processFrame(frame: TelemetryFrame, nowMs: Long = System.currentTimeMillis()): List<CoachingDecision> {
         val detection = cornerDetector.detect(frame)
         currentPhase = detection.phase
@@ -45,22 +51,40 @@ class KoruRealtimeEngine(
 
         adaptTiming(driverState.skillLevel)
 
-        DecisionMatrix.evaluate(frame)?.let { action ->
-            val suppress =
-                TrackExpertiseCatalog.shouldSuppressHotAction(
-                    track = track,
-                    corner = detection.corner,
-                    action = action,
-                    skillLevel = driverState.skillLevel,
-                    phase = currentPhase,
-                    timeSeconds = frame.timeSeconds,
-                    cognitiveLoad = driverState.cognitiveLoad,
-                )
-            if (action != lastHotAction && !suppress) {
-                lastHotAction = action
+        DecisionMatrix.evaluateAll(frame)
+            .mapIndexedNotNull { index, action ->
+                val suppress =
+                    TrackExpertiseCatalog.shouldSuppressHotAction(
+                        track = track,
+                        corner = detection.corner,
+                        action = action,
+                        skillLevel = driverState.skillLevel,
+                        phase = currentPhase,
+                        timeSeconds = frame.timeSeconds,
+                        cognitiveLoad = driverState.cognitiveLoad,
+                    )
+                if (action == lastHotAction || suppress) {
+                    null
+                } else {
+                    HotActionCandidate(
+                        action = action,
+                        order = index,
+                        priority = actionPriority(action),
+                        goalBoost = goalBoostForAction(action),
+                    )
+                }
+            }
+            .sortedWith(
+                compareBy<HotActionCandidate> { it.priority }
+                    .thenByDescending { it.goalBoost }
+                    .thenBy { it.order },
+            )
+            .firstOrNull()
+            ?.let { candidate ->
+                lastHotAction = candidate.action
                 val decision =
                     hotDecision(
-                        action = action,
+                        action = candidate.action,
                         corner = detection.corner,
                         skillLevel = driverState.skillLevel,
                         cognitiveLoad = driverState.cognitiveLoad,
@@ -73,7 +97,6 @@ class KoruRealtimeEngine(
                     queue.enqueue(decision, nowMs)
                 }
             }
-        }
 
         detection.corner?.takeIf { it.id != lastFeedforwardCornerId }?.let { corner ->
             lastFeedforwardCornerId = corner.id
@@ -179,4 +202,15 @@ class KoruRealtimeEngine(
             else -> 3
         }
     }
+
+    private fun goalBoostForAction(action: CoachAction): Int {
+        return sessionGoals.count { goal -> goal.prioritizedActions.contains(action) }
+    }
+
+    private data class HotActionCandidate(
+        val action: CoachAction,
+        val order: Int,
+        val priority: Int,
+        val goalBoost: Int,
+    )
 }

@@ -92,11 +92,11 @@ class CameraDirectSessionController(context: Context) {
         )
 
         val track = TrackCatalog.fromName(config.trackName)
-        val currentEngine = KoruRealtimeEngine(track, phraseCatalog) { runtimeManager.currentReasoner() }
+        val currentEngine = KoruRealtimeEngine(track, phraseCatalog, config.sessionGoals) { runtimeManager.currentReasoner() }
         currentEngine.setActiveCoach(activeCoachId)
         engine = currentEngine
 
-        sessionRecorder.start(SessionMode.CAMERA_DIRECT, track.name, activeCoachId)
+        sessionRecorder.start(SessionMode.CAMERA_DIRECT, track.name, activeCoachId, config.sessionGoals)
         val startedAtMs = System.currentTimeMillis()
         var lastVisionTimestampMs = -1L
         var readyEmitted = false

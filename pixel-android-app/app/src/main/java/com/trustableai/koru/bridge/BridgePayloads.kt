@@ -3,6 +3,7 @@ package com.trustableai.koru.bridge
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.RecordedSessionArtifact
+import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
@@ -70,6 +71,7 @@ object BridgePayloads {
                             .put("decisionCount", artifact.summary.decisionCount)
                             .put("durationSeconds", artifact.summary.durationSeconds),
                     )
+                    .put("sessionGoals", JSONArray(artifact.sessionGoals.map(::sessionGoalObject)))
                     .put("frames", JSONArray(artifact.frames.map { frame -> telemetryFrameObject(frame) }))
                     .put("decisions", JSONArray(artifact.decisions.map { decision -> coachingDecisionObject(decision) })),
             )
@@ -147,5 +149,14 @@ object BridgePayloads {
             .put("latencyMs", decision.latencyMs)
             .put("confidence", decision.confidence)
             .put("phraseId", decision.phraseId)
+    }
+
+    private fun sessionGoalObject(goal: SessionGoal): JSONObject {
+        return JSONObject()
+            .put("id", goal.id)
+            .put("focus", goal.focus.bridgeValue())
+            .put("description", goal.description)
+            .put("source", goal.source.bridgeValue())
+            .put("prioritizedActions", JSONArray(goal.prioritizedActions.map { action -> action.name }))
     }
 }

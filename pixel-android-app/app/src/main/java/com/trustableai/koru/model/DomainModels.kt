@@ -63,6 +63,21 @@ enum class SkillLevel {
     ADVANCED,
 }
 
+enum class SessionGoalFocus {
+    BRAKING,
+    THROTTLE,
+    VISION,
+    LINES,
+    SMOOTHNESS,
+    CUSTOM,
+}
+
+enum class SessionGoalSource {
+    PRE_RACE_CHAT,
+    AUTO_GENERATED,
+    COACH_ASSIGNED,
+}
+
 enum class SessionMode {
     TELEMETRY,
     DEVICE_TEST,
@@ -122,6 +137,14 @@ data class DriverState(
     val cognitiveLoad: Double,
     val inputSmoothness: Double,
     val coastingRatio: Double,
+)
+
+data class SessionGoal(
+    val id: String,
+    val focus: SessionGoalFocus,
+    val description: String,
+    val source: SessionGoalSource,
+    val prioritizedActions: List<CoachAction> = emptyList(),
 )
 
 data class VisionFeatureSnapshot(
@@ -195,6 +218,7 @@ data class RecordedSessionArtifact(
     val startedAtMs: Long,
     val endedAtMs: Long,
     val summary: RecordedSessionSummary,
+    val sessionGoals: List<SessionGoal> = emptyList(),
     val frames: List<TelemetryFrame>,
     val decisions: List<CoachingDecision>,
 )
@@ -219,3 +243,7 @@ fun LiveBackendState.bridgeValue(): String = name.lowercase()
 fun SessionMode.bridgeValue(): String = name.lowercase()
 
 fun TelemetrySourceKind.bridgeValue(): String = name.lowercase()
+
+fun SessionGoalFocus.bridgeValue(): String = name.lowercase()
+
+fun SessionGoalSource.bridgeValue(): String = name.lowercase()

@@ -124,6 +124,7 @@ export interface RecordedSessionArtifact {
   startedAt: number;
   endedAt: number;
   summary: RecordedSessionSummary;
+  sessionGoals: SessionGoal[];
   frames: TelemetryFrame[];
   decisions: CoachingDecision[];
 }
@@ -149,9 +150,11 @@ export type CoachAction =
 
 // ── Session Goals (Phase 6.2) ────────────────────────────
 
+export type SessionGoalFocus = 'braking' | 'throttle' | 'vision' | 'lines' | 'smoothness' | 'custom';
+
 export interface SessionGoal {
   id: string;
-  focus: 'braking' | 'throttle' | 'vision' | 'lines' | 'smoothness' | 'custom';
+  focus: SessionGoalFocus;
   description: string;            // e.g. "Work on harder initial brake application in Turn 7"
   source: 'pre_race_chat' | 'auto_generated' | 'coach_assigned';
   prioritizedActions?: CoachAction[];  // Hot path rules to boost when this goal is active

@@ -24,6 +24,15 @@ describe('recorded session analysis context', () => {
         decisionCount: 3,
         durationSeconds: 20,
       },
+      sessionGoals: [
+        {
+          id: 'goal-braking',
+          focus: 'braking',
+          description: 'Harder initial squeeze and cleaner release.',
+          source: 'pre_race_chat',
+          prioritizedActions: ['THRESHOLD', 'SPIKE_BRAKE'],
+        },
+      ],
       frames: [
         {
           time: 0,
@@ -123,6 +132,8 @@ describe('recorded session analysis context', () => {
     expect(context).toContain(`Track: ${SONOMA_RACEWAY.name}`);
     expect(context).toContain('Primary telemetry source: phone_imu_gps');
     expect(context).toContain('Decision path counts:');
+    expect(context).toContain('Pre-race goals:');
+    expect(context).toContain('Harder initial squeeze and cleaner release.');
     expect(context).toContain('feedforward: 1');
     expect(context).toContain('edge: 1');
     expect(context).toContain('Turn 3');

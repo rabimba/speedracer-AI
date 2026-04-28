@@ -200,6 +200,42 @@ describe('CoachingService Phase 6', () => {
     it('should start with empty goals', () => {
       expect(service.getSessionGoals()).toHaveLength(0);
     });
+
+    it('should bias hot-path action selection toward prioritized goal actions', () => {
+      const baselineService = new CoachingService();
+      const baselineDecisions: CoachingDecision[] = [];
+      baselineService.onCoaching(msg => baselineDecisions.push(msg));
+      baselineService.processFrame(createFrame({
+        time: 12,
+        speed: 72,
+        brake: 82,
+        throttle: 0,
+        gLat: 0,
+        gLong: -1.25,
+      }));
+      expect(baselineDecisions[0]?.action).toBe('THRESHOLD');
+
+      service.setSessionGoals([
+        {
+          id: 'goal-smoothness',
+          focus: 'smoothness',
+          description: 'Smooth out brake release and stop stabbing the pedal.',
+          source: 'pre_race_chat',
+          prioritizedActions: ['SPIKE_BRAKE'],
+        },
+      ]);
+
+      service.processFrame(createFrame({
+        time: 12,
+        speed: 72,
+        brake: 82,
+        throttle: 0,
+        gLat: 0,
+        gLong: -1.25,
+      }));
+
+      expect(decisions[0]?.action).toBe('SPIKE_BRAKE');
+    });
   });
 
   // ── Performance Tracker Integration ───────────────────────

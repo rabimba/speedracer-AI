@@ -103,6 +103,20 @@ export class CoachingService {
     this.sessionGoals = goals.slice(0, 3);
   }
 
+  private goalBoostForAction(action: CoachAction): number {
+    return this.sessionGoals.reduce((boost, goal) => {
+      return boost + (goal.prioritizedActions?.includes(action) ? 1 : 0);
+    }, 0);
+  }
+
+  private currentGoalPromptContext(): string {
+    if (this.sessionGoals.length === 0) return 'Session goals: none set.';
+    const lines = this.sessionGoals.map((goal, index) =>
+      `${index + 1}. ${goal.focus}: ${goal.description}`
+    );
+    return `Session goals:\n${lines.join('\n')}`;
+  }
+
   onCoaching(cb: CoachingCallback) {
     this.listeners.push(cb);
     return () => { this.listeners = this.listeners.filter(l => l !== cb); };
@@ -215,46 +229,51 @@ export class CoachingService {
       gLong: frame.gLong,
       speed: frame.speed,
     };
-
-    for (const rule of DECISION_MATRIX) {
-      if (rule.check(data)) {
-        // Skip neutral actions
-        if (rule.action === 'STABILIZE' || rule.action === 'MAINTAIN') return;
-        // Session progression: suppress advanced actions in early phases
+    const candidates = DECISION_MATRIX
+      .map((rule, index) => ({ rule, index }))
+      .filter(({ rule }) => rule.check(data))
+      .filter(({ rule }) => rule.action !== 'STABILIZE' && rule.action !== 'MAINTAIN')
+      .filter(({ rule }) => {
         const suppressed = CoachingService.PHASE_SUPPRESSED[this.sessionPhase];
-        if (suppressed?.has(rule.action)) continue;
-        if (shouldSuppressTrackAction(
-          this.track,
-          this.lastCorner,
-          rule.action,
-          skillLevel,
-          this.sessionPhase,
-          this.currentPhase,
-          state.cognitiveLoad,
-        )) continue;
-        // Skip repeats
-        if (rule.action === this.lastHotAction) continue;
+        return !suppressed?.has(rule.action);
+      })
+      .filter(({ rule }) => !shouldSuppressTrackAction(
+        this.track,
+        this.lastCorner,
+        rule.action,
+        skillLevel,
+        this.sessionPhase,
+        this.currentPhase,
+        state.cognitiveLoad,
+      ))
+      .filter(({ rule }) => rule.action !== this.lastHotAction)
+      .sort((a, b) => {
+        const priorityDelta = actionPriority(a.rule.action) - actionPriority(b.rule.action);
+        if (priorityDelta !== 0) return priorityDelta;
+        const goalDelta = this.goalBoostForAction(b.rule.action) - this.goalBoostForAction(a.rule.action);
+        if (goalDelta !== 0) return goalDelta;
+        return a.index - b.index;
+      });
 
-        const priority = actionPriority(rule.action);
-        this.lastHotAction = rule.action;
+    const selected = candidates[0]?.rule;
+    if (!selected) return;
 
-        const decision: CoachingDecision = {
-          path: 'hot',
-          action: rule.action,
-          text: this.humanizeAction(rule.action, frame),
-          priority,
-          cornerPhase: this.currentPhase,
-          timestamp: Date.now(),
-        };
+    const priority = actionPriority(selected.action);
+    this.lastHotAction = selected.action;
 
-        // P0 safety: preempt queue and emit immediately
-        if (priority === 0) {
-          this.emit(this.coachingQueue.preempt(decision));
-        } else {
-          this.coachingQueue.enqueue(decision);
-        }
-        return;
-      }
+    const decision: CoachingDecision = {
+      path: 'hot',
+      action: selected.action,
+      text: this.humanizeAction(selected.action, frame),
+      priority,
+      cornerPhase: this.currentPhase,
+      timestamp: Date.now(),
+    };
+
+    if (priority === 0) {
+      this.emit(this.coachingQueue.preempt(decision));
+    } else {
+      this.coachingQueue.enqueue(decision);
     }
   }
 
@@ -613,6 +632,8 @@ export class CoachingService {
 ${RACING_PHYSICS_KNOWLEDGE}
 
 ${trackContext}
+
+${this.currentGoalPromptContext()}
 
 Current Telemetry:
 Speed: ${frame.speed.toFixed(1)} mph | Brake: ${frame.brake.toFixed(0)}% | Throttle: ${frame.throttle.toFixed(0)}%
