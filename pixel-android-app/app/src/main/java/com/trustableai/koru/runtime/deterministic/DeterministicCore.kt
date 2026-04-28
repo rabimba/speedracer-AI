@@ -103,8 +103,9 @@ class TimingGate(
         BLACKOUT,
     }
 
-    fun updateConfig(cooldownMs: Long, blackoutPhases: Set<CornerPhase>) {
+    fun updateConfig(cooldownMs: Long, deliveryMs: Long, blackoutPhases: Set<CornerPhase>) {
         this.cooldownMs = cooldownMs
+        this.deliveryMs = deliveryMs
         this.blackoutPhases.clear()
         this.blackoutPhases.addAll(blackoutPhases)
     }

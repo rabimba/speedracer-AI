@@ -24,6 +24,7 @@ import com.trustableai.koru.runtime.EdgeRuntimeManager
 import com.trustableai.koru.runtime.KoruRealtimeEngine
 import com.trustableai.koru.runtime.KoruSessionBus
 import com.trustableai.koru.runtime.LiveSessionConfig
+import com.trustableai.koru.runtime.LiveAudioPolicy
 import com.trustableai.koru.runtime.ModelAssetManager
 import com.trustableai.koru.runtime.PhraseCatalog
 import com.trustableai.koru.runtime.RecordedSessionRecorder
@@ -324,7 +325,19 @@ class KoruTelemetryService : Service() {
             sessionRecorder.recordDecision(decision)
             KoruSessionBus.tryEmitDecision(decision)
             if (audioEnabled) {
-                audioDispatcher.speak(decision.text, "${decision.path.bridgeValue()}-${decision.timestampMs}")
+                val gate = LiveAudioPolicy.shouldSpeak(frame, decision)
+                if (gate.allowSpeak) {
+                    audioDispatcher.speak(
+                        decision.text,
+                        "${decision.path.bridgeValue()}-${decision.timestampMs}",
+                        decision.priority,
+                    )
+                } else {
+                    Log.d(
+                        tag,
+                        "Audio suppressed source=${frame.telemetrySource?.bridgeValue() ?: "none"} path=${decision.path.bridgeValue()} reason=${gate.reason}",
+                    )
+                }
             }
         }
     }

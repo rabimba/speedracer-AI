@@ -141,7 +141,19 @@ class CameraDirectSessionController(context: Context) {
                     sessionRecorder.recordDecision(decision)
                     KoruSessionBus.tryEmitDecision(decision)
                     if (audioEnabled) {
-                        audioDispatcher.speak(decision.text, "${decision.path.bridgeValue()}-${decision.timestampMs}")
+                        val gate = LiveAudioPolicy.shouldSpeak(frame, decision)
+                        if (gate.allowSpeak) {
+                            audioDispatcher.speak(
+                                decision.text,
+                                "${decision.path.bridgeValue()}-${decision.timestampMs}",
+                                decision.priority,
+                            )
+                        } else {
+                            Log.d(
+                                tag,
+                                "Audio suppressed path=${decision.path.bridgeValue()} reason=${gate.reason}",
+                            )
+                        }
                     }
                 }
             }

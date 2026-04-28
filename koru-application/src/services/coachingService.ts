@@ -187,6 +187,7 @@ export class CoachingService {
       case 'BEGINNER':
         this.timingGate.updateConfig({
           cooldownMs: 3000,
+          deliveryMs: 2000,
           blackoutPhases: ['MID_CORNER', 'APEX'],
         });
         this.coldCooldownMs = 20000;
@@ -194,13 +195,15 @@ export class CoachingService {
       case 'INTERMEDIATE':
         this.timingGate.updateConfig({
           cooldownMs: 1500,
+          deliveryMs: 1800,
           blackoutPhases: ['APEX'],
         });
         this.coldCooldownMs = 15000;
         break;
       case 'ADVANCED':
         this.timingGate.updateConfig({
-          cooldownMs: 1000,
+          cooldownMs: 650,
+          deliveryMs: 1200,
           blackoutPhases: [],
         });
         this.coldCooldownMs = 10000;

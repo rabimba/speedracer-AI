@@ -184,14 +184,8 @@ class KoruRealtimeEngine(
     }
 
     private fun adaptTiming(skillLevel: com.trustableai.koru.model.SkillLevel) {
-        when (skillLevel) {
-            com.trustableai.koru.model.SkillLevel.BEGINNER ->
-                timingGate.updateConfig(3000L, setOf(CornerPhase.MID_CORNER, CornerPhase.APEX))
-            com.trustableai.koru.model.SkillLevel.INTERMEDIATE ->
-                timingGate.updateConfig(1500L, setOf(CornerPhase.APEX))
-            com.trustableai.koru.model.SkillLevel.ADVANCED ->
-                timingGate.updateConfig(1000L, emptySet())
-        }
+        val profile = LiveAudioPolicy.timingProfile(skillLevel)
+        timingGate.updateConfig(profile.cooldownMs, profile.deliveryMs, profile.blackoutPhases)
     }
 
     private fun actionPriority(action: CoachAction): Int {

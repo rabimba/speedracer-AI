@@ -28,11 +28,9 @@ The architecture is materially stronger than the original concept, but it is not
 The main gaps are:
 
 - no live RaceBox BLE or OBD telemetry yet
-- no pre-race goal-setting UI/workflow
-- no real runtime use of `prioritizedActions` from session goals
 - no proper session library/archive yet
 - no raw video captured into the saved session artifact
-- no coach recommendation workflow before session start
+- no durable driver-profile loop yet
 
 ## What You Own Now
 
@@ -161,22 +159,23 @@ In plain terms: you have a real working prototype that can coach in real time on
 
 **Original intent:** Help the user choose the right coach, or recommend one automatically.
 
-**Status:** `Partially done`
+**Status:** `Done`
 
 **What is done**
 
 - The user can choose a coach before going live.
+- The pre-race setup now recommends a coach based on session goals and session mode.
+- The UI shows both a rationale and a sample cue before session start.
 
 **What is still missing**
 
-- There is no recommendation engine.
-- There is no rationale such as "use this coach because you are a beginner working on braking."
+- The recommendation is still heuristic rather than driven by a long-term driver profile.
 
 ## Audit Against Pre-Race Chat Contract
 
 ### Contract Status
 
-**Overall status:** `Interface present, workflow not implemented`
+**Overall status:** `Implemented, with future extensions still open`
 
 ### What is implemented
 
@@ -184,20 +183,15 @@ In plain terms: you have a real working prototype that can coach in real time on
 - `CoachingService.setSessionGoals(goals)` exists.
 - The max-3-goal rule is implemented.
 - Tests exist for storing goals and enforcing the max.
+- There is now a pre-race goal-selection workflow in the live session UI.
+- Goals are passed into both browser and native live-session configs.
+- `prioritizedActions` now bias hot-path action selection in both browser and native runtimes.
+- Saved session artifacts now persist the active goals for replay and Gemini analysis.
 
 ### What is not implemented
 
-- There is no pre-race chat or pre-race goal form in the live workflow.
-- Goals are not collected from the user before session start.
-- `prioritizedActions` are not actually used to bias live rule firing.
 - There is no auto-generated goal flow from a driver profile.
 - There is no coach-assigned goal flow.
-
-### Important implementation gap
-
-The code comments say that session goals should bias the hot path, but that behavior is not wired in yet. Right now the goals are stored, but they do not change live coaching behavior.
-
-That means the contract exists, but the workflow and the reasoning effect are still incomplete.
 
 ## Audit Against Real-Time Data Reasoning Learnings
 
@@ -250,15 +244,17 @@ So the architectural idea is preserved, but the cold path is stronger post-sessi
 
 ### Session goals as a filter
 
-**Status:** `Not implemented in runtime behavior`
+**Status:** `Implemented`
 
 **What is done**
 
 - Data contract exists.
+- The live rule engine now uses active goals to break ties within the same urgency band.
+- Goal context is also preserved in the saved session for cold-path analysis.
 
 **What is missing**
 
-- The live rule engine does not actually prioritize or suppress actions based on the active goals.
+- There is not yet a persistent driver profile that can auto-suggest or refine goals over time.
 
 ### Improvement tracking
 
@@ -342,23 +338,14 @@ Highest priority.
 
 This is the biggest remaining gap between prototype and race-ready system.
 
-### 2. Implement pre-race goals for real
-
-- Add a simple pre-race form or chat
-- Limit to 1-3 goals
-- Pass goals into the live session before first frame
-- Actually use `prioritizedActions` to bias hot-path selection and message wording
-
-This is the cleanest missing product feature from the original docs.
-
-### 3. Build a true session archive
+### 2. Build a true session archive
 
 - Store multiple sessions, not just the latest one
 - Show session cards in the UI
 - Support reloading prior sessions for replay and Gemini review
 - Store cloud analysis results with the session
 
-### 4. Add raw video to the recorded artifact
+### 3. Add raw video to the recorded artifact
 
 - Record synchronized camera video
 - Save a file reference alongside the fused session artifact
@@ -366,21 +353,13 @@ This is the cleanest missing product feature from the original docs.
   - sensor trace
   - original footage
 
-### 5. Add coach recommendation before session start
-
-- Recommend a coach based on:
-  - experience level
-  - goals
-  - session type
-- Show a short explanation for why that coach was suggested
-
-### 6. Close the hot/cold architecture loop
+### 4. Close the hot/cold architecture loop
 
 - Keep the on-device live path fast and local
 - Keep Gemini for deeper post-session analysis
 - Optionally add a non-blocking live cloud advisory lane later, but never let it block the hot path
 
-### 7. Build the driver profile loop
+### 5. Build the driver profile loop
 
 - Persist session summaries
 - Identify recurring weaknesses by corner/action
@@ -407,10 +386,8 @@ What is still scaffolded rather than complete:
 
 - RaceBox BLE
 - OBD telemetry
-- pre-race goals workflow
-- runtime goal biasing
 - session archive
 - synchronized raw video
-- coach recommendation
+- long-term driver-profile automation
 
 That is the clearest description of what this project is now, and what still needs to be built next.
