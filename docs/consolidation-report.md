@@ -4,11 +4,14 @@
 **Last updated:** April 28, 2026  
 **Purpose:** Document what exists across the three project copies that were evaluated, what has been merged into the consolidated branch, how the overall architecture now fits together, and which stakeholders own each part.
 
+See also: [End-to-End Architecture](./end-to-end-architecture.md)
+
 ## 1. Repositories Evaluated
 
 ### A. Current working repository
 
-**Path:** `/Users/rkaranjai/Documents/trustable-ai-codelab`  
+**Project:** `trustable-ai-codelab`  
+**Attribution:** Rabimba  
 **Git branch at evaluation start:** `rabimba/koru-od`  
 **Status:** Most advanced implementation surface
 
@@ -16,7 +19,8 @@ This is the main implementation branch and the basis for consolidation.
 
 ### B. Downloaded repository
 
-**Path:** `/Users/rkaranjai/Downloads/trustable-ai-codelab`  
+**Project:** `trustable-ai-codelab`  
+**Attribution:** Madona S Wambua  
 **Git branch:** `edge-telemtry`  
 **Status:** Browser-first repo with cross-team planning artifacts
 
@@ -24,7 +28,8 @@ This repo is largely a web/PWA-oriented planning and implementation snapshot. It
 
 ### C. Downloaded snapshot
 
-**Path:** `/Users/rkaranjai/Downloads/trustable-ai-codelab-main`  
+**Project:** `trustable-ai-codelab-main`  
+**Attribution:** Adrian Catalan  
 **Git status:** not a git repo, plain snapshot  
 **Status:** Browser/data-reasoning snapshot with some useful retained assets
 
@@ -35,7 +40,7 @@ This snapshot is much closer to the advanced web/data-reasoning path than the `e
 
 ## 2. Consolidation Decision
 
-The correct consolidation base is the current working repository in `Documents`, because it is the only codebase that already includes:
+The correct consolidation base is the Rabimba working repository, because it is the only codebase that already includes:
 
 - the native Android host
 - the Android realtime runtime
@@ -66,7 +71,7 @@ The downloaded `edge-telemtry` repo did not contain any implementation files tha
 
 ## 4. Implementation Evaluation by Project
 
-## 4.1 Current repository: `/Users/rkaranjai/Documents/trustable-ai-codelab`
+## 4.1 Rabimba working repository: `trustable-ai-codelab`
 
 ### What is implemented
 
@@ -115,7 +120,7 @@ The downloaded `edge-telemtry` repo did not contain any implementation files tha
 - No raw video bound to saved session artifacts yet
 - No long-term driver profile loop yet
 
-## 4.2 Downloaded repo: `/Users/rkaranjai/Downloads/trustable-ai-codelab`
+## 4.2 Downloaded repo: `trustable-ai-codelab`
 
 ### What is implemented
 
@@ -141,7 +146,7 @@ The downloaded `edge-telemtry` repo did not contain any implementation files tha
 
 This repo is valuable as a planning and product-contract reference, not as the main implementation source.
 
-## 4.3 Downloaded snapshot: `/Users/rkaranjai/Downloads/trustable-ai-codelab-main`
+## 4.3 Downloaded snapshot: `trustable-ai-codelab-main`
 
 ### What is implemented
 
@@ -218,6 +223,16 @@ flowchart LR
 ## 6. Stakeholders and Ownership
 
 This section describes who owns what in the consolidated system.
+
+## 6.0 Repository attribution
+
+This consolidation should credit the three source trees this way:
+
+- **Rabimba** owns the current working `trustable-ai-codelab` repository
+- **Madona S Wambua** owns the downloaded `trustable-ai-codelab` repository
+- **Adrian Catalan** owns the `trustable-ai-codelab-main` snapshot
+
+That attribution should stay attached to both the implementation history and any later consolidation summary.
 
 ## 6.1 Product / UX / workflow ownership
 
@@ -340,9 +355,9 @@ These are not code owners, but they are source-of-truth stakeholders for coachin
 
 | Repo | Role | What it is best for | What it is missing |
 |---|---|---|---|
-| `Documents/trustable-ai-codelab` | Main implementation base | Full product/runtime implementation | Session archive, raw video, real hardware telemetry |
-| `Downloads/trustable-ai-codelab` | Planning/reference repo | Cross-team product stories | Native/on-device implementation |
-| `Downloads/trustable-ai-codelab-main` | Web/data-reasoning reference snapshot | Data reasoning docs + latency test | Native/on-device implementation |
+| `Documents/trustable-ai-codelab` | Rabimba | Main implementation base | Full product/runtime implementation | Session archive, raw video, real hardware telemetry |
+| `Downloads/trustable-ai-codelab` | Madona S Wambua | Planning/reference repo | Cross-team product stories | Native/on-device implementation |
+| `Downloads/trustable-ai-codelab-main` | Adrian Catalan | Web/data-reasoning reference snapshot | Data reasoning docs + latency test | Native/on-device implementation |
 
 ## 8. Next Steps After Consolidation
 

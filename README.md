@@ -12,6 +12,7 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 ## Table of Contents
 
 - [Current Status](#current-status)
+- [End-to-End Architecture](docs/end-to-end-architecture.md)
 - [Roadmap](#roadmap)
   - [Data Reasoning](#data-reasoning)
   - [Edge / Telemetry](#edge--telemetry)
@@ -27,6 +28,7 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 - [koru-application](#koru-application)
 - [Tech Stack](#tech-stack)
 - [Data Reasoning Documentation](docs/data-reasoning.md)
+- [Consolidation Report](docs/consolidation-report.md)
 
 ---
 
