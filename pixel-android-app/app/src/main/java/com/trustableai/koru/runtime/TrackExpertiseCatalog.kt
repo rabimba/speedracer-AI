@@ -1,5 +1,6 @@
 package com.trustableai.koru.runtime
 
+import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.Corner
 import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.SkillLevel
@@ -125,11 +126,132 @@ object TrackExpertiseCatalog {
         }
     }
 
+    fun shouldSuppressHotAction(
+        track: Track?,
+        corner: Corner?,
+        action: CoachAction,
+        skillLevel: SkillLevel,
+        phase: CornerPhase,
+        timeSeconds: Double,
+        cognitiveLoad: Double,
+    ): Boolean {
+        if (!isSonoma(track)) return false
+
+        if (cognitiveLoad > 0.72 && action in setOf(CoachAction.HUSTLE, CoachAction.PUSH, CoachAction.FULL_THROTTLE, CoachAction.COMMIT)) {
+            return true
+        }
+
+        val sessionPhase = sessionPhase(skillLevel, timeSeconds)
+        if (skillLevel == SkillLevel.BEGINNER && sessionPhase < 3 && action in setOf(CoachAction.HUSTLE, CoachAction.FULL_THROTTLE)) {
+            return true
+        }
+        if (skillLevel == SkillLevel.BEGINNER && sessionPhase == 1 && action in setOf(CoachAction.TRAIL_BRAKE, CoachAction.COMMIT)) {
+            return true
+        }
+        if ((corner?.id == 6 || corner?.id == 7) && action == CoachAction.PUSH) {
+            return true
+        }
+        if (corner?.id == 3 && action in setOf(CoachAction.THROTTLE, CoachAction.FULL_THROTTLE, CoachAction.HUSTLE)) {
+            return phase != CornerPhase.EXIT && phase != CornerPhase.ACCELERATION
+        }
+        return false
+    }
+
+    fun hotActionText(
+        track: Track?,
+        corner: Corner?,
+        action: CoachAction,
+        skillLevel: SkillLevel,
+        phase: CornerPhase,
+        timeSeconds: Double,
+        cognitiveLoad: Double,
+    ): String? {
+        if (!isSonoma(track)) return null
+        val sessionPhase = sessionPhase(skillLevel, timeSeconds)
+
+        if (action == CoachAction.COGNITIVE_OVERLOAD || cognitiveLoad > 0.72) {
+            return if (skillLevel == SkillLevel.BEGINNER) {
+                "Too much at once. Eyes up and hit your marks."
+            } else {
+                "One clean change only. Reset to marks and vision."
+            }
+        }
+
+        return when (corner?.id) {
+            3 -> when {
+                action in setOf(CoachAction.THROTTLE, CoachAction.FULL_THROTTLE, CoachAction.HUSTLE) &&
+                    (phase == CornerPhase.EXIT || phase == CornerPhase.ACCELERATION) ->
+                    "Turn 3: late apex finished. Now commit all the way out."
+                action == CoachAction.COAST || action == CoachAction.LIFT_MID_CORNER ->
+                    "Turn 3: do not float the exit. Be patient, then full throttle."
+                action == CoachAction.EARLY_THROTTLE ->
+                    "Turn 3: too early. Wait for the late apex before throttle."
+                else -> null
+            }
+
+            6 -> when (action) {
+                CoachAction.COAST, CoachAction.LIFT_MID_CORNER, CoachAction.THROTTLE ->
+                    "Carousel: keep maintenance throttle and stay tight to the curb."
+                CoachAction.PUSH ->
+                    "Carousel: do not chase speed. Distance is king here."
+                else -> null
+            }
+
+            7 -> when {
+                action == CoachAction.COAST || action == CoachAction.LIFT_MID_CORNER ->
+                    "Turn 7: maintenance throttle through the middle, then drive to second apex."
+                action in setOf(CoachAction.THROTTLE, CoachAction.FULL_THROTTLE, CoachAction.HUSTLE) &&
+                    (phase == CornerPhase.EXIT || phase == CornerPhase.ACCELERATION) ->
+                    "Turn 7: second apex is done. Unwind and commit to power."
+                else -> null
+            }
+
+            910 -> when (action) {
+                CoachAction.BRAKE, CoachAction.WAIT, CoachAction.HESITATION ->
+                    "Turns 9-10: sacrifice 9, straighten the car, then brake for 10."
+                else -> null
+            }
+
+            11 -> when {
+                action in setOf(CoachAction.BRAKE, CoachAction.SPIKE_BRAKE, CoachAction.TRAIL_BRAKE) ->
+                    "Turn 11: big squeeze first, then taper the release cleanly."
+                action in setOf(CoachAction.THROTTLE, CoachAction.FULL_THROTTLE, CoachAction.HUSTLE) &&
+                    sessionPhase >= 2 ->
+                    "Turn 11 exit matters. Free the hands, then commit down the next straight."
+                else -> null
+            }
+
+            12 -> when {
+                action in setOf(CoachAction.THROTTLE, CoachAction.FULL_THROTTLE, CoachAction.HUSTLE) &&
+                    sessionPhase >= 2 ->
+                    "Turn 12: unwind early and build the front-straight run."
+                else -> null
+            }
+
+            else -> {
+                if (sessionPhase == 1 && skillLevel == SkillLevel.BEGINNER && action in setOf(CoachAction.PUSH, CoachAction.HUSTLE)) {
+                    "First get the marks right. Speed comes after the line is clean."
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
     private fun beginnerAware(skillLevel: SkillLevel, beginner: String, standard: String): String {
         return when (skillLevel) {
             SkillLevel.BEGINNER -> beginner
             SkillLevel.INTERMEDIATE -> standard
             SkillLevel.ADVANCED -> standard
+        }
+    }
+
+    private fun sessionPhase(skillLevel: SkillLevel, timeSeconds: Double): Int {
+        return when {
+            skillLevel == SkillLevel.ADVANCED -> 3
+            timeSeconds > 180.0 -> 3
+            timeSeconds > 60.0 -> 2
+            else -> 1
         }
     }
 }

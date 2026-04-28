@@ -39,6 +39,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 - Native Android host app with a WebView bridge for the React UI.
 - Sonoma Raceway is now the primary deployed track in both the web registry and native Android catalog.
 - Sonoma-specific coaching guidance is wired in from the sector map plus coaching notes, including corner dossiers for Turns 2, 3, 3A, 6, 7, 9-10, 11, and 12.
+- The T-Rod and Ross Bentley knowledge layer now influences runtime selection as doctrine, not just prompt text: it can suppress premature advice, bias hot-path wording, and shape feedforward/edge guidance per corner.
 - CameraX-based live camera lane with lightweight on-device vision feature extraction.
 - Three Android live-session modes:
   - `Telemetry + Camera Fusion`

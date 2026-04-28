@@ -1,4 +1,4 @@
-import type { Corner, SkillLevel, Track } from '../types';
+import type { CoachAction, Corner, CornerPhase, SkillLevel, Track } from '../types';
 import {
   TROD_CORNER_ADVICE,
   TROD_INSIGHTS,
@@ -146,4 +146,115 @@ ${cornerBlock}RELEVANT INSIGHTS:
 ${insightLines}
 
 When coaching Sonoma, prioritize exit quality from Turns 3, 7, 11, and 12, protect maintenance throttle in the Carousel, and do not overload the driver with more than one new change at a time.`;
+}
+
+export function shouldSuppressTrackAction(
+  track: Track | null | undefined,
+  corner: Corner | null,
+  action: CoachAction,
+  skillLevel: SkillLevel,
+  sessionPhase: SessionPhase,
+  phase: CornerPhase,
+  cognitiveLoad: number,
+): boolean {
+  if (!isSonomaTrack(track)) return false;
+
+  if (cognitiveLoad > 0.72 && ['HUSTLE', 'PUSH', 'FULL_THROTTLE', 'COMMIT'].includes(action)) {
+    return true;
+  }
+
+  if (skillLevel === 'BEGINNER' && sessionPhase < 3 && ['HUSTLE', 'FULL_THROTTLE'].includes(action)) {
+    return true;
+  }
+
+  if (skillLevel === 'BEGINNER' && sessionPhase === 1 && ['TRAIL_BRAKE', 'COMMIT'].includes(action)) {
+    return true;
+  }
+
+  if ((corner?.id === 6 || corner?.id === 7) && action === 'PUSH') {
+    return true;
+  }
+
+  if (corner?.id === 3 && ['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action)) {
+    return phase !== 'EXIT' && phase !== 'ACCELERATION';
+  }
+
+  return false;
+}
+
+export function getTrackHotActionMessage(
+  track: Track | null | undefined,
+  corner: Corner | null,
+  action: CoachAction,
+  skillLevel: SkillLevel,
+  sessionPhase: SessionPhase,
+  phase: CornerPhase,
+  cognitiveLoad: number,
+): string | null {
+  if (!isSonomaTrack(track)) return null;
+
+  if (action === 'COGNITIVE_OVERLOAD' || cognitiveLoad > 0.72) {
+    return skillLevel === 'BEGINNER'
+      ? 'Too much at once. Eyes up and hit your marks.'
+      : 'One clean change only. Reset to marks and vision.';
+  }
+
+  switch (corner?.id) {
+    case 3:
+      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && (phase === 'EXIT' || phase === 'ACCELERATION')) {
+        return 'Turn 3: late apex finished. Now commit all the way out.';
+      }
+      if (action === 'COAST' || action === 'LIFT_MID_CORNER') {
+        return 'Turn 3: do not float the exit. Be patient, then full throttle.';
+      }
+      if (action === 'EARLY_THROTTLE') {
+        return 'Turn 3: too early. Wait for the late apex before throttle.';
+      }
+      break;
+
+    case 6:
+      if (action === 'COAST' || action === 'LIFT_MID_CORNER' || action === 'THROTTLE') {
+        return 'Carousel: keep maintenance throttle and stay tight to the curb.';
+      }
+      if (action === 'PUSH') {
+        return 'Carousel: do not chase speed. Distance is king here.';
+      }
+      break;
+
+    case 7:
+      if (action === 'COAST' || action === 'LIFT_MID_CORNER') {
+        return 'Turn 7: maintenance throttle through the middle, then drive to second apex.';
+      }
+      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && (phase === 'EXIT' || phase === 'ACCELERATION')) {
+        return 'Turn 7: second apex is done. Unwind and commit to power.';
+      }
+      break;
+
+    case 910:
+      if (action === 'BRAKE' || action === 'WAIT' || action === 'HESITATION') {
+        return 'Turns 9-10: sacrifice 9, straighten the car, then brake for 10.';
+      }
+      break;
+
+    case 11:
+      if (action === 'BRAKE' || action === 'SPIKE_BRAKE' || action === 'TRAIL_BRAKE') {
+        return 'Turn 11: big squeeze first, then taper the release cleanly.';
+      }
+      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && sessionPhase >= 2) {
+        return 'Turn 11 exit matters. Free the hands, then commit down the next straight.';
+      }
+      break;
+
+    case 12:
+      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && sessionPhase >= 2) {
+        return 'Turn 12: unwind early and build the front-straight run.';
+      }
+      break;
+  }
+
+  if (sessionPhase === 1 && skillLevel === 'BEGINNER' && (action === 'PUSH' || action === 'HUSTLE')) {
+    return 'First get the marks right. Speed comes after the line is clean.';
+  }
+
+  return null;
 }

@@ -1,6 +1,11 @@
 import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal } from '../types';
 import { COACHES, DEFAULT_COACH, DECISION_MATRIX, RACING_PHYSICS_KNOWLEDGE } from '../utils/coachingKnowledge';
-import { getTrackFeedforwardMessage, getTrackPromptContext } from '../data/trackExpertise';
+import {
+  getTrackFeedforwardMessage,
+  getTrackHotActionMessage,
+  getTrackPromptContext,
+  shouldSuppressTrackAction,
+} from '../data/trackExpertise';
 import { haversineDistance, isValidGps } from '../utils/geoUtils';
 import { CornerPhaseDetector } from './cornerPhaseDetector';
 import { TimingGate } from './timingGate';
@@ -116,6 +121,10 @@ export class CoachingService {
     // Detect corner phase
     const detection = this.cornerDetector.detect(frame);
     this.currentPhase = detection.phase;
+    if (this.track && detection.cornerId !== null) {
+      const detectedCorner = this.track.corners.find((corner) => corner.id === detection.cornerId) ?? null;
+      if (detectedCorner) this.lastCorner = detectedCorner;
+    }
 
     // Track per-corner performance (Phase 6.4)
     const improvement = this.performanceTracker.update(
@@ -197,6 +206,8 @@ export class CoachingService {
   // ── HOT PATH: instant heuristic commands ───────────────
 
   private runHotPath(frame: TelemetryFrame) {
+    const state = this.driverModel.getState();
+    const skillLevel = this.driverModel.getSkillLevel();
     const data = {
       brake: frame.brake,
       throttle: frame.throttle,
@@ -212,6 +223,15 @@ export class CoachingService {
         // Session progression: suppress advanced actions in early phases
         const suppressed = CoachingService.PHASE_SUPPRESSED[this.sessionPhase];
         if (suppressed?.has(rule.action)) continue;
+        if (shouldSuppressTrackAction(
+          this.track,
+          this.lastCorner,
+          rule.action,
+          skillLevel,
+          this.sessionPhase,
+          this.currentPhase,
+          state.cognitiveLoad,
+        )) continue;
         // Skip repeats
         if (rule.action === this.lastHotAction) continue;
 
@@ -272,8 +292,23 @@ export class CoachingService {
     const lazyThrottle = frame.throttle > 50 && frame.throttle < 92;
     const movingFast = frame.speed > 40;
     const lowLateralG = Math.abs(frame.gLat) < 0.3;
+    const driverState = this.driverModel.getState();
 
-    if (onExit && lazyThrottle && movingFast && lowLateralG) {
+    if (
+      onExit &&
+      lazyThrottle &&
+      movingFast &&
+      lowLateralG &&
+      !shouldSuppressTrackAction(
+        this.track,
+        this.lastCorner,
+        'HUSTLE',
+        driverState.skillLevel,
+        this.sessionPhase,
+        this.currentPhase,
+        driverState.cognitiveLoad,
+      )
+    ) {
       this.lastHustleCheck = frame.time;
       this.coachingQueue.enqueue({
         path: 'hot',
@@ -289,6 +324,16 @@ export class CoachingService {
   /** Convert action enum to coaching phrase — context-aware and persona-specific */
   private humanizeAction(action: CoachAction, frame: TelemetryFrame): string {
     const skillLevel = this.driverModel.getSkillLevel();
+    const doctrineText = getTrackHotActionMessage(
+      this.track,
+      this.lastCorner,
+      action,
+      skillLevel,
+      this.sessionPhase,
+      this.currentPhase,
+      this.driverModel.getState().cognitiveLoad,
+    );
+    if (doctrineText) return doctrineText;
 
     // Skill-adapted phrases for key actions (override persona for clarity)
     // Beginner phrases: T-Rod feel-based + Ross Bentley trigger phrases

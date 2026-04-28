@@ -46,9 +46,27 @@ class KoruRealtimeEngine(
         adaptTiming(driverState.skillLevel)
 
         DecisionMatrix.evaluate(frame)?.let { action ->
-            if (action != lastHotAction) {
+            val suppress =
+                TrackExpertiseCatalog.shouldSuppressHotAction(
+                    track = track,
+                    corner = detection.corner,
+                    action = action,
+                    skillLevel = driverState.skillLevel,
+                    phase = currentPhase,
+                    timeSeconds = frame.timeSeconds,
+                    cognitiveLoad = driverState.cognitiveLoad,
+                )
+            if (action != lastHotAction && !suppress) {
                 lastHotAction = action
-                val decision = hotDecision(action, driverState.skillLevel, nowMs)
+                val decision =
+                    hotDecision(
+                        action = action,
+                        corner = detection.corner,
+                        skillLevel = driverState.skillLevel,
+                        cognitiveLoad = driverState.cognitiveLoad,
+                        timeSeconds = frame.timeSeconds,
+                        nowMs = nowMs,
+                    )
                 if (decision.priority == 0) {
                     queue.enqueue(queue.preempt(decision), nowMs)
                 } else {
@@ -112,12 +130,29 @@ class KoruRealtimeEngine(
         )
     }
 
-    private fun hotDecision(action: CoachAction, skillLevel: com.trustableai.koru.model.SkillLevel, nowMs: Long): CoachingQueue.QueuedDecision {
+    private fun hotDecision(
+        action: CoachAction,
+        corner: com.trustableai.koru.model.Corner?,
+        skillLevel: com.trustableai.koru.model.SkillLevel,
+        cognitiveLoad: Double,
+        timeSeconds: Double,
+        nowMs: Long,
+    ): CoachingQueue.QueuedDecision {
         val priority = actionPriority(action)
+        val doctrineText =
+            TrackExpertiseCatalog.hotActionText(
+                track = track,
+                corner = corner,
+                action = action,
+                skillLevel = skillLevel,
+                phase = currentPhase,
+                timeSeconds = timeSeconds,
+                cognitiveLoad = cognitiveLoad,
+            )
         return CoachingQueue.QueuedDecision(
             action = action,
             path = CoachingPath.HOT.bridgeValue(),
-            text = phraseCatalog.render(action, skillLevel, activeCoachId),
+            text = doctrineText ?: phraseCatalog.render(action, skillLevel, activeCoachId),
             priority = priority,
             cornerPhase = currentPhase,
             timestampMs = nowMs,
