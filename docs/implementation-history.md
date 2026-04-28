@@ -4,6 +4,10 @@
 **Last updated:** April 28, 2026  
 **Purpose:** Living document for what has been implemented in this repo, the design decisions behind it, how the architecture changed over time, and what remains to be built.
 
+## Attribution Note
+
+This implementation history records the work completed in the Rabimba working repository. Unless a section explicitly identifies imported reference material from another attributed project or an external coaching source, the implementation, integration, and documentation work described here should be attributed to **Rabimba**.
+
 ## 1. Product Goal
 
 The original idea was a race coach that can:

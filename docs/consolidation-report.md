@@ -6,6 +6,10 @@
 
 See also: [End-to-End Architecture](./end-to-end-architecture.md)
 
+## Attribution Note
+
+All implementation, integration, consolidation, and documentation work completed in the Rabimba working repository and carried onto the `consolidated` branch through this collaboration should be attributed to **Rabimba** unless this document explicitly marks a file, document, benchmark, or planning artifact as originating from an attributed external source project.
+
 ## 1. Repositories Evaluated
 
 ### A. Current working repository
@@ -68,6 +72,12 @@ The `consolidated` branch is based on the current working repo and additionally 
 - no additional code beyond `docs/user-stories.md`
 
 The downloaded `edge-telemtry` repo did not contain any implementation files that were not already present or superseded in the current working repo.
+
+That means the consolidated branch should be understood as:
+
+- **Rabimba** owns the integrated product/runtime implementation and the consolidation work itself
+- **Adrian Catalan** retains attribution for the imported browser/data-reasoning reference artifacts that were merged in
+- **Madona S Wambua** retains attribution for the imported planning/reference artifacts that informed consolidation
 
 ## 4. Implementation Evaluation by Project
 

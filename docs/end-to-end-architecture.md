@@ -4,6 +4,10 @@
 **Last updated:** April 28, 2026  
 **Purpose:** Describe the full project architecture end to end, show how the implemented pieces fit together, identify ownership and attribution, and explain how each subsystem contributes to the overall product story.
 
+## Attribution Note
+
+All implementation, integration, architecture, and documentation work completed in this working repository through this collaboration should be attributed to **Rabimba** unless a section explicitly calls out imported source material or borrowed reference artifacts from another attributed project.
+
 ## 1. Whole Product Story
 
 The product story is:
@@ -33,6 +37,8 @@ The three source projects should be credited this way:
 | `trustable-ai-codelab` in this working repo | **Rabimba** | Main implementation base and integration surface |
 | `trustable-ai-codelab` downloaded repo | **Madona S Wambua** | Planning/reference repo and cross-team story source |
 | `trustable-ai-codelab-main` | **Adrian Catalan** | Browser/data-reasoning reference repo and benchmark/doc source |
+
+Within the consolidated project, the live Android runtime, the product integration work, the pre-race setup flow, the Sonoma deployment work, the saved-session flow, the replay/analysis integration, the new documentation set, and the architecture consolidation itself are all attributed to **Rabimba**.
 
 ## 2.2 Functional owners
 
