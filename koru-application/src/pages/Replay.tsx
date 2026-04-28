@@ -14,6 +14,7 @@ import type { RecordedSessionArtifact, TelemetryFrame, TTSProvider } from '../ty
 import { Upload } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { parseTelemetryCaptureInput } from '../utils/sessionCapture';
+import { buildRecordedSessionAnalysisContext } from '../utils/sessionAnalysis';
 
 interface ReplayProps {
   apiKey: string | null;
@@ -31,7 +32,7 @@ export default function Replay({ apiKey }: ReplayProps) {
   const [recordedSession, setRecordedSession] = useState<RecordedSessionArtifact | null>(null);
   const activeTrack = getTrackByName(recordedSession?.trackName ?? DEFAULT_TRACK.name);
 
-  const { generateFeedback, status: cloudStatus } = useGeminiCloud();
+  const { generateFeedback, status: cloudStatus } = useGeminiCloud(apiKey);
   const { speak, setProvider, provider } = useTTS(apiKey, activeCoach);
   const { checkLookahead } = usePredictiveCoaching(activeTrack);
 
@@ -172,16 +173,20 @@ export default function Replay({ apiKey }: ReplayProps) {
   // AI Analysis
   const handleAnalyze = useCallback(async () => {
     if (frames.length === 0) return;
-    const start = Math.max(0, currentIdx - 100);
-    const end = Math.min(frames.length - 1, currentIdx + 100);
-    const slice = frames.slice(start, end);
-    const context = slice.map((f, i) =>
-      `[${i}] Speed:${f.speed.toFixed(0)} Thr:${f.throttle.toFixed(0)} Brk:${f.brake.toFixed(0)} GLat:${f.gLat.toFixed(2)} GLong:${f.gLong.toFixed(2)}`
-      + (f.vision
-        ? ` VisionMotion:${f.vision.motionEnergy.toFixed(2)} VisionBalance:${f.vision.lateralBalance.toFixed(2)} VisionContrast:${f.vision.centerContrast.toFixed(2)}`
-        : '')
-    ).join('\n');
-    const result = await generateFeedback('flash', context);
+    const result = recordedSession
+      ? await generateFeedback('pro', buildRecordedSessionAnalysisContext(recordedSession, activeTrack))
+      : await generateFeedback(
+        'flash',
+        frames
+          .slice(Math.max(0, currentIdx - 100), Math.min(frames.length, currentIdx + 101))
+          .map((frame, index) =>
+            `[${index}] Track:${activeTrack.name} Speed:${frame.speed.toFixed(0)} Thr:${frame.throttle.toFixed(0)} Brk:${frame.brake.toFixed(0)} GLat:${frame.gLat.toFixed(2)} GLong:${frame.gLong.toFixed(2)}`
+            + (frame.vision
+              ? ` VisionMotion:${frame.vision.motionEnergy.toFixed(2)} VisionBalance:${frame.vision.lateralBalance.toFixed(2)} VisionContrast:${frame.vision.centerContrast.toFixed(2)}`
+              : '')
+          )
+          .join('\n'),
+      );
     setAnalysisResult(result);
     if (result) {
       const msg: CoachMessage = {
@@ -219,7 +224,11 @@ export default function Replay({ apiKey }: ReplayProps) {
             onClick={handleAnalyze}
             disabled={frames.length === 0 || cloudStatus.state === 'loading'}
           >
-            {cloudStatus.state === 'loading' ? 'Analyzing...' : 'AI Analyze'}
+            {cloudStatus.state === 'loading'
+              ? 'Analyzing...'
+              : recordedSession
+                ? 'AI Session Analysis'
+                : 'AI Window Analysis'}
           </button>
           <select
             className="tts-select"

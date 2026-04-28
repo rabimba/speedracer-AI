@@ -67,7 +67,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/live" element={<LiveSession apiKey={apiKey} />} />
             <Route path="/replay" element={<Replay apiKey={apiKey} />} />
-            <Route path="/analysis" element={<Analysis />} />
+            <Route path="/analysis" element={<Analysis apiKey={apiKey} />} />
           </Route>
           <Route path="*" element={<Navigate to="/live" replace />} />
         </Routes>

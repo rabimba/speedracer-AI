@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { RACING_PHYSICS_KNOWLEDGE } from '../utils/coachingKnowledge';
 import { convertToWav } from '../utils/audioUtils';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, ThinkingLevel } from '@google/genai';
 import type { CloudModel } from '../types';
 
 interface CloudStatus {
@@ -10,15 +10,39 @@ interface CloudStatus {
   hasKey: boolean;
 }
 
-export const useGeminiCloud = () => {
+const CLOUD_MODELS = {
+  pro: 'gemini-3.1-pro-preview',
+  flash: 'gemini-3-flash-preview',
+} as const;
+
+function readStoredApiKey(): string | null {
+  try {
+    return localStorage.getItem('gemini_api_key') || null;
+  } catch {
+    return null;
+  }
+}
+
+export const useGeminiCloud = (externalApiKey?: string | null) => {
+  const normalizedExternalApiKey = externalApiKey || null;
   const [apiKey, setAutoApiKey] = useState<string | null>(() =>
-    localStorage.getItem('gemini_api_key') || null
+    normalizedExternalApiKey ?? readStoredApiKey()
   );
 
   const [status, setStatus] = useState<CloudStatus>({
     state: 'idle',
     hasKey: !!apiKey,
   });
+
+  useEffect(() => {
+    if (externalApiKey === undefined) return;
+    setAutoApiKey(normalizedExternalApiKey);
+    setStatus(prev => ({
+      ...prev,
+      hasKey: !!normalizedExternalApiKey,
+      error: normalizedExternalApiKey ? undefined : prev.error,
+    }));
+  }, [externalApiKey, normalizedExternalApiKey]);
 
   const setApiKey = useCallback((key: string) => {
     if (key) {
@@ -42,7 +66,11 @@ export const useGeminiCloud = () => {
       setStatus(prev => ({ ...prev, state: 'loading', error: undefined }));
 
       try {
-        const modelName = model === 'pro' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash-lite';
+        const client = new GoogleGenAI({
+          apiKey,
+          httpOptions: { apiVersion: 'v1beta' },
+        });
+        const modelName = CLOUD_MODELS[model];
 
         const prompt = model === 'pro'
           ? `You are an Elite Driver Coach.
@@ -68,25 +96,17 @@ TASK: Identify the biggest time loss. Explain the error.
 **Directive:** [Short instruction]
 ### Analysis
 [Explanation]`;
-
-        const body: Record<string, unknown> = {
-          contents: [{ parts: [{ text: prompt }] }],
-        };
-        // Note: thinkingConfig only supported by gemini-2.5-pro models
-
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-        );
-
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error?.message || res.statusText);
-        }
-
-        const data = await res.json();
+        const response = await client.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            thinkingConfig: {
+              thinkingLevel: model === 'pro' ? ThinkingLevel.HIGH : ThinkingLevel.LOW,
+            },
+          },
+        });
         setStatus(prev => ({ ...prev, state: 'success' }));
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return response.text ?? '';
       } catch (err: unknown) {
         console.error('Gemini Cloud failed:', err);
         setStatus(prev => ({ ...prev, state: 'error', error: (err as Error).message }));

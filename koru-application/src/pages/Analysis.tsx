@@ -3,24 +3,34 @@ import { useGeminiCloud } from '../hooks/useGeminiCloud';
 import { parseTelemetryCaptureInput } from '../utils/sessionCapture';
 import TelemetryCharts from '../components/TelemetryCharts';
 import { DEFAULT_TRACK } from '../data/trackData';
-import type { TelemetryFrame } from '../types';
+import type { RecordedSessionArtifact, TelemetryFrame } from '../types';
 import { BarChart3, Upload, Loader } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-export default function Analysis() {
+interface AnalysisProps {
+  apiKey: string | null;
+}
+
+export default function Analysis({ apiKey }: AnalysisProps) {
   const [lap1Frames, setLap1Frames] = useState<TelemetryFrame[]>([]);
   const [lap2Frames, setLap2Frames] = useState<TelemetryFrame[]>([]);
+  const [lap1Session, setLap1Session] = useState<RecordedSessionArtifact | null>(null);
+  const [lap2Session, setLap2Session] = useState<RecordedSessionArtifact | null>(null);
   const [comparisonResult, setComparisonResult] = useState('');
-  const { generateFeedback, status } = useGeminiCloud();
+  const { generateFeedback, status } = useGeminiCloud(apiKey);
 
-  const handleFile = useCallback((setter: (f: TelemetryFrame[]) => void) => 
+  const handleFile = useCallback((
+    frameSetter: (frames: TelemetryFrame[]) => void,
+    sessionSetter: (session: RecordedSessionArtifact | null) => void,
+  ) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
         const parsed = parseTelemetryCaptureInput(reader.result as string);
-        setter(parsed.frames);
+        frameSetter(parsed.frames);
+        sessionSetter(parsed.session);
       };
       reader.readAsText(file);
     }, []);
@@ -43,7 +53,8 @@ export default function Analysis() {
       return `${label}: MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}${visionSummary}`;
     };
 
-    const context = `Compare these two laps on ${DEFAULT_TRACK.name}:
+    const trackName = lap1Session?.trackName ?? lap2Session?.trackName ?? DEFAULT_TRACK.name;
+    const context = `Compare these two laps on ${trackName}:
 
 ${summarize(lap1Frames, 'Lap A')}
 
@@ -65,7 +76,7 @@ Compare sector by sector. Identify where the biggest time differences come from.
 
     const result = await generateFeedback('pro', context);
     setComparisonResult(result);
-  }, [lap1Frames, lap2Frames, generateFeedback]);
+  }, [lap1Frames, lap2Frames, lap1Session, lap2Session, generateFeedback]);
 
   return (
     <div className="page analysis">
@@ -78,14 +89,14 @@ Compare sector by sector. Identify where the biggest time differences come from.
           <label className="upload-btn upload-lap">
             <Upload size={14} />
             <span>Lap A {lap1Frames.length > 0 ? `(${lap1Frames.length} frames)` : ''}</span>
-            <input type="file" accept=".csv,.txt,.json" onChange={handleFile(setLap1Frames)} hidden />
+            <input type="file" accept=".csv,.txt,.json" onChange={handleFile(setLap1Frames, setLap1Session)} hidden />
           </label>
         </div>
         <div className="analysis-upload">
           <label className="upload-btn upload-lap">
             <Upload size={14} />
             <span>Lap B {lap2Frames.length > 0 ? `(${lap2Frames.length} frames)` : ''}</span>
-            <input type="file" accept=".csv,.txt,.json" onChange={handleFile(setLap2Frames)} hidden />
+            <input type="file" accept=".csv,.txt,.json" onChange={handleFile(setLap2Frames, setLap2Session)} hidden />
           </label>
         </div>
         <button
