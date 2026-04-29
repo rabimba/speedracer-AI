@@ -258,13 +258,88 @@
   .linkcard p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
   .linkcard a { display: inline-block; margin-top: 8px; font-family: var(--mono); font-size: 12px; word-break: break-all; }
 
-  .footer { margin-top: 40px; color: var(--ink-faint); font-size: 12px; text-align: center; }
+  /* Team grid */
+  .team-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+  .team { padding: 16px; }
+  .team-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); margin-bottom: 12px; border-top: 4px solid var(--g-blue); border-radius: 12px 12px 0 0; padding-top: 6px; margin: -16px -16px 12px; padding-left: 16px; padding-right: 16px; padding-top: 14px; }
+  .team .avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    color: #fff; font-weight: 700; font-size: 14px; letter-spacing: 0.04em;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(60,64,67,0.15);
+  }
+  .team .t-name { font-weight: 500; font-size: 15px; color: var(--ink); line-height: 1.2; }
+  .team .t-email { font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; word-break: break-all; }
+  .team .t-email a { color: var(--g-blue-700); }
+  .team .t-role { font-weight: 500; font-size: 12.5px; color: var(--g-blue-700); margin-bottom: 8px; letter-spacing: 0.01em; }
+  .team .t-contrib { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
+  .team .t-contrib li { margin-bottom: 3px; }
+  .team .t-contrib li b { color: var(--ink); font-weight: 600; }
+  .team .t-contrib li i { color: var(--ink-dim); }
 
-  @media (max-width: 980px) {
+  .footer { margin-top: 40px; color: var(--ink-faint); font-size: 12px; text-align: center; line-height: 1.5; }
+
+  /* Responsive — laptop */
+  @media (max-width: 1100px) {
+    .demo-grid { grid-template-columns: 1.4fr 1fr; }
+    .team-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  }
+
+  /* Responsive — tablet */
+  @media (max-width: 900px) {
+    .wrap { padding: 20px 18px 60px; }
     .pillars, .del-grid, .scorecard, .links, .demo-grid { grid-template-columns: 1fr; }
     .personas { grid-template-columns: repeat(2, 1fr); }
-    h1 { font-size: 30px; }
+    h1 { font-size: 30px; line-height: 1.15; }
+    .hero { padding: 24px 22px 22px; }
     .ladder .row { grid-template-columns: 140px 1fr 70px; }
+    .topbar { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .gde-badge { font-size: 11px; }
+    .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+    .tab { white-space: nowrap; padding: 10px 14px; font-size: 12.5px; }
+    .demo-cap { gap: 6px; }
+    .demo-cap .pill { font-size: 10px; padding: 2px 6px; }
+  }
+
+  /* Responsive — large mobile */
+  @media (max-width: 640px) {
+    .wrap { padding: 14px 12px 50px; }
+    h1 { font-size: 26px; }
+    .hero { padding: 20px 16px; border-radius: 12px; }
+    .lede { font-size: 14.5px; }
+    .meta .pill { font-size: 11px; padding: 5px 10px; }
+    .section h2 { font-size: 19px; }
+    .section .sub { font-size: 13px; }
+    .team-grid { grid-template-columns: 1fr; }
+    .team .t-email { font-size: 11px; }
+    .ladder .row { grid-template-columns: 110px 1fr 60px; gap: 8px; }
+    .ladder .row .name { font-size: 11.5px; }
+    .ladder .row .ms { font-size: 11px; }
+    table.t th, table.t td { padding: 8px 9px; font-size: 12px; }
+    .tbl-wrap { overflow-x: auto; }
+    table.t { min-width: 560px; }
+    code { font-size: 11px; }
+  }
+
+  /* Responsive — small mobile */
+  @media (max-width: 420px) {
+    h1 { font-size: 22px; }
+    .hero { padding: 16px 14px; }
+    .topbar { padding: 10px 14px; }
+    .brand .titles strong { font-size: 15px; }
+    .brand .titles span { font-size: 11px; }
+    .gde-badge { padding: 5px 10px 5px 6px; }
+    .personas { grid-template-columns: 1fr; }
+    .team .avatar { width: 38px; height: 38px; font-size: 12px; }
+    .pillar h3 { flex-wrap: wrap; }
+    .scorecard, .links { gap: 10px; }
+    .demo-cap { padding: 10px 12px; }
+  }
+
+  /* SVG architecture diagram — make it scrollable on small screens */
+  .diagram { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 900px) {
+    svg.arch { min-width: 900px; }
   }
 </style>
 </head>
@@ -852,10 +927,91 @@
     </div>
   </section>
 
+  <!-- TEAM 1 -->
+  <section class="section">
+    <h2><span class="stripe"></span> Team 1 — Beginner Pod</h2>
+    <p class="sub">The six members behind this submission.</p>
+
+    <div class="team-grid">
+      <div class="card team">
+        <div class="team-head" style="border-top-color: var(--g-blue);">
+          <div class="avatar" style="background: linear-gradient(135deg, #4285F4, #1A73E8);">AH</div>
+          <div>
+            <div class="t-name">Alvaro Huanca Mamani</div>
+            <div class="t-email"><a href="mailto:huanca@google.com">huanca@google.com</a> &nbsp;<span style="color:var(--g-blue-700);font-weight:600;">· Google</span></div>
+          </div>
+        </div>
+        <div class="t-role">Team 1 member</div>
+      </div>
+
+      <div class="card team">
+        <div class="team-head" style="border-top-color: var(--g-red);">
+          <div class="avatar" style="background: linear-gradient(135deg, #EA4335, #C5221F);">AC</div>
+          <div>
+            <div class="t-name">Adrian Catalan</div>
+            <div class="t-email"><a href="mailto:aacs85@gmail.com">aacs85@gmail.com</a></div>
+          </div>
+        </div>
+        <div class="t-role">Team 1 member</div>
+      </div>
+
+      <div class="card team">
+        <div class="team-head" style="border-top-color: var(--g-yellow);">
+          <div class="avatar" style="background: linear-gradient(135deg, #FBBC04, #F09300); color: #202124;">AB</div>
+          <div>
+            <div class="t-name">Austin Bennett</div>
+            <div class="t-email"><a href="mailto:austin@bamboozoology.org">austin@bamboozoology.org</a></div>
+          </div>
+        </div>
+        <div class="t-role">Team 1 member</div>
+      </div>
+
+      <div class="card team">
+        <div class="team-head" style="border-top-color: var(--g-green);">
+          <div class="avatar" style="background: linear-gradient(135deg, #34A853, #137333);">MW</div>
+          <div>
+            <div class="t-name">Madona S Wambua</div>
+            <div class="t-email"><a href="mailto:syombuamadona@gmail.com">syombuamadona@gmail.com</a></div>
+          </div>
+        </div>
+        <div class="t-role">Team 1 member</div>
+      </div>
+
+      <div class="card team">
+        <div class="team-head" style="border-top-color: var(--g-blue-700);">
+          <div class="avatar" style="background: linear-gradient(135deg, #4285F4, #34A853);">MW</div>
+          <div>
+            <div class="t-name">Mike Wolfson</div>
+            <div class="t-email"><a href="mailto:mwolfson@gmail.com">mwolfson@gmail.com</a></div>
+          </div>
+        </div>
+        <div class="t-role">Team 1 member</div>
+      </div>
+
+      <div class="card team">
+        <div class="team-head" style="border-top-color: var(--g-red);">
+          <div class="avatar" style="background: linear-gradient(135deg, #EA4335, #FBBC04); color: #fff;">RK</div>
+          <div>
+            <div class="t-name">Rabimba Karanjai</div>
+            <div class="t-email"><a href="mailto:rkaranjai@paypal.com">rkaranjai@paypal.com</a></div>
+          </div>
+        </div>
+        <div class="t-role">Team 1 member</div>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top: 14px; font-size: 12px;">
+      <b>Mentors &amp; doctrine sources (not Team 1 members):</b>
+      Ross Bentley (Speed Secrets author, Garmin Catalyst consultant — pedagogy);
+      T-Rod / Tony Rodriguez (real Sonoma coaching session — track-specific patterns);
+      Brian Luc (Edge mentor — <i>"Feedback 800ms late is worse than silence"</i>).
+    </p>
+  </section>
+
   <!-- LINKS -->
   <section class="section">
     <h2><span class="stripe"></span> Repository &amp; supporting documents</h2>
-    <p class="sub">All implementation in this consolidated branch is attributed to <b>Team 1</b>. Imported reference artifacts retain their original attribution (Adrian Catalan benchmark · Madona S Wambua user stories).</p>
+    <p class="sub">Submitted by <b>Team 1</b> (Beginner Pod). The full team is listed in the Team 1 section above.</p>
     <div class="links">
       <div class="card linkcard">
         <h4>GitHub — Team 1 primary repository</h4>
@@ -891,7 +1047,8 @@
   </section>
 
   <p class="footer">Trustable AI Race Coach · Domain Expertise Layer over the Google stack · Cohort code review, April 28, 2026<br/>
-  <span style="color:var(--ink-dim);font-size:11px;">Team 1 · Documentation by Rabimba Karanjai &nbsp;·&nbsp; Doctrine sources: Ross Bentley, T-Rod (Tony Rodriguez), Brian Luc &nbsp;·&nbsp; Reference artifacts: Adrian Catalan, Madona S Wambua</span></p>
+  <span style="color:var(--ink-dim);font-size:11px;"><b>Team 1 — Beginner Pod:</b> Alvaro Huanca Mamani · Adrian Catalan · Austin Bennett · Madona S Wambua · Mike Wolfson · Rabimba Karanjai<br/>
+  Doctrine sources: Ross Bentley · T-Rod (Tony Rodriguez) · Brian Luc</span></p>
 </div>
 
 <script>
