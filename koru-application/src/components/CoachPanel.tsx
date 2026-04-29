@@ -1,11 +1,12 @@
 import { COACHES, DEFAULT_COACH } from '../utils/coachingKnowledge';
 import { MessageCircle, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import type { CoachingPath, LiveBackendStatus, RuntimeBackend } from '../types';
+import type { CoachAction, CoachingPath, LiveBackendStatus, RuntimeBackend } from '../types';
 
 interface CoachMessage {
   id: string;
   path: CoachingPath;
+  action?: CoachAction;
   text: string;
   timestamp: number;
   backend?: RuntimeBackend;

@@ -669,6 +669,264 @@ html, body, #root {
 .coach-msg-text strong { color: var(--text-primary); }
 .coach-msg-time { font-size: 10px; color: var(--text-muted); margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
 
+.coach-avatar-dock {
+  position: fixed;
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.coach-avatar-inline-zone {
+  margin-bottom: 16px;
+}
+
+.coach-avatar-dock-inline {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  justify-content: flex-start;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.coach-avatar-launcher,
+.coach-avatar-card {
+  pointer-events: auto;
+}
+
+.coach-avatar-launcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 188px;
+  padding: 10px 14px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.2), transparent 42%),
+    rgba(10, 13, 18, 0.92);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.coach-avatar-launcher:hover {
+  transform: translateY(-2px);
+  border-color: rgba(45, 212, 191, 0.45);
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
+}
+
+.coach-avatar-launcher-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.coach-avatar-launcher-copy span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.coach-avatar-launcher-copy small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.coach-avatar-launcher.pulse {
+  animation: coach-avatar-launcher-pulse 1.25s ease-in-out infinite;
+}
+
+.coach-avatar-notification {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #2dd4bf;
+  box-shadow: 0 0 0 6px rgba(45, 212, 191, 0.16);
+}
+
+.coach-avatar-card {
+  width: min(340px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    rgba(10, 13, 18, 0.96);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(10px);
+}
+
+.coach-avatar-dock-inline .coach-avatar-launcher {
+  min-width: 200px;
+}
+
+.coach-avatar-dock-inline .coach-avatar-card {
+  width: min(100%, 520px);
+}
+
+.coach-avatar-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.coach-avatar-card-header h4 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.coach-avatar-kicker {
+  display: inline-block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #2dd4bf;
+}
+
+.coach-avatar-stage {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.coach-avatar-shell {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(45, 212, 191, 0.18);
+  background: linear-gradient(180deg, rgba(162, 173, 184, 0.24), rgba(58, 64, 72, 0.1));
+}
+
+.coach-avatar-scene {
+  position: absolute;
+  inset: auto 10px 12px 10px;
+  height: 36px;
+  border-top: 2px solid rgba(255, 255, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(12, 14, 18, 0), rgba(12, 14, 18, 0.28)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.12) 0,
+      rgba(255, 255, 255, 0.12) 10px,
+      transparent 10px,
+      transparent 22px
+    );
+  border-radius: 999px;
+}
+
+.coach-avatar-sprite-frame {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 96px;
+  height: 96px;
+  background-repeat: no-repeat;
+  background-size: 384px 384px;
+  image-rendering: pixelated;
+  animation: coach-avatar-bob 0.9s ease-in-out infinite alternate;
+}
+
+.coach-avatar-sprite-mini {
+  position: relative;
+  inset: auto;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  background-size: 256px 256px;
+}
+
+.coach-avatar-sprite-mini.state-race,
+.coach-avatar-shell.state-race .coach-avatar-sprite-frame {
+  animation-duration: 0.38s;
+}
+
+.coach-avatar-sprite-mini.state-data,
+.coach-avatar-shell.state-data .coach-avatar-sprite-frame {
+  animation-duration: 0.72s;
+}
+
+.coach-avatar-sprite-mini.state-celebrate,
+.coach-avatar-shell.state-celebrate .coach-avatar-sprite-frame {
+  animation-name: coach-avatar-celebrate;
+  animation-duration: 0.52s;
+}
+
+.coach-avatar-bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.coach-avatar-bubble::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 28px;
+  width: 16px;
+  height: 16px;
+  background: inherit;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transform: rotate(45deg);
+}
+
+.coach-avatar-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #2dd4bf;
+}
+
+.coach-avatar-bubble p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.coach-avatar-style {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@keyframes coach-avatar-bob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-3px); }
+}
+
+@keyframes coach-avatar-celebrate {
+  from { transform: translateY(0) scale(1); }
+  to { transform: translateY(-4px) scale(1.03); }
+}
+
+@keyframes coach-avatar-launcher-pulse {
+  0%, 100% { transform: translateY(0); box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28); }
+  50% { transform: translateY(-2px); box-shadow: 0 24px 56px rgba(45, 212, 191, 0.16); }
+}
+
 /* ── Playback Controls ─────────────────────────────────────── */
 
 .playback-controls {
@@ -1143,6 +1401,38 @@ html, body, #root {
 @media (max-width: 640px) {
   .pre-race-panel-header {
     flex-direction: column;
+  }
+  .coach-avatar-dock {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .coach-avatar-dock-inline {
+    left: auto;
+    right: auto;
+    bottom: auto;
+  }
+  .coach-avatar-launcher,
+  .coach-avatar-dock-inline .coach-avatar-launcher {
+    min-width: 168px;
+    max-width: min(100%, 280px);
+  }
+  .coach-avatar-card,
+  .coach-avatar-dock-inline .coach-avatar-card {
+    width: min(100%, 340px);
+  }
+  .coach-avatar-stage {
+    grid-template-columns: 1fr;
+  }
+  .coach-avatar-shell {
+    width: 100%;
+    max-width: 132px;
+    margin: 0 auto;
+  }
+  .coach-avatar-bubble::before {
+    left: 28px;
+    top: -8px;
+    transform: rotate(135deg);
   }
   .arch-grid, .steps-grid { grid-template-columns: 1fr; }
   .coaches-grid { grid-template-columns: 1fr; }

@@ -4,6 +4,7 @@ import { PRE_RACE_GOAL_OPTIONS, buildSessionGoals, recommendCoach } from '../dat
 import { DEFAULT_TRACK, TRACKS, getTrackByName } from '../data/trackData';
 import TelemetryCharts from '../components/TelemetryCharts';
 import TrackMap from '../components/TrackMap';
+import CoachAvatar from '../components/CoachAvatar';
 import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
 import GaugeCluster from '../components/GaugeCluster';
 import type {
@@ -82,6 +83,7 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
       const coachMsg: CoachMessage = {
         id: `${Date.now()}-${Math.random()}`,
         path: msg.path,
+        action: msg.action,
         text: msg.text,
         timestamp: Date.now(),
         backend: msg.backend,
@@ -193,9 +195,10 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   }, [coachRecommendation.coachId, sessionLocked]);
 
   const currentFrame = frames[frames.length - 1] || null;
+  const latestMessage = messages[messages.length - 1] ?? null;
 
   return (
-    <div className="page live-session">
+    <div className={`page live-session ${nativeMode ? 'live-session-native' : ''}`}>
       <header className="page-header">
         <h1><Radio size={20} /> Live Session</h1>
         <div className="live-controls">
@@ -275,6 +278,17 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
           )}
         </div>
       </header>
+
+      {nativeMode && (
+        <section className="coach-avatar-inline-zone">
+          <CoachAvatar
+            activeCoach={activeCoach}
+            latestMessage={latestMessage}
+            status={status}
+            layout="inline"
+          />
+        </section>
+      )}
 
       <section className="pre-race-panel">
         <div className="pre-race-panel-header">
