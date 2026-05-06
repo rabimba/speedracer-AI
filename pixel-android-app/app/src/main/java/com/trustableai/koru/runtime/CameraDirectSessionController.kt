@@ -59,6 +59,7 @@ class CameraDirectSessionController(context: Context) {
     fun shutdown() {
         scope.launch { stopInternal() }
         scope.cancel()
+        runtimeManager.close()
         audioDispatcher.shutdown()
     }
 
@@ -92,7 +93,13 @@ class CameraDirectSessionController(context: Context) {
         )
 
         val track = TrackCatalog.fromName(config.trackName)
-        val currentEngine = KoruRealtimeEngine(track, phraseCatalog, config.sessionGoals) { runtimeManager.currentReasoner() }
+        val currentEngine =
+            KoruRealtimeEngine(
+                track = track,
+                phraseCatalog = phraseCatalog,
+                sessionGoals = config.sessionGoals,
+                reasonerProvider = { runtimeManager.currentReasoner() },
+            )
         currentEngine.setActiveCoach(activeCoachId)
         engine = currentEngine
 
@@ -147,6 +154,9 @@ class CameraDirectSessionController(context: Context) {
                                 decision.text,
                                 "${decision.path.bridgeValue()}-${decision.timestampMs}",
                                 decision.priority,
+                                decision.action,
+                                decision.id,
+                                sessionRecorder::recordAudioEvent,
                             )
                         } else {
                             Log.d(
@@ -178,6 +188,7 @@ class CameraDirectSessionController(context: Context) {
     private suspend fun stopLoop() {
         sessionJob?.cancelAndJoin()
         sessionJob = null
+        engine?.close()
         engine = null
     }
 

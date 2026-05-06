@@ -21,6 +21,7 @@ export function normalizeRecordedSessionArtifact(value: unknown): RecordedSessio
   return {
     ...session,
     sessionGoals: Array.isArray(session.sessionGoals) ? session.sessionGoals : [],
+    audioEvents: Array.isArray(session.audioEvents) ? session.audioEvents : [],
   } as RecordedSessionArtifact;
 }
 

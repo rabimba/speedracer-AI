@@ -10,6 +10,7 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -55,12 +56,14 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
     private var latestImuLongG = 0.0
     private var latestWorldEastMps2 = 0.0
     private var latestWorldNorthMps2 = 0.0
+    private var locationThread: HandlerThread? = null
 
     override suspend fun start() {
         synchronized(stateLock) {
             if (started) return
             started = true
         }
+        locationThread = HandlerThread("KoruPhoneGps").apply { start() }
         registerSensors()
         registerLocationUpdates()
         seedLastKnownLocation()
@@ -74,6 +77,8 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
         sensorManager.unregisterListener(this)
         runCatching { locationManager.removeUpdates(locationListener) }
             .onFailure { Log.w(tag, "Failed to remove location updates", it) }
+        locationThread?.quitSafely()
+        locationThread = null
     }
 
     override fun nextFrame(step: Int, track: Track, elapsedSeconds: Double): TelemetryFrame {
@@ -184,10 +189,10 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
             runCatching {
                 locationManager.requestLocationUpdates(
                     provider,
-                    250L,
+                    LOCATION_UPDATE_INTERVAL_MS,
                     0f,
                     locationListener,
-                    Looper.getMainLooper(),
+                    locationThread?.looper ?: Looper.getMainLooper(),
                 )
             }.onFailure {
                 Log.w(tag, "Failed to request $provider updates", it)
@@ -380,6 +385,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
         private const val MIN_DISTANCE_DELTA_METERS = 3.0
         private const val MIN_MOTION_SPEED_MPH = 8.0
         private const val MIN_MOTION_SPEED_MPS = 3.57632
+        private const val LOCATION_UPDATE_INTERVAL_MS = 100L
 
         fun hasFineLocationPermission(context: Context): Boolean {
             return ContextCompat.checkSelfPermission(

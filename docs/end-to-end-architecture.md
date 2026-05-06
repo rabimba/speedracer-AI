@@ -56,7 +56,7 @@ This section answers the implementation question directly: who should be credite
 
 | Implemented area | Implementation attribution | Notes |
 |---|---|---|
-| Native Android app, WebView host, JS bridge | **Rabimba** | Implemented in the current working repo |
+| Native Android app, Compose live UI, legacy WebView host | **Rabimba** | Compose is the current field-test live surface; legacy bridge remains only for older browser-hosted flows |
 | Native live-session runtime and mode routing | **Rabimba** | Includes telemetry, device test, and camera-direct modes |
 | CameraX lane, vision feature extraction, and fusion wiring | **Rabimba** | Implemented in the current working repo |
 | `phone_imu_gps` telemetry source | **Rabimba** | First real native telemetry source in the current working repo |
@@ -189,13 +189,13 @@ The browser application is still important even after the Android runtime exists
 - replay
 - analysis
 - browser coaching path
-- Android bridge integration when hosted in WebView
+- legacy Android bridge integration for older WebView hosts
 
 ```mermaid
 flowchart LR
-    A["Live Session UI"] --> B["liveBackendAdapter"]
+    A["Browser Live Session UI"] --> B["liveBackendAdapter"]
     B --> C["Browser coaching path"]
-    B --> D["Android bridge path"]
+    B --> D["Legacy Android bridge path"]
     C --> E["CoachingService"]
     E --> F["TimingGate"]
     E --> G["DriverModel"]
@@ -222,12 +222,13 @@ flowchart LR
 
 ## 8. Native Android Architecture
 
-The native Android app is the main runtime upgrade beyond the original browser-only design.
+The native Android app is the main runtime upgrade beyond the original browser-only design. The field-test live UI now runs in Jetpack Compose and consumes native `StateFlow` state directly instead of routing high-frequency telemetry through a WebView bridge.
 
 ```mermaid
 flowchart LR
-    A["MainActivity"] --> B["WebView + JS bridge"]
-    B --> C["Live session config"]
+    A["MainActivity"] --> B["Jetpack Compose UI"]
+    B --> C["LiveSessionViewModel"]
+    C --> S["KoruSessionBus StateFlow"]
     C --> D["KoruTelemetryService"]
     C --> E["CameraDirectSessionController"]
     D --> F["Phone IMU + GPS source"]
@@ -236,7 +237,7 @@ flowchart LR
     F --> I["Fusion layer"]
     H --> I
     I --> J["KoruRealtimeEngine"]
-    J --> K["LiveAudioPolicy"]
+    J --> K["LiveAudioPolicy + latency probe"]
     K --> L["CoachAudioDispatcher"]
     J --> M["RecordedSessionRecorder"]
     M --> N["Saved session artifact"]
@@ -246,13 +247,13 @@ flowchart LR
 
 | Capability | Implemented | Owner / attribution | Role in story |
 |---|---|---|---|
-| Android host app | Yes | Rabimba | Native execution surface |
-| WebView bridge | Yes | Rabimba | Connects browser UI to native runtime |
+| Android host app | Yes | Rabimba | Compose-native execution surface |
+| Compose live UI | Yes | Rabimba | Native session initialization, live HUD, coach panel, and camera lane |
 | Telemetry service | Yes | Rabimba | Realtime native coaching lane |
 | Camera-direct controller | Yes | Rabimba | Vision-only debug lane |
 | `phone_imu_gps` source | Yes | Rabimba | First real native telemetry source |
 | CameraX vision lane | Yes | Rabimba | Vision signal source |
-| Realtime audio policy | Yes | Rabimba | Safer and cleaner live speech |
+| Realtime audio policy | Yes | Rabimba | Safer live speech plus deterministic P0 dispatch |
 | Saved native session artifacts | Yes | Rabimba | Bridge from live session to replay/analysis |
 
 ## 9. Telemetry and Fusion Architecture

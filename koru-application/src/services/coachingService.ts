@@ -1,4 +1,4 @@
-import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal } from '../types';
+import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal, SkillLevel } from '../types';
 import { COACHES, DEFAULT_COACH, DECISION_MATRIX, RACING_PHYSICS_KNOWLEDGE } from '../utils/coachingKnowledge';
 import {
   getTrackFeedforwardMessage,
@@ -27,6 +27,19 @@ function actionPriority(action: CoachAction): 0 | 1 | 2 | 3 {
 }
 
 type CoachingCallback = (msg: CoachingDecision) => void;
+
+export function coldPathInstructionForSkill(skillLevel: SkillLevel): string {
+  const rootCauseFrame =
+    'Prioritize WHY over WHAT: identify the root cause using brake release, weight transfer, line choice, throttle timing, or vision target. Do not merely describe the symptom.';
+  switch (skillLevel) {
+    case 'BEGINNER':
+      return `${rootCauseFrame} Give one calm, feel-based sentence under 18 words. Avoid jargon.`;
+    case 'ADVANCED':
+      return `${rootCauseFrame} Reference the telemetry numbers and give one concise cause-first sentence under 22 words.`;
+    default:
+      return `${rootCauseFrame} Give one technique sentence with a brief physics cause under 20 words.`;
+  }
+}
 
 /**
  * Split-brain coaching engine:
@@ -611,17 +624,7 @@ export class CoachingService {
     const cornerAdvice = this.lastCorner?.advice || '';
 
     const skillLevel = this.driverModel.getSkillLevel();
-    let instruction: string;
-    switch (skillLevel) {
-      case 'BEGINNER':
-        instruction = 'Give ONE simple instruction using feel-based language. No jargon. Under 10 words. Sound like a patient driving instructor.';
-        break;
-      case 'ADVANCED':
-        instruction = 'Give a data-driven analysis referencing the telemetry numbers. Be concise. Under 15 words.';
-        break;
-      default:
-        instruction = 'Give a technique instruction with a brief physics explanation. Under 20 words.';
-    }
+    const instruction = coldPathInstructionForSkill(skillLevel);
 
     const trackContext = getTrackPromptContext(
       this.track,

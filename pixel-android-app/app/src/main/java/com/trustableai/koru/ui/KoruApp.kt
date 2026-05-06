@@ -1,0 +1,599 @@
+package com.trustableai.koru.ui
+
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.trustableai.koru.model.CoachingDecision
+import com.trustableai.koru.model.LiveBackendState
+import com.trustableai.koru.model.SessionGoalFocus
+import com.trustableai.koru.model.SessionMode
+import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.TelemetrySourceKind
+import com.trustableai.koru.runtime.TrackCatalog
+import java.util.Locale
+
+private val KoruColors = darkColorScheme(
+    primary = Color(0xFFB7F34A),
+    onPrimary = Color(0xFF111904),
+    secondary = Color(0xFF7DD3FC),
+    tertiary = Color(0xFFF59E0B),
+    background = Color(0xFF050816),
+    surface = Color(0xFF0B1224),
+    surfaceVariant = Color(0xFF111827),
+    onBackground = Color(0xFFF8FAFC),
+    onSurface = Color(0xFFF8FAFC),
+    onSurfaceVariant = Color(0xFFCBD5E1),
+    error = Color(0xFFFB7185),
+)
+
+@Composable
+fun KoruTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = KoruColors,
+        typography = MaterialTheme.typography,
+        content = content,
+    )
+}
+
+@Composable
+fun KoruApp(
+    viewModel: LiveSessionViewModel,
+    onStartRequested: () -> Unit,
+    onBindCameraPreview: (PreviewView) -> Unit,
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.requestBackendStatus()
+    }
+
+    KoruTheme {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("koru-list")
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF050816), Color(0xFF07111F), Color(0xFF050816)),
+                        ),
+                    )
+                    .padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item {
+                    Header(state = state)
+                }
+                item {
+                    LiveHud(state.latestFrame, state.decisions.lastOrNull(), state.backendStatus.state)
+                }
+                item {
+                    SavedSessionPanel(state)
+                }
+                item {
+                    SessionInitialization(
+                        state = state,
+                        viewModel = viewModel,
+                        onStartRequested = onStartRequested,
+                    )
+                }
+                item {
+                    CameraPanel(
+                        cameraStatus = state.cameraStatus,
+                        onBindCameraPreview = onBindCameraPreview,
+                    )
+                }
+                item {
+                    CoachPanel(
+                        state = state,
+                        viewModel = viewModel,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Header(state: SessionUiState) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Koru Edge",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "Native field-test cockpit",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        StatusPill(state.backendStatus.state.name.lowercase(Locale.US), priorityColor(state.decisions.lastOrNull()?.priority))
+    }
+}
+
+@Composable
+private fun LiveHud(
+    frame: TelemetryFrame?,
+    latestDecision: CoachingDecision?,
+    backendState: LiveBackendState,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("live-hud"),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFF07111F),
+        tonalElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                SignalLight(latestDecision?.priority, backendState)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = latestDecision?.text ?: "Coach standing by",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = latestDecision?.let {
+                            "P${it.priority} ${it.path.name} ${it.action?.name ?: "cue"} ${it.cornerPhase.name}"
+                        } ?: "Waiting for first telemetry frame",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MetricTile("Speed", frame?.speedMph?.let { "%.0f mph".format(Locale.US, it) } ?: "--", Modifier.weight(1f))
+                MetricTile("Brake", frame?.brake?.let { "%.0f%%".format(Locale.US, it) } ?: "--", Modifier.weight(1f))
+                MetricTile("Throttle", frame?.throttle?.let { "%.0f%%".format(Locale.US, it) } ?: "--", Modifier.weight(1f))
+            }
+            LinearProgressIndicator(
+                progress = { ((frame?.speedMph ?: 0.0) / 120.0).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = priorityColor(latestDecision?.priority),
+                trackColor = Color(0xFF172033),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetricTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF101827))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun SignalLight(priority: Int?, backendState: LiveBackendState) {
+    val color = when {
+        priority == 0 || priority == 1 -> Color(0xFFEF4444)
+        priority == 2 || priority == 3 -> Color(0xFFF59E0B)
+        backendState == LiveBackendState.READY || backendState == LiveBackendState.DEGRADED -> Color(0xFFB7F34A)
+        else -> Color(0xFF64748B)
+    }
+    Box(
+        modifier = Modifier
+            .size(68.dp)
+            .clip(CircleShape)
+            .background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.22f)),
+        )
+    }
+}
+
+@Composable
+private fun SessionInitialization(
+    state: SessionUiState,
+    viewModel: LiveSessionViewModel,
+    onStartRequested: () -> Unit,
+) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("session-initialization"),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF0B1224)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            SectionTitle("Session Initialization", "${viewModel.sessionGoals().size}/3 goals")
+            OptionRow(
+                label = "Mode",
+                options = listOf(
+                    SessionMode.TELEMETRY to "Telemetry + Camera",
+                    SessionMode.DEVICE_TEST to "Device Test",
+                    SessionMode.CAMERA_DIRECT to "Camera Feedback",
+                ),
+                selected = state.sessionMode,
+                enabled = !state.isSessionActive,
+                onSelected = viewModel::setSessionMode,
+            )
+            if (state.sessionMode == SessionMode.TELEMETRY) {
+                OptionRow(
+                    label = "Source",
+                    options = listOf(
+                        TelemetrySourceKind.PHONE_IMU_GPS to "Phone IMU + GPS",
+                        TelemetrySourceKind.SYNTHETIC to "Synthetic",
+                        TelemetrySourceKind.RACEBOX_BLE to "RaceBox BLE",
+                        TelemetrySourceKind.OBD_BLUETOOTH to "OBD Bluetooth",
+                    ),
+                    selected = state.telemetrySource,
+                    enabled = !state.isSessionActive,
+                    onSelected = viewModel::setTelemetrySource,
+                )
+            }
+            OptionRow(
+                label = "Track",
+                options = listOf(
+                    TrackCatalog.sonomaRaceway.name to "Sonoma",
+                    TrackCatalog.thunderhillEast.name to "Thunderhill",
+                ),
+                selected = state.trackName,
+                enabled = !state.isSessionActive && state.sessionMode != SessionMode.DEVICE_TEST,
+                onSelected = viewModel::setTrackName,
+            )
+            GoalSelector(state, viewModel)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = state.audioEnabled,
+                        onCheckedChange = viewModel::setAudioEnabled,
+                        modifier = Modifier.testTag("audio-toggle"),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Audio")
+                }
+                if (state.isSessionActive) {
+                    OutlinedButton(
+                        onClick = viewModel::stopSession,
+                        modifier = Modifier.testTag("stop-session"),
+                    ) {
+                        Text("Stop Session")
+                    }
+                } else {
+                    Button(
+                        onClick = onStartRequested,
+                        modifier = Modifier.testTag("start-session"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    ) {
+                        Text("Start Session")
+                    }
+                }
+            }
+            Text(
+                text = state.backendStatus.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GoalSelector(state: SessionUiState, viewModel: LiveSessionViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Session Goals", style = MaterialTheme.typography.labelLarge)
+        viewModel.goalOptions.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { option ->
+                    FilterChip(
+                        selected = option.focus in state.selectedGoalFocuses,
+                        onClick = { viewModel.toggleGoal(option.focus) },
+                        enabled = !state.isSessionActive,
+                        label = {
+                            Column {
+                                Text(option.label, maxLines = 1)
+                                Text(
+                                    option.description,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("goal-${option.focus.name.lowercase(Locale.US)}"),
+                    )
+                }
+                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+        if (SessionGoalFocus.CUSTOM in state.selectedGoalFocuses) {
+            OutlinedTextField(
+                value = state.customGoalDescription,
+                onValueChange = viewModel::setCustomGoalDescription,
+                enabled = !state.isSessionActive,
+                label = { Text("Custom focus") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CameraPanel(
+    cameraStatus: String,
+    onBindCameraPreview: (PreviewView) -> Unit,
+) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("camera-panel"),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF0B1224)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SectionTitle("Camera Lane", "CameraX")
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp)),
+                factory = { context ->
+                    PreviewView(context).apply {
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                        onBindCameraPreview(this)
+                    }
+                },
+                update = { previewView -> onBindCameraPreview(previewView) },
+            )
+            Text(
+                text = cameraStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoachPanel(state: SessionUiState, viewModel: LiveSessionViewModel) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("coach-panel"),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF0B1224)),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionTitle("Coach", viewModel.coachOptions.firstOrNull { it.id == state.activeCoachId }?.name ?: state.activeCoachId)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                viewModel.coachOptions.take(3).forEach { coach ->
+                    AssistChip(
+                        onClick = { viewModel.setActiveCoach(coach.id) },
+                        label = { Text(coach.name) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                viewModel.coachOptions.drop(3).forEach { coach ->
+                    AssistChip(
+                        onClick = { viewModel.setActiveCoach(coach.id) },
+                        label = { Text(coach.name) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            state.decisions.takeLast(5).reversed().forEach { decision ->
+                DecisionRow(decision)
+            }
+            if (state.decisions.isEmpty()) {
+                Text(
+                    text = "No coaching decisions yet.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DecisionRow(decision: CoachingDecision) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF101827))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        StatusPill("P${decision.priority}", priorityColor(decision.priority))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = decision.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = "${decision.path.name} ${decision.action?.name ?: "cue"} ${decision.cornerPhase.name} ${decision.latencyMs ?: "--"}ms",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SavedSessionPanel(state: SessionUiState) {
+    state.savedSession?.let { session ->
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("saved-session"),
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF0F1A2D),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Saved Session", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${session.summary.frameCount} frames, ${session.summary.decisionCount} decisions, schema v${session.schemaVersion}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String, meta: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(text = meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun <T> OptionRow(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    enabled: Boolean,
+    onSelected: (T) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            options.forEach { (value, text) ->
+                FilterChip(
+                    selected = value == selected,
+                    onClick = { onSelected(value) },
+                    enabled = enabled,
+                    label = {
+                        Text(
+                            text = text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("option-${label.lowercase(Locale.US)}-${text.lowercase(Locale.US).replace(" ", "-")}"),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, color: Color) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = color.copy(alpha = 0.18f),
+        contentColor = color,
+    ) {
+        Text(
+            text = text.uppercase(Locale.US),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+private fun priorityColor(priority: Int?): Color {
+    return when (priority) {
+        0 -> Color(0xFFEF4444)
+        1 -> Color(0xFFF97316)
+        2 -> Color(0xFF7DD3FC)
+        3 -> Color(0xFF94A3B8)
+        else -> Color(0xFFB7F34A)
+    }
+}

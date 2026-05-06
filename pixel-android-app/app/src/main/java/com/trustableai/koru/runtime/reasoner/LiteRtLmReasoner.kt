@@ -1,14 +1,25 @@
 package com.trustableai.koru.runtime.reasoner
 
 import android.content.Context
+import android.util.Log
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.EdgeReasoningWindow
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ReasonerDecision
 import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.RuntimeAccelerator
 import com.trustableai.koru.runtime.ModelAssetManager
 import com.trustableai.koru.runtime.PhraseCatalog
+import org.json.JSONObject
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class LiteRtLmReasoner(
     private val context: Context,
@@ -17,25 +28,67 @@ class LiteRtLmReasoner(
     private var coachId: String,
 ) : OnDeviceReasoner {
     override val backend: RuntimeBackend = RuntimeBackend.LITERTLM
+    private val tag = "KoruLiteRtReasoner"
+    private val inferenceLock = Any()
+    private val executorLock = Any()
+    private var llmInference: LlmInference? = null
+    private var inferenceExecutor: ExecutorService = newInferenceExecutor()
     private var usable = false
+    @Volatile private var disabledUntilMs = 0L
 
     fun setCoach(coachId: String) {
         this.coachId = coachId
     }
 
     override suspend fun warmup(): LiveBackendStatus {
+        val nowMs = System.currentTimeMillis()
+        if (nowMs < disabledUntilMs) {
+            return LiveBackendStatus(
+                backend = backend,
+                state = LiveBackendState.UNAVAILABLE,
+                detail = "MediaPipe LiteRT temporarily disabled after an inference timeout.",
+                model = "Gemma 4 E2B",
+                usesOnDeviceModel = false,
+                supportedPaths = listOf(CoachingPath.EDGE),
+                accelerator = RuntimeAccelerator.NONE,
+            )
+        }
         val dependencyPresent = runCatching {
             Class.forName("com.google.mediapipe.tasks.genai.llminference.LlmInference")
         }.isSuccess
         val installStatus = modelAssetManager.installStatus()
-        usable = dependencyPresent &&
-            installStatus.isPresent &&
-            installStatus.checksumVerified &&
-            installStatus.supportsNativeAndroid
+        val modelReady =
+            dependencyPresent &&
+                installStatus.isPresent &&
+                installStatus.checksumVerified &&
+                installStatus.supportsNativeAndroid
 
+        val creationResult =
+            if (modelReady) {
+                runCatching {
+                    val options =
+                        LlmInference.LlmInferenceOptions.builder()
+                            .setModelPath(installStatus.filePath)
+                            .setMaxTokens(MAX_RESPONSE_TOKENS)
+                            .setMaxTopK(32)
+                            .setPreferredBackend(LlmInference.Backend.GPU)
+                            .build()
+                    synchronized(inferenceLock) {
+                        llmInference?.close()
+                        llmInference = LlmInference.createFromOptions(context, options)
+                    }
+                }
+            } else {
+                null
+            }
+
+        usable = creationResult?.isSuccess == true
+        if (usable) disabledUntilMs = 0L
         val detail = when {
             usable ->
-                "LiteRT-LM dependency and model asset detected at ${installStatus.filePath}. Structured-output Gemma lane ready for runtime hookup."
+                "MediaPipe LiteRT GPU reasoner ready at ${installStatus.filePath}."
+            creationResult?.exceptionOrNull() != null ->
+                "MediaPipe LiteRT warmup failed: ${creationResult.exceptionOrNull()?.message ?: "unknown error"}"
             !dependencyPresent ->
                 "LiteRT-LM dependency not present at runtime."
             installStatus.issue != null ->
@@ -46,22 +99,172 @@ class LiteRtLmReasoner(
 
         return LiveBackendStatus(
             backend = backend,
-            state = if (usable) LiveBackendState.DEGRADED else LiveBackendState.UNAVAILABLE,
+            state = when {
+                usable -> LiveBackendState.READY
+                creationResult?.exceptionOrNull() != null -> LiveBackendState.ERROR
+                else -> LiveBackendState.UNAVAILABLE
+            },
             detail = detail,
             model = "Gemma 4 E2B",
             usesOnDeviceModel = usable,
-            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+            supportedPaths = listOf(CoachingPath.EDGE),
+            accelerator = if (usable) RuntimeAccelerator.MEDIAPIPE_LITERT else RuntimeAccelerator.NONE,
         )
     }
 
     override suspend fun reason(window: EdgeReasoningWindow): ReasonerDecision? {
+        if (System.currentTimeMillis() < disabledUntilMs) return null
         if (!usable) return null
+        val inference = synchronized(inferenceLock) { llmInference } ?: return null
+        val response = runBoundedInference(inference, promptFor(window), window.triggerId) ?: return null
+        return parseDecision(response, window)
+    }
+
+    override suspend fun close() {
+        val retiredInference =
+            synchronized(inferenceLock) {
+                val current = llmInference
+                llmInference = null
+                usable = false
+                current
+            }
+        closeInferenceAsync(retiredInference)
+        synchronized(executorLock) {
+            inferenceExecutor.shutdownNow()
+            inferenceExecutor = newInferenceExecutor()
+        }
+    }
+
+    private fun runBoundedInference(
+        inference: LlmInference,
+        prompt: String,
+        triggerId: String,
+    ): String? {
+        val future =
+            synchronized(executorLock) {
+                inferenceExecutor.submit(
+                    Callable {
+                        val sessionOptions =
+                            LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                                .setTopK(8)
+                                .setTopP(0.80f)
+                                .setTemperature(0.15f)
+                                .setRandomSeed(17)
+                                .build()
+                        val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
+                        try {
+                            session.addQueryChunk(prompt)
+                            session.generateResponse()
+                        } finally {
+                            session.close()
+                        }
+                    },
+                )
+            }
+
+        return try {
+            future.get(MAX_INFERENCE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (error: TimeoutException) {
+            future.cancel(true)
+            retireAfterTimeout(inference, triggerId)
+            null
+        } catch (error: Exception) {
+            Log.w(tag, "LiteRT reasoner failed for $triggerId", error)
+            null
+        }
+    }
+
+    private fun retireAfterTimeout(inference: LlmInference, triggerId: String) {
+        Log.w(tag, "LiteRT reasoner timed out for $triggerId after ${MAX_INFERENCE_TIMEOUT_MS}ms; disabling EDGE GPU lane")
+        disabledUntilMs = System.currentTimeMillis() + TIMEOUT_BACKOFF_MS
+        synchronized(inferenceLock) {
+            if (llmInference === inference) {
+                llmInference = null
+                usable = false
+                closeInferenceAsync(inference)
+            }
+        }
+        synchronized(executorLock) {
+            inferenceExecutor.shutdownNow()
+            inferenceExecutor = newInferenceExecutor()
+        }
+    }
+
+    private fun closeInferenceAsync(inference: LlmInference?) {
+        if (inference == null) return
+        Thread(
+            {
+                runCatching { inference.close() }
+                    .onFailure { error -> Log.w(tag, "LiteRT inference close failed", error) }
+            },
+            "KoruLiteRtClose",
+        ).apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun newInferenceExecutor(): ExecutorService {
+        return Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "KoruLiteRtInference").apply { isDaemon = true }
+        }
+    }
+
+    private fun promptFor(window: EdgeReasoningWindow): String {
+        val features =
+            window.features.entries
+                .sortedBy { it.key }
+                .joinToString(",") { (key, value) -> "$key=${"%.2f".format(value)}" }
+        return """
+            You are Koru EDGE, a non-safety driving coach.
+            Return only JSON: {"speak":true,"action":"${window.actionHint.name}","priority":${window.priority},"text":"under 14 words","confidence":0.0}
+            Never output priority 0. P0 safety is handled by HOT.
+            Explain root cause over symptom when useful.
+            Trigger=${window.triggerId}; cause=${window.causeHint ?: "none"}; phase=${window.phase.name}; corner=${window.cornerName ?: "none"}; skill=${window.skillLevel.name}; features={$features}
+            Suggested=${window.suggestedText}
+        """.trimIndent()
+    }
+
+    private fun parseDecision(response: String, window: EdgeReasoningWindow): ReasonerDecision {
         val phraseId = phraseCatalog.phraseIdFor(window.actionHint, window.skillLevel, coachId)
-        return structuredFallbackDecision(
-            window = window,
-            backend = backend,
-            phraseId = phraseId,
-            confidence = 0.72,
-        )
+        val jsonText = extractJson(response)
+        if (jsonText == null) {
+            return structuredFallbackDecision(window, backend, phraseId, confidence = 0.72)
+        }
+
+        return runCatching {
+            val json = JSONObject(jsonText)
+            val action =
+                runCatching {
+                    CoachAction.valueOf(json.optString("action", window.actionHint.name))
+                }.getOrDefault(window.actionHint)
+            val text = json.optString("text", window.suggestedText).ifBlank { window.suggestedText }
+            val priority = json.optInt("priority", window.priority).coerceIn(1, 3)
+            ReasonerDecision(
+                speak = json.optBoolean("speak", true),
+                action = action,
+                priority = priority,
+                phraseId = phraseId,
+                confidence = json.optDouble("confidence", 0.72).coerceIn(0.0, 1.0),
+                text = text.take(MAX_TEXT_CHARS),
+            )
+        }.getOrElse {
+            structuredFallbackDecision(window, backend, phraseId, confidence = 0.72)
+        }
+    }
+
+    private fun extractJson(response: String): String? {
+        val trimmed = response.trim()
+        val start = trimmed.indexOf('{')
+        val end = trimmed.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        return trimmed.substring(start, end + 1)
+    }
+
+    companion object {
+        private const val MAX_RESPONSE_TOKENS = 48
+        private const val MAX_TEXT_CHARS = 120
+        private const val MAX_INFERENCE_TIMEOUT_MS = 650L
+        private const val TIMEOUT_BACKOFF_MS = 30_000L
     }
 }

@@ -7,6 +7,7 @@ import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ReasonerDecision
 import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.RuntimeAccelerator
 import com.trustableai.koru.runtime.PhraseCatalog
 
 class AiCoreReasoner(
@@ -36,6 +37,7 @@ class AiCoreReasoner(
             model = "Gemma 4 / Gemini Nano 4 preview",
             usesOnDeviceModel = usable,
             supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+            accelerator = if (usable) RuntimeAccelerator.AICORE else RuntimeAccelerator.NONE,
         )
     }
 

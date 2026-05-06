@@ -252,20 +252,25 @@ def parse_nmea_sentence(line: str):
             lon = getattr(msg, 'longitude', 0.0)
             speed_knots = getattr(msg, 'spd_over_grnd', 0.0)
             speed_ms = float(speed_knots or 0) * 0.514444
+            speed_kmh = float(speed_knots or 0) * 1.852
             heading = getattr(msg, 'true_course', 0.0)
+            heading_degrees = float(heading or 0)
             
             current_time = datetime.now(timezone.utc).isoformat()
             
             return {
                 "class": "TPV",
+                "type": "gps",
                 "device": "/dev/serial",
                 "mode": 3 if msg.is_valid else 1, # Simplified mode logic
                 "time": current_time,
                 "lat": lat,
                 "lon": lon,
                 "alt": getattr(msg, 'altitude', 0.0),
-                "speed": speed_ms,
-                "track": float(heading or 0),
+                "speed": speed_kmh,
+                "speed_mps": speed_ms,
+                "heading": heading_degrees,
+                "track": heading_degrees,
             }
     except pynmea2.ParseError:
         pass

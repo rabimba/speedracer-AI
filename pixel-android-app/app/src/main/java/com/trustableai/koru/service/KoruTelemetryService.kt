@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -103,6 +104,8 @@ class KoruTelemetryService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        engine.close()
+        runtimeManager.close()
         audioDispatcher.shutdown()
     }
 
@@ -242,6 +245,7 @@ class KoruTelemetryService : Service() {
     private suspend fun stopActiveLoop() {
         sessionJob?.cancelAndJoin()
         sessionJob = null
+        engine.close()
         activeTelemetrySource.stop()
     }
 
@@ -254,13 +258,24 @@ class KoruTelemetryService : Service() {
         Log.d(tag, "Telemetry loop started source=${telemetrySelection.active.bridgeValue()} cameraFusion=true")
         var step = 0
         val activeTrack = track ?: TrackCatalog.defaultTrack
+        val startedAtNanos = SystemClock.elapsedRealtimeNanos()
+        var nextTickNanos = startedAtNanos
         while (currentCoroutineContext().isActive) {
-            val elapsedSeconds = step / 10.0
+            val nowNanos = SystemClock.elapsedRealtimeNanos()
+            if (nowNanos < nextTickNanos) {
+                delay(((nextTickNanos - nowNanos) / 1_000_000L).coerceAtLeast(1L))
+                continue
+            }
+            val elapsedSeconds = (nowNanos - startedAtNanos) / 1_000_000_000.0
             val rawFrame = activeTelemetrySource.nextFrame(step, activeTrack, elapsedSeconds)
             val frame = fusionEngine.fuse(rawFrame, VisionFeatureStore.latest.value)
             emitFrameAndDecisions(frame)
             step += 1
-            delay(100L)
+            nextTickNanos += TELEMETRY_FRAME_INTERVAL_NANOS
+            val afterFrameNanos = SystemClock.elapsedRealtimeNanos()
+            if (afterFrameNanos - nextTickNanos > TELEMETRY_FRAME_INTERVAL_NANOS * 2L) {
+                nextTickNanos = afterFrameNanos + TELEMETRY_FRAME_INTERVAL_NANOS
+            }
         }
     }
 
@@ -331,6 +346,9 @@ class KoruTelemetryService : Service() {
                         decision.text,
                         "${decision.path.bridgeValue()}-${decision.timestampMs}",
                         decision.priority,
+                        decision.action,
+                        decision.id,
+                        sessionRecorder::recordAudioEvent,
                     )
                 } else {
                     Log.d(
@@ -352,9 +370,12 @@ class KoruTelemetryService : Service() {
         track: com.trustableai.koru.model.Track?,
         sessionGoals: List<com.trustableai.koru.model.SessionGoal>,
     ): KoruRealtimeEngine {
-        return KoruRealtimeEngine(track, phraseCatalog, sessionGoals) {
-            runtimeManager.currentReasoner()
-        }
+        return KoruRealtimeEngine(
+            track = track,
+            phraseCatalog = phraseCatalog,
+            sessionGoals = sessionGoals,
+            reasonerProvider = { runtimeManager.currentReasoner() },
+        )
     }
 
     private fun createNotificationChannel() {
@@ -396,6 +417,7 @@ class KoruTelemetryService : Service() {
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "koru_live_session"
         private const val NOTIFICATION_ID = 7301
+        private const val TELEMETRY_FRAME_INTERVAL_NANOS = 100_000_000L
 
         private const val ACTION_START = "com.trustableai.koru.action.START"
         private const val ACTION_STOP = "com.trustableai.koru.action.STOP"

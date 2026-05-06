@@ -1,0 +1,85 @@
+package com.trustableai.koru.runtime
+
+import com.trustableai.koru.model.CoachAction
+import com.trustableai.koru.model.CoachingPath
+import com.trustableai.koru.model.EdgeReasoningWindow
+import com.trustableai.koru.model.LiveBackendState
+import com.trustableai.koru.model.LiveBackendStatus
+import com.trustableai.koru.model.ReasonerDecision
+import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.SessionMode
+import com.trustableai.koru.model.SkillLevel
+import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.runtime.reasoner.OnDeviceReasoner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.system.measureTimeMillis
+
+class KoruRealtimeEngineSafetyTest {
+    @Test
+    fun `p0 brake bypass survives hanging edge reasoner`() = runBlocking {
+        val engine = KoruRealtimeEngine(
+            track = TrackCatalog.sonomaRaceway,
+            phraseCatalog = FakePhraseRenderer,
+            reasonerProvider = { HangingReasoner },
+        )
+        val frame = TelemetryFrame(
+            timeSeconds = 12.0,
+            latitude = 38.16272,
+            longitude = -122.45500,
+            speedMph = 95.0,
+            throttle = 0.0,
+            brake = 0.0,
+            gLat = 0.0,
+            gLong = 0.0,
+            sourceMode = SessionMode.TELEMETRY,
+        )
+
+        var decisions = emptyList<com.trustableai.koru.model.CoachingDecision>()
+        val elapsedMs = measureTimeMillis {
+            decisions = engine.processFrame(frame, nowMs = 10_000L)
+        }
+        engine.close()
+
+        assertTrue("engine should not wait for the hanging edge reasoner", elapsedMs < 200L)
+        val decision = decisions.firstOrNull()
+        assertNotNull(decision)
+        assertEquals(CoachAction.BRAKE, decision?.action)
+        assertEquals(0, decision?.priority)
+        assertEquals("Brake now", decision?.text)
+        assertTrue((decision?.latencyMs ?: Long.MAX_VALUE) < LatencyProbe.HOT_PATH_BUDGET_MS)
+    }
+
+    private object FakePhraseRenderer : PhraseRenderer {
+        override fun phraseIdFor(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
+            return "test/${action.name}"
+        }
+
+        override fun render(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
+            return action.name.lowercase()
+        }
+    }
+
+    private object HangingReasoner : OnDeviceReasoner {
+        override val backend: RuntimeBackend = RuntimeBackend.LITERTLM
+
+        override suspend fun warmup(): LiveBackendStatus {
+            return LiveBackendStatus(
+                backend = backend,
+                state = LiveBackendState.READY,
+                detail = "test reasoner",
+                usesOnDeviceModel = true,
+                supportedPaths = listOf(CoachingPath.EDGE),
+            )
+        }
+
+        override suspend fun reason(window: EdgeReasoningWindow): ReasonerDecision? {
+            delay(5_000L)
+            return null
+        }
+    }
+}

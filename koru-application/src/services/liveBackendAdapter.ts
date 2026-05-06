@@ -36,6 +36,7 @@ const NATIVE_INITIAL_STATUS: LiveBackendStatus = {
   lastUpdated: Date.now(),
   usesOnDeviceModel: false,
   supportedPaths: ['hot', 'feedforward', 'edge'],
+  accelerator: 'none',
 };
 
 const BROWSER_STATUS: LiveBackendStatus = {
@@ -45,6 +46,7 @@ const BROWSER_STATUS: LiveBackendStatus = {
   lastUpdated: Date.now(),
   usesOnDeviceModel: false,
   supportedPaths: ['hot', 'cold', 'feedforward'],
+  accelerator: 'none',
 };
 
 export class LiveBackendAdapter {

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "id": "fixture-good",
+  "trackName": "Sonoma Raceway",
+  "startedAt": 2000,
+  "summary": {
+    "trackName": "Sonoma Raceway",
+    "frameCount": 1
+  },
+  "frames": [
+    {
+      "telemetrySource": "phone_imu_gps"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "feedforward-1",
+      "path": "feedforward",
+      "action": "PUSH",
+      "priority": 3,
+      "text": "Eyes up",
+      "latencyMs": 8
+    },
+    {
+      "id": "hot-1",
+      "path": "hot",
+      "action": "BRAKE",
+      "priority": 0,
+      "text": "Brake now",
+      "latencyMs": 9
+    }
+  ],
+  "audioEvents": [
+    {
+      "decisionId": "hot-1",
+      "utteranceId": "utt-1",
+      "action": "BRAKE",
+      "priority": 0,
+      "dispatchLatencyMs": 20,
+      "status": "CLIP_STARTED"
+    }
+  ]
+}

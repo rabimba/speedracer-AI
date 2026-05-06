@@ -1,0 +1,9 @@
+{
+  "name": "sonoma-training-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:scenario": "node tools/generate-scenario.mjs",
+    "test": "node tools/check-scenario.mjs && node tools/test-validator.mjs"
+  }
+}

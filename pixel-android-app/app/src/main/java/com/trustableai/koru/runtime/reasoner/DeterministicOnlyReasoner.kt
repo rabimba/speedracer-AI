@@ -6,6 +6,7 @@ import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ReasonerDecision
 import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.RuntimeAccelerator
 
 class DeterministicOnlyReasoner : OnDeviceReasoner {
     override val backend: RuntimeBackend = RuntimeBackend.DETERMINISTIC
@@ -18,6 +19,7 @@ class DeterministicOnlyReasoner : OnDeviceReasoner {
             model = null,
             usesOnDeviceModel = false,
             supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+            accelerator = RuntimeAccelerator.NONE,
         )
     }
 

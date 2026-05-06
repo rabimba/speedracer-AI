@@ -13,3 +13,6 @@ pixel-android-app/app/build/
 pixel-android-app/models/**/*.litertlm
 pixel-android-app/models/**/*.partial
 pixel-android-app/models/**/*.task
+
+# Local validation recordings
+validation-recordings/

@@ -12,6 +12,8 @@ class CameraLaneAnalyzer(
     private var frameIndex = 0L
     private var previousTimestampNs = 0L
     private var previousSamples: ByteArray? = null
+    private var previousSampleCount = 0
+    private var reusableSamples: ByteArray? = null
 
     override fun analyze(image: ImageProxy) {
         try {
@@ -28,7 +30,8 @@ class CameraLaneAnalyzer(
             val stepX = max(1, width / 24)
             val stepY = max(1, height / 24)
             val sampleCount = ((width + stepX - 1) / stepX) * ((height + stepY - 1) / stepY)
-            val samples = ByteArray(sampleCount)
+            val samples = reusableSamples?.takeIf { it.size >= sampleCount } ?: ByteArray(sampleCount)
+            reusableSamples = null
 
             var index = 0
             var totalLuma = 0.0
@@ -72,12 +75,11 @@ class CameraLaneAnalyzer(
             }
 
             if (index == 0) return
-            val activeSamples = if (index == samples.size) samples else samples.copyOf(index)
             val averageLuma = totalLuma / index
-            val leftCount = activeSamples.size / 2.0
-            val rightCount = activeSamples.size - leftCount
-            val topCount = activeSamples.size / 2.0
-            val bottomCount = activeSamples.size - topCount
+            val leftCount = index / 2.0
+            val rightCount = index - leftCount
+            val topCount = index / 2.0
+            val bottomCount = index - topCount
             val lateralBalance = ((leftLuma / leftCount) - (rightLuma / rightCount)).coerceIn(-1.0, 1.0)
             val verticalBalance = ((topLuma / topCount) - (bottomLuma / bottomCount)).coerceIn(-1.0, 1.0)
             val centerAverage = if (centerCount > 0) centerLuma / centerCount else averageLuma
@@ -85,13 +87,13 @@ class CameraLaneAnalyzer(
             val centerContrast = (centerAverage - edgeAverage).coerceIn(-1.0, 1.0)
 
             val motionEnergy = previousSamples?.let { previous ->
-                val compared = minOf(previous.size, activeSamples.size)
+                val compared = minOf(previousSampleCount, index)
                 if (compared == 0) {
                     0.0
                 } else {
                     var totalDiff = 0.0
                     for (sampleIndex in 0 until compared) {
-                        val current = activeSamples[sampleIndex].toInt() and 0xFF
+                        val current = samples[sampleIndex].toInt() and 0xFF
                         val previousValue = previous[sampleIndex].toInt() and 0xFF
                         totalDiff += abs(current - previousValue) / 255.0
                     }
@@ -107,7 +109,10 @@ class CameraLaneAnalyzer(
             }
 
             previousTimestampNs = timestampNs
-            previousSamples = activeSamples
+            val retiredPrevious = previousSamples
+            previousSamples = samples
+            previousSampleCount = index
+            reusableSamples = retiredPrevious
 
             onFeatures(
                 VisionFeatureSnapshot(

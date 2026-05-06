@@ -7,7 +7,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-class PhraseCatalog(private val context: Context) {
+interface PhraseRenderer {
+    fun phraseIdFor(action: CoachAction, skillLevel: SkillLevel, coachId: String): String
+
+    fun render(action: CoachAction, skillLevel: SkillLevel, coachId: String): String
+}
+
+class PhraseCatalog(private val context: Context) : PhraseRenderer {
     private var loaded = false
     private var phrases: Map<String, PhraseEntry> = emptyMap()
 
@@ -40,11 +46,11 @@ class PhraseCatalog(private val context: Context) {
         }
     }
 
-    fun phraseIdFor(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
+    override fun phraseIdFor(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
         return "${action.name}:${skillLevel.name.lowercase()}:$coachId"
     }
 
-    fun render(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
+    override fun render(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
         val entry = phrases[action.name] ?: return action.name.replace('_', ' ').lowercase()
         entry.personas[coachId]?.let { return it }
         return when (skillLevel) {

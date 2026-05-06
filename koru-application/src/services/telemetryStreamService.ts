@@ -111,7 +111,8 @@ export class TelemetryStreamService {
     return {
       time: data.time as string | number,
       lat, lon,
-      speed: Number(data.speed) || 0,
+      speed: Number(data.speed_mps ?? data.speed) || 0,
+      speed_mps: data.speed_mps === undefined ? undefined : Number(data.speed_mps),
       alt: Number(data.alt) || undefined,
       track: Number(data.track) || undefined,
       brake: Number(data.brake) || undefined,

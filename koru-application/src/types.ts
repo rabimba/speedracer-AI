@@ -38,6 +38,7 @@ export interface GpsSSEPoint {
   lon: number;
   alt?: number;
   speed: number;         // m/s or mph
+  speed_mps?: number;
   climb?: number;
   track?: number;        // heading
   mode?: number;
@@ -117,6 +118,7 @@ export interface RecordedSessionSummary {
 }
 
 export interface RecordedSessionArtifact {
+  schemaVersion?: number;
   id: string;
   mode: SessionMode;
   trackName: string;
@@ -127,6 +129,7 @@ export interface RecordedSessionArtifact {
   sessionGoals: SessionGoal[];
   frames: TelemetryFrame[];
   decisions: CoachingDecision[];
+  audioEvents?: AudioDispatchEvent[];
 }
 
 // ── Coaching ───────────────────────────────────────────────
@@ -214,9 +217,11 @@ export type CornerPhase =
 export type TimingState = 'OPEN' | 'DELIVERING' | 'COOLDOWN' | 'BLACKOUT';
 export type CoachingPath = 'hot' | 'cold' | 'feedforward' | 'edge';
 export type RuntimeBackend = 'browser' | 'aicore' | 'litertlm' | 'deterministic';
+export type RuntimeAccelerator = 'none' | 'mediapipe_litert' | 'aicore' | 'unknown';
 export type LiveBackendState = 'idle' | 'starting' | 'ready' | 'degraded' | 'unavailable' | 'error';
 
 export interface CoachingDecision {
+  id?: string;
   path: CoachingPath;
   action?: CoachAction;
   text: string;
@@ -227,6 +232,25 @@ export interface CoachingDecision {
   latencyMs?: number;
   confidence?: number;
   phraseId?: string;
+}
+
+export type AudioDispatchStatus =
+  | 'CLIP_STARTED'
+  | 'TTS_QUEUED'
+  | 'TTS_STARTED'
+  | 'TTS_UNAVAILABLE'
+  | 'DISABLED';
+
+export interface AudioDispatchEvent {
+  decisionId: string;
+  utteranceId: string;
+  action?: CoachAction;
+  priority: number;
+  requestedAt: number;
+  dispatchLatencyMs: number;
+  ttsStartLatencyMs?: number;
+  status: AudioDispatchStatus;
+  fallbackReason?: string;
 }
 
 // ── Driver Model ──────────────────────────────────────────
@@ -254,4 +278,5 @@ export interface LiveBackendStatus {
   model?: string;
   usesOnDeviceModel: boolean;
   supportedPaths: CoachingPath[];
+  accelerator?: RuntimeAccelerator;
 }

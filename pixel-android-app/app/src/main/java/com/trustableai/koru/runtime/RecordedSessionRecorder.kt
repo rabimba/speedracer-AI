@@ -1,6 +1,7 @@
 package com.trustableai.koru.runtime
 
 import android.content.Context
+import com.trustableai.koru.model.AudioDispatchEvent
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.RecordedSessionSummary
@@ -13,9 +14,13 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-class RecordedSessionRecorder(private val context: Context) {
+class RecordedSessionRecorder(
+    private val context: Context? = null,
+    private val persistArtifacts: Boolean = true,
+) {
     private var activeSession: ActiveSession? = null
 
+    @Synchronized
     fun start(mode: SessionMode, trackName: String, coachId: String, sessionGoals: List<SessionGoal> = emptyList()) {
         activeSession = ActiveSession(
             id = "koru-${mode.bridgeValue()}-${System.currentTimeMillis()}",
@@ -26,17 +31,26 @@ class RecordedSessionRecorder(private val context: Context) {
             startedAtMs = System.currentTimeMillis(),
             frames = mutableListOf(),
             decisions = mutableListOf(),
+            audioEvents = mutableListOf(),
         )
     }
 
+    @Synchronized
     fun recordFrame(frame: TelemetryFrame) {
         activeSession?.frames?.add(frame)
     }
 
+    @Synchronized
     fun recordDecision(decision: CoachingDecision) {
         activeSession?.decisions?.add(decision)
     }
 
+    @Synchronized
+    fun recordAudioEvent(event: AudioDispatchEvent) {
+        activeSession?.audioEvents?.add(event)
+    }
+
+    @Synchronized
     fun finish(): RecordedSessionArtifact? {
         val session = activeSession ?: return null
         activeSession = null
@@ -52,6 +66,7 @@ class RecordedSessionRecorder(private val context: Context) {
             durationSeconds = ((endedAtMs - session.startedAtMs) / 1000.0),
         )
         val artifact = RecordedSessionArtifact(
+            schemaVersion = 2,
             id = session.id,
             mode = session.mode,
             trackName = session.trackName,
@@ -62,23 +77,28 @@ class RecordedSessionRecorder(private val context: Context) {
             sessionGoals = session.sessionGoals.toList(),
             frames = session.frames.toList(),
             decisions = session.decisions.toList(),
+            audioEvents = session.audioEvents.toList(),
         )
         persist(artifact)
         return artifact
     }
 
+    @Synchronized
     fun discard() {
         activeSession = null
     }
 
     private fun persist(artifact: RecordedSessionArtifact) {
-        val sessionDir = File(context.filesDir, "recorded_sessions").apply { mkdirs() }
+        if (!persistArtifacts) return
+        val appContext = context ?: return
+        val sessionDir = File(appContext.filesDir, "recorded_sessions").apply { mkdirs() }
         val file = File(sessionDir, "${artifact.id}.json")
         file.writeText(artifactJson(artifact).toString())
     }
 
-    private fun artifactJson(artifact: RecordedSessionArtifact): JSONObject {
+    internal fun artifactJson(artifact: RecordedSessionArtifact): JSONObject {
         return JSONObject()
+            .put("schemaVersion", artifact.schemaVersion)
             .put("id", artifact.id)
             .put("mode", artifact.mode.bridgeValue())
             .put("trackName", artifact.trackName)
@@ -102,6 +122,7 @@ class RecordedSessionRecorder(private val context: Context) {
             .put("sessionGoals", JSONArray(artifact.sessionGoals.map(::goalJson)))
             .put("frames", JSONArray(artifact.frames.map(::frameJson)))
             .put("decisions", JSONArray(artifact.decisions.map(::decisionJson)))
+            .put("audioEvents", JSONArray(artifact.audioEvents.map(::audioEventJson)))
     }
 
     private fun goalJson(goal: SessionGoal): JSONObject {
@@ -157,6 +178,20 @@ class RecordedSessionRecorder(private val context: Context) {
             .put("latencyMs", decision.latencyMs)
             .put("confidence", decision.confidence)
             .put("phraseId", decision.phraseId)
+            .put("id", decision.id)
+    }
+
+    private fun audioEventJson(event: AudioDispatchEvent): JSONObject {
+        return JSONObject()
+            .put("decisionId", event.decisionId)
+            .put("utteranceId", event.utteranceId)
+            .put("action", event.action?.name)
+            .put("priority", event.priority)
+            .put("requestedAt", event.requestedAtMs)
+            .put("dispatchLatencyMs", event.dispatchLatencyMs)
+            .put("ttsStartLatencyMs", event.ttsStartLatencyMs)
+            .put("status", event.status.name)
+            .put("fallbackReason", event.fallbackReason)
     }
 
     private data class ActiveSession(
@@ -168,5 +203,6 @@ class RecordedSessionRecorder(private val context: Context) {
         val startedAtMs: Long,
         val frames: MutableList<TelemetryFrame>,
         val decisions: MutableList<CoachingDecision>,
+        val audioEvents: MutableList<AudioDispatchEvent>,
     )
 }

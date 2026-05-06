@@ -38,7 +38,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 
 ### Implemented Today
 
-- Native Android host app with a WebView bridge for the React UI.
+- Native Android host app with a Jetpack Compose + Material 3 live field-test UI.
 - Sonoma Raceway is now the primary deployed track in both the web registry and native Android catalog.
 - Sonoma-specific coaching guidance is wired in from the sector map plus coaching notes, including corner dossiers for Turns 2, 3, 3A, 6, 7, 9-10, 11, and 12.
 - The T-Rod and Ross Bentley knowledge layer now influences runtime selection as doctrine, not just prompt text: it can suppress premature advice, bias hot-path wording, and shape feedforward/edge guidance per corner.
@@ -51,6 +51,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 - First real native telemetry source: `phone_imu_gps`.
 - Always-on camera fusion for telemetry sessions, so live telemetry frames can carry vision features.
 - Realtime on-device coaching through the native runtime, recorded session artifacts, and replay loading.
+- Velocity-scaled FEEDFORWARD timing, fixed P0 safety phrases, spoken P0 audio clips with TTS fallback, persisted audio latency evidence, and non-blocking Pixel 10 GPU EDGE enrichment for field-test safety validation.
 
 ### Works Now
 
@@ -80,7 +81,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 
 ### Edge / Telemetry
 
-- [x] **Native Android live host** — WebView bridge, on-device audio path, recorded-session pipeline, and native live backend status reporting.
+- [x] **Native Android live host** — Jetpack Compose live UI, direct StateFlow telemetry, on-device audio path, recorded-session pipeline, and native live backend status reporting.
 - [x] **Camera lane** — CameraX preview + analyzer, lightweight vision features, and camera-direct realtime feedback loop.
 - [x] **Selectable Android live modes** — `Telemetry + Camera Fusion`, `Device Camera + GPS Test`, and `Camera Feedback (Debug)` now route through the native Android host.
 - [x] **Selectable telemetry source abstraction** — Native sessions can request `synthetic`, `phone_imu_gps`, `racebox_ble`, or `obd_bluetooth` without changing the reasoning engine contract.
@@ -88,7 +89,8 @@ The repo now supports both the original browser flow and a native Android on-dev
 - [x] **Replayable native session capture** — Android live sessions now persist fused frame timelines and decisions, and the web app can load the latest saved capture back into Replay and Analysis.
 - [x] **Bench-safe motion gating** — Phone-only telemetry coaching is now suppressed until real movement is detected, reducing stationary false-positive coaching during device testing.
 - [ ] **Data fusion and time sync** — Implement cross-correlation calibration (hard throttle blip → RPM spike vs IMU G spike) to align RaceBox GPS epoch timestamps with Android SystemClock. Expected offset: 20-80ms. Upsample OBD channels (5-8Hz) to RaceBox rate (25Hz) via linear interpolation (continuous) and zero-order hold (discrete).
-- [ ] **Pre-rendered MP3s for safety-critical actions** — Record or source audio clips for BRAKE, OVERSTEER_RECOVERY, COMMIT per coach persona. The audioService already supports AudioContext pre-caching; this needs the actual MP3 files and integration to bypass TTS latency for time-critical calls.
+- [x] **Deterministic P0 safety audio** — Native Android now dispatches bundled spoken P0 cues for BRAKE and OVERSTEER_RECOVERY before falling back to flushed TTS, and records audio dispatch latency evidence in schema v2 session artifacts.
+- [x] **Non-blocking Pixel 10 EDGE enrichment** — EDGE reasoner work now runs in a single-flight async queue. MediaPipe LiteRT GPU inference can enrich non-P0 coaching when a native model is staged, while HOT/P0 remains deterministic and never waits for GPU or LLM output.
 - [ ] **Bluetooth telemetry bridge** — RaceBox Mini connects via BLE 5.2 (7.5-15ms latency at high priority). OBDLink MX+ connects via Bluetooth Classic 3.0. Both streams must run in an Android foreground Service with persistent notification. Call `requestConnectionPriority(CONNECTION_PRIORITY_HIGH)` on RaceBox immediately after connecting.
 - [ ] **VehicleDataStream interface** — Abstract the OBD source behind a common interface so the coaching engine never changes when upgrading from OBD to CAN bus. Path A (OBDLink MX+ K-Line) and Path B (CANable 2.0 direct CAN) both implement the same callbacks.
 - [ ] **Mocked data stream API** — Rabimba to deploy a throttled API endpoint providing synthetic telemetry streams. Enables pipeline development before the field test. All teams should validate their ingestion against this endpoint.
@@ -384,7 +386,7 @@ koru-application/
       Analysis.tsx           # Two-lap AI comparison
     services/
       audioService.ts        # AudioContext pre-caching + Web Speech API fallback
-      androidBridge.ts       # Android WebView bridge bindings
+      androidBridge.ts       # Legacy browser bridge bindings for older Android hosts
       coachingService.ts     # Split-brain coaching engine (hot/cold/feedforward)
       geminiService.ts       # Gemini REST API wrapper
       liveBackendAdapter.ts  # Browser vs Android live backend adapter
@@ -424,7 +426,7 @@ koru-application/
 
 ### Native Android Live Modes
 
-The same Live Session page can also be hosted inside the Android app and routed into native execution paths:
+The Android app now provides a native Compose live field-test surface. The React Live Session page remains available for browser demos, replay, and analysis workbench flows.
 
 | Mode | Purpose | Current Source |
 |------|---------|----------------|
@@ -434,7 +436,7 @@ The same Live Session page can also be hosted inside the Android app and routed 
 
 In the fused Android modes, the runtime path is:
 
-`TelemetrySource -> TelemetryFusionEngine(+vision) -> TelemetryFrame -> KoruRealtimeEngine -> native audio + recorder`
+`Compose UI -> LiveSessionViewModel -> KoruSessionBus StateFlow -> TelemetrySource -> TelemetryFusionEngine(+vision) -> TelemetryFrame -> KoruRealtimeEngine -> native audio + recorder`
 
 ---
 
@@ -445,7 +447,7 @@ In the fused Android modes, the runtime path is:
 | Frontend | React 19 + TypeScript + Vite 8 |
 | Styling | Tailwind CSS 4 |
 | Charts | Recharts |
-| Native Android | Kotlin + WebView + CameraX + foreground service |
+| Native Android | Kotlin + Jetpack Compose + Material 3 + CameraX + foreground service |
 | AI | Gemini 2.0 Flash via `@google/genai` |
 | On-device inference | LiteRT-LM / deterministic fallback |
 | Audio | Web Speech API + Gemini TTS (`gemini-2.5-pro-preview-tts`) |

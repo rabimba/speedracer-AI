@@ -7,10 +7,12 @@ import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.RuntimeAccelerator
 import com.trustableai.koru.runtime.reasoner.AiCoreReasoner
 import com.trustableai.koru.runtime.reasoner.DeterministicOnlyReasoner
 import com.trustableai.koru.runtime.reasoner.LiteRtLmReasoner
 import com.trustableai.koru.runtime.reasoner.OnDeviceReasoner
+import kotlinx.coroutines.runBlocking
 
 class EdgeRuntimeManager(
     context: Context,
@@ -31,6 +33,7 @@ class EdgeRuntimeManager(
         detail = "Runtime manager idle",
         usesOnDeviceModel = false,
         supportedPaths = emptyList(),
+        accelerator = RuntimeAccelerator.NONE,
     )
 
     suspend fun warmupPreferredBackend(): LiveBackendStatus {
@@ -66,6 +69,14 @@ class EdgeRuntimeManager(
         liteRtLmReasoner.setCoach(coachId)
     }
 
+    fun close() {
+        runBlocking {
+            aiCoreReasoner.close()
+            liteRtLmReasoner.close()
+            deterministicReasoner.close()
+        }
+    }
+
     private suspend fun safeWarmup(reasoner: OnDeviceReasoner, label: String): LiveBackendStatus {
         return runCatching { reasoner.warmup() }.getOrElse { error ->
             Log.e(tag, "$label warmup failed", error)
@@ -75,6 +86,7 @@ class EdgeRuntimeManager(
                 detail = "$label warmup failed: ${error.message ?: "unknown error"}",
                 usesOnDeviceModel = false,
                 supportedPaths = listOf(CoachingPath.EDGE),
+                accelerator = RuntimeAccelerator.UNKNOWN,
             )
         }
     }

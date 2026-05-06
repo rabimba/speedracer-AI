@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-bad",
+  "trackName": "Thunderhill",
+  "startedAt": 1,
+  "summary": {
+    "trackName": "Thunderhill",
+    "frameCount": 0
+  },
+  "frames": [],
+  "decisions": [],
+  "audioEvents": []
+}

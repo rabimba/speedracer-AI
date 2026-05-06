@@ -48,6 +48,13 @@ enum class RuntimeBackend {
     DETERMINISTIC,
 }
 
+enum class RuntimeAccelerator {
+    NONE,
+    MEDIAPIPE_LITERT,
+    AICORE,
+    UNKNOWN,
+}
+
 enum class LiveBackendState {
     IDLE,
     STARTING,
@@ -90,6 +97,15 @@ enum class TelemetrySourceKind {
     RACEBOX_BLE,
     OBD_BLUETOOTH,
 }
+
+data class SensorFramePayload(
+    val schemaVersion: Int = 1,
+    val domain: String = "racing",
+    val sensorKind: String,
+    val timeSeconds: Double,
+    val values: Map<String, Double>,
+    val labels: Map<String, String> = emptyMap(),
+)
 
 data class TelemetryFrame(
     val timeSeconds: Double,
@@ -166,6 +182,7 @@ data class EdgeReasoningWindow(
     val skillLevel: SkillLevel,
     val cornerName: String?,
     val features: Map<String, Double>,
+    val causeHint: String? = null,
 )
 
 data class ReasonerDecision(
@@ -188,6 +205,27 @@ data class CoachingDecision(
     val latencyMs: Long? = null,
     val confidence: Double? = null,
     val phraseId: String? = null,
+    val id: String = "${path.name.lowercase()}-${action?.name ?: "cue"}-$timestampMs",
+)
+
+enum class AudioDispatchStatus {
+    CLIP_STARTED,
+    TTS_QUEUED,
+    TTS_STARTED,
+    TTS_UNAVAILABLE,
+    DISABLED,
+}
+
+data class AudioDispatchEvent(
+    val decisionId: String,
+    val utteranceId: String,
+    val action: CoachAction?,
+    val priority: Int,
+    val requestedAtMs: Long,
+    val dispatchLatencyMs: Long,
+    val ttsStartLatencyMs: Long? = null,
+    val status: AudioDispatchStatus,
+    val fallbackReason: String? = null,
 )
 
 data class LiveBackendStatus(
@@ -198,6 +236,7 @@ data class LiveBackendStatus(
     val model: String? = null,
     val usesOnDeviceModel: Boolean,
     val supportedPaths: List<CoachingPath>,
+    val accelerator: RuntimeAccelerator = RuntimeAccelerator.NONE,
 )
 
 data class RecordedSessionSummary(
@@ -211,6 +250,7 @@ data class RecordedSessionSummary(
 )
 
 data class RecordedSessionArtifact(
+    val schemaVersion: Int = 2,
     val id: String,
     val mode: SessionMode,
     val trackName: String,
@@ -221,6 +261,7 @@ data class RecordedSessionArtifact(
     val sessionGoals: List<SessionGoal> = emptyList(),
     val frames: List<TelemetryFrame>,
     val decisions: List<CoachingDecision>,
+    val audioEvents: List<AudioDispatchEvent> = emptyList(),
 )
 
 data class ModelInstallStatus(
@@ -237,6 +278,8 @@ data class ModelInstallStatus(
 fun CoachingPath.bridgeValue(): String = name.lowercase()
 
 fun RuntimeBackend.bridgeValue(): String = name.lowercase()
+
+fun RuntimeAccelerator.bridgeValue(): String = name.lowercase()
 
 fun LiveBackendState.bridgeValue(): String = name.lowercase()
 

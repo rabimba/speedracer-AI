@@ -6,6 +6,7 @@ import com.trustableai.koru.model.SessionGoalFocus
 import com.trustableai.koru.model.SessionGoalSource
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetrySourceKind
+import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -18,6 +19,18 @@ data class LiveSessionConfig(
     val sessionGoals: List<SessionGoal>,
     val sourceUrl: String?,
 ) {
+    fun toJson(): String {
+        return JSONObject()
+            .put("coachId", coachId)
+            .put("audioEnabled", audioEnabled)
+            .put("trackName", trackName)
+            .put("sessionMode", sessionMode.bridgeValue())
+            .put("telemetrySource", telemetrySource.bridgeValue())
+            .put("sessionGoals", JSONArray(sessionGoals.map(::sessionGoalJson)))
+            .put("sourceUrl", sourceUrl)
+            .toString()
+    }
+
     companion object {
         fun fromJson(json: String): LiveSessionConfig {
             val root = JSONObject(json)
@@ -81,6 +94,15 @@ data class LiveSessionConfig(
                         ?.let(::add)
                 }
             }
+        }
+
+        private fun sessionGoalJson(goal: SessionGoal): JSONObject {
+            return JSONObject()
+                .put("id", goal.id)
+                .put("focus", goal.focus.bridgeValue())
+                .put("description", goal.description)
+                .put("source", goal.source.bridgeValue())
+                .put("prioritizedActions", JSONArray(goal.prioritizedActions.map { action -> action.name }))
         }
     }
 }

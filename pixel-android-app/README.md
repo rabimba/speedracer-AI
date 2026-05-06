@@ -8,7 +8,7 @@ This Android app now supports three native live-session lanes:
 
 The current deployment target in this branch is Sonoma Raceway. The native track catalog and coaching runtime now include Sonoma-specific corner guidance derived from the sector map plus coaching notes.
 
-The first two run through the foreground-service telemetry pathway. The debug lane uses the activity-local camera-direct pathway.
+The Android field-test surface is now Jetpack Compose + Material 3. The first two modes run through the foreground-service telemetry pathway. The debug lane uses the activity-local camera-direct pathway.
 
 ## Model choice
 
@@ -22,20 +22,17 @@ Do not use:
 
 That file is the web/WebGPU artifact for browser inference, not the native Android backend in this project.
 
-## Prepare the web bundle and model
+## Prepare the model
 
-From [koru-application](/Users/rkaranjai/Documents/trustable-ai-codelab/koru-application):
+The Compose live UI no longer requires the React bundle for field testing. To stage the native LiteRT-LM model from [koru-application](/Users/rkaranjai/Documents/trustable-ai-codelab/koru-application), run:
 
 ```bash
 npm install
-npm run pixel:e2e:prepare
+npm run pixel:model:stage
+npm run pixel:model:push
 ```
 
-That does three things:
-
-1. builds the React UI and copies it into Android assets
-2. stages the native LiteRT-LM model under `pixel-android-app/models/`
-3. pushes the model to `/data/local/tmp/koru/models/<version>/` on the attached device
+The older `npm run pixel:e2e:prepare` command still builds and syncs the React assets for compatibility, but the live Android path does not load them.
 
 Optional overrides:
 
@@ -64,19 +61,19 @@ npm run pixel:e2e:prepare
 
 The complete flow you can test now is:
 
-1. the React UI is loaded inside the Android WebView host
-2. the native bridge starts the selected Android live session mode
-3. the native runtime selects a telemetry path:
+1. the Compose UI renders the live cockpit and session initialization flow
+2. `LiveSessionViewModel` starts the selected Android live session mode
+3. `KoruSessionBus` exposes direct `StateFlow` state for UI status, telemetry, decisions, and saved sessions
+4. the native runtime selects a telemetry path:
    - `phone_imu_gps`
    - `synthetic`
    - future `racebox_ble` / `obd_bluetooth`
-4. CameraX captures live camera frames and extracts lightweight vision features
-5. telemetry frames are fused with the latest vision snapshot when the session mode uses telemetry
-6. Sonoma-specific corner/feedforward guidance is applied when the selected track is Sonoma Raceway
-7. the on-device runtime chooses `litertlm` when available, otherwise deterministic fallback
-8. native bridge sends frames and decisions into the WebView UI
-9. native TTS plays coaching audio
-10. the recorded session artifact is saved for replay and analysis
+5. CameraX captures live camera frames and extracts lightweight vision features
+6. telemetry frames are fused with the latest vision snapshot when the session mode uses telemetry
+7. Sonoma-specific corner/feedforward guidance is applied when the selected track is Sonoma Raceway
+8. the on-device runtime chooses AICore when available, otherwise MediaPipe LiteRT GPU EDGE inference when a staged model is ready, otherwise deterministic fallback
+9. native audio dispatch plays bundled spoken P0 safety clips or immediately falls back to flushed Android TTS
+10. the recorded session artifact is saved for replay and analysis with schema v2 audio latency evidence
 
 ## Current limitations
 
@@ -85,7 +82,8 @@ The complete flow you can test now is:
 - `Camera Feedback (Debug)` is useful for validating the camera lane, but it is not race-grade coaching by itself.
 - Vision features are still low-level and do not yet encode track edges, apexes, or brake markers.
 - AICore is still scaffolded.
-- LiteRT-LM model push is automated, but actual runtime validation still depends on the device having a compatible native inference runtime and a successful app build from Android Studio.
+- LiteRT-LM model push is automated, but actual GPU EDGE validation still depends on the device having a compatible native inference runtime, a staged model, and a successful app build from Android Studio. HOT/P0 does not depend on this path.
+- The React replay and analysis workbench is intentionally still separate from the native field-test cockpit.
 
 ## Recommended test flows
 
@@ -100,3 +98,18 @@ Use `Telemetry + Camera Fusion` with `Phone IMU + GPS` as the current real on-de
 ### 3. Camera lane debugging
 
 Use `Camera Feedback (Debug)` to validate camera ingestion, vision features, and on-device audio independently of telemetry.
+
+## Pixel 10 validation commands
+
+```bash
+cd /Users/rkaranjai/Documents/trustable-ai-codelab/pixel-android-app
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest assembleDebug connectedDebugAndroidTest
+adb logcat -c
+adb logcat -v time | rg "KoruTelemetryService|KoruAudioDispatcher|AndroidRuntime|FATAL|ANR|FGS"
+```
+
+During a running `Telemetry + Camera Fusion` session, `dumpsys` should show the foreground service:
+
+```bash
+adb shell dumpsys activity services com.trustableai.koru.debug | rg "KoruTelemetryService|foreground|startRequested"
+```

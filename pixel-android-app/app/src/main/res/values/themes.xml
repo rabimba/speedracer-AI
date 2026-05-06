@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Koru" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme.Koru" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@color/koru_bg</item>
         <item name="android:navigationBarColor">@color/koru_bg</item>
         <item name="android:windowBackground">@color/koru_bg</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
     </style>
 </resources>

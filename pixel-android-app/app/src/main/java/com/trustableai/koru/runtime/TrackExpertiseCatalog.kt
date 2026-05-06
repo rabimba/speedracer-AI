@@ -16,12 +16,12 @@ object TrackExpertiseCatalog {
         return when (corner.id) {
             1 -> beginnerAware(
                 skillLevel = skillLevel,
-                beginner = "Turn 1: brake straight, settle the chassis, then clean turn-in.",
+                beginner = "Turn 1: eyes up, brake straight, then clean turn-in.",
                 standard = "Turn 1: settle the platform early and keep the hands quiet over the first direction change.",
             )
             2 -> beginnerAware(
                 skillLevel = skillLevel,
-                beginner = "Turn 2: stay wide, trail brake in, use the curb.",
+                beginner = "Turn 2: eyes to the curb, stay wide, trail brake in.",
                 standard = "Turn 2: stay wide, trail brake to the curb, and do not go to throttle until you reach the apex.",
             )
             3 -> beginnerAware(
@@ -46,17 +46,17 @@ object TrackExpertiseCatalog {
             )
             910 -> beginnerAware(
                 skillLevel = skillLevel,
-                beginner = "Turns 9-10: open 9, straighten, then set up the brake zone.",
+                beginner = "Turns 9-10: eyes up for the bridge mark, open 9, then straighten.",
                 standard = "Turns 9-10: sacrifice Turn 9, straighten the car, and build the best possible run into the final braking sequence.",
             )
             11 -> beginnerAware(
                 skillLevel = skillLevel,
-                beginner = "Turn 11: big brake zone. Squeeze it, then release cleanly.",
+                beginner = "Turn 11: eyes to exit first. Big squeeze, clean release.",
                 standard = "Turn 11: finish the heavy brake work in a straight line, taper the release, and protect the exit over hero entry speed.",
             )
             12 -> beginnerAware(
                 skillLevel = skillLevel,
-                beginner = "Turn 12: unwind early and prioritize the straight.",
+                beginner = "Turn 12: look down the straight, unwind early.",
                 standard = "Turn 12: free the hands early and commit to front-straight exit speed.",
             )
             else -> "${corner.name}: ${corner.advice}"

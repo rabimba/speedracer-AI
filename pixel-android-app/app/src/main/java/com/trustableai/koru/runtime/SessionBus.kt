@@ -18,6 +18,9 @@ object KoruSessionBus {
     private val telemetryFlow = MutableSharedFlow<TelemetryFrame>(extraBufferCapacity = 32)
     private val decisionFlow = MutableSharedFlow<CoachingDecision>(extraBufferCapacity = 16)
     private val savedSessionFlow = MutableSharedFlow<RecordedSessionArtifact>(extraBufferCapacity = 2)
+    private val latestTelemetryFlow = MutableStateFlow<TelemetryFrame?>(null)
+    private val decisionHistoryFlow = MutableStateFlow<List<CoachingDecision>>(emptyList())
+    private val latestSavedSessionFlow = MutableStateFlow<RecordedSessionArtifact?>(null)
     private val statusFlow = MutableStateFlow(
         LiveBackendStatus(
             backend = RuntimeBackend.DETERMINISTIC,
@@ -31,21 +34,35 @@ object KoruSessionBus {
     val telemetry: SharedFlow<TelemetryFrame> = telemetryFlow.asSharedFlow()
     val decisions: SharedFlow<CoachingDecision> = decisionFlow.asSharedFlow()
     val savedSessions: SharedFlow<RecordedSessionArtifact> = savedSessionFlow.asSharedFlow()
+    val latestTelemetry: StateFlow<TelemetryFrame?> = latestTelemetryFlow.asStateFlow()
+    val decisionHistory: StateFlow<List<CoachingDecision>> = decisionHistoryFlow.asStateFlow()
+    val latestSavedSession: StateFlow<RecordedSessionArtifact?> = latestSavedSessionFlow.asStateFlow()
     val status: StateFlow<LiveBackendStatus> = statusFlow.asStateFlow()
 
     fun tryEmitFrame(frame: TelemetryFrame) {
+        latestTelemetryFlow.value = frame
         telemetryFlow.tryEmit(frame)
     }
 
     fun tryEmitDecision(decision: CoachingDecision) {
+        decisionHistoryFlow.value = (decisionHistoryFlow.value + decision).takeLast(MAX_DECISION_HISTORY)
         decisionFlow.tryEmit(decision)
     }
 
     fun tryEmitSavedSession(session: RecordedSessionArtifact) {
+        latestSavedSessionFlow.value = session
         savedSessionFlow.tryEmit(session)
     }
 
     fun tryEmitStatus(status: LiveBackendStatus) {
         statusFlow.value = status
     }
+
+    fun resetLiveState() {
+        latestTelemetryFlow.value = null
+        decisionHistoryFlow.value = emptyList()
+        latestSavedSessionFlow.value = null
+    }
+
+    private const val MAX_DECISION_HISTORY = 40
 }
