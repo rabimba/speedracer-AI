@@ -64,6 +64,11 @@ class KoruRealtimeEngine(
 
     suspend fun processFrame(frame: TelemetryFrame, nowMs: Long = System.currentTimeMillis()): List<CoachingDecision> {
         val latencyProbe = LatencyProbe.start()
+        val fallbackStage = frame.sourceHealth?.fallbackStage
+        if (fallbackStage == "no_live_data") {
+            queue.clear()
+            return emptyList()
+        }
         val detection = cornerDetector.detect(frame)
         currentPhase = detection.phase
         timingGate.update(currentPhase, nowMs)
@@ -85,6 +90,10 @@ class KoruRealtimeEngine(
             seenActionStamp[ordinal] = stamp
 
             val priority = actionPriority(action)
+            if (shouldSuppressForTelemetryTrust(action, fallbackStage)) {
+                order += 1
+                return
+            }
             val suppress =
                 TrackExpertiseCatalog.shouldSuppressHotAction(
                     track = track,
@@ -136,29 +145,31 @@ class KoruRealtimeEngine(
                 }
             }
 
-        anticipationTrigger.evaluate(frame, track)
-            ?.takeIf { candidate -> candidate.corner.id != lastFeedforwardCornerId }
-            ?.let { candidate ->
-                lastFeedforwardCornerId = candidate.corner.id
-                queue.enqueue(
-                    CoachingQueue.QueuedDecision(
-                        action = null,
-                        path = CoachingPath.FEEDFORWARD.bridgeValue(),
-                        text = TrackExpertiseCatalog.feedforwardText(
-                            track = track,
-                            corner = candidate.corner,
-                            skillLevel = driverState.skillLevel,
+        if (allowsPredictiveCoaching(fallbackStage)) {
+            anticipationTrigger.evaluate(frame, track)
+                ?.takeIf { candidate -> candidate.corner.id != lastFeedforwardCornerId }
+                ?.let { candidate ->
+                    lastFeedforwardCornerId = candidate.corner.id
+                    queue.enqueue(
+                        CoachingQueue.QueuedDecision(
+                            action = null,
+                            path = CoachingPath.FEEDFORWARD.bridgeValue(),
+                            text = TrackExpertiseCatalog.feedforwardText(
+                                track = track,
+                                corner = candidate.corner,
+                                skillLevel = driverState.skillLevel,
+                            ),
+                            priority = 1,
+                            cornerPhase = currentPhase,
+                            timestampMs = nowMs,
                         ),
-                        priority = 1,
-                        cornerPhase = currentPhase,
-                        timestampMs = nowMs,
-                    ),
-                    nowMs,
-                )
-            }
+                        nowMs,
+                    )
+                }
 
-        edgeTriggerEvaluator.evaluate(frame, currentPhase, driverState, track, detection.corner, nowMs)?.let { window ->
-            edgeReasonerQueue.submit(window, currentPhase, nowMs)
+            edgeTriggerEvaluator.evaluate(frame, currentPhase, driverState, track, detection.corner, nowMs)?.let { window ->
+                edgeReasonerQueue.submit(window, currentPhase, nowMs)
+            }
         }
 
         edgeReasonerQueue.drainReady(nowMs).forEach { edgeDecision ->
@@ -232,6 +243,18 @@ class KoruRealtimeEngine(
         return goalBoosts[action.ordinal]
     }
 
+    private fun allowsPredictiveCoaching(fallbackStage: String?): Boolean {
+        return fallbackStage == null ||
+            fallbackStage == "full" ||
+            fallbackStage == "racebox_only" ||
+            fallbackStage == "aim_can_full" ||
+            fallbackStage == "aim_can_racebox_motion"
+    }
+
+    private fun shouldSuppressForTelemetryTrust(action: CoachAction, fallbackStage: String?): Boolean {
+        return fallbackStage == "phone_only" && action in throttleDependentActions
+    }
+
     private fun nextActionStamp(): Int {
         actionStamp += 1
         if (actionStamp == Int.MAX_VALUE) {
@@ -257,6 +280,17 @@ class KoruRealtimeEngine(
         }
     }
 }
+
+private val throttleDependentActions = setOf(
+    CoachAction.THROTTLE,
+    CoachAction.COMMIT,
+    CoachAction.EARLY_THROTTLE,
+    CoachAction.HUSTLE,
+    CoachAction.COAST,
+    CoachAction.LIFT_MID_CORNER,
+    CoachAction.PUSH,
+    CoachAction.FULL_THROTTLE,
+)
 
 object SafetyPhrasePolicy {
     fun textFor(action: CoachAction): String? {

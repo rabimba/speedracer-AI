@@ -9,6 +9,7 @@ import CoachPanel, { type CoachMessage } from '../components/CoachPanel';
 import GaugeCluster from '../components/GaugeCluster';
 import type {
   LiveBackendStatus,
+  ObdTransportPreference,
   SessionMode,
   SessionGoalFocus,
   TelemetryFrame,
@@ -37,7 +38,8 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   const [backendStatus, setBackendStatus] = useState<LiveBackendStatus | null>(null);
   const [nativeMode, setNativeMode] = useState(() => hasAndroidBridge());
   const [sessionMode, setSessionMode] = useState<SessionMode>('telemetry');
-  const [telemetrySource, setTelemetrySource] = useState<TelemetrySourceKind>('phone_imu_gps');
+  const [telemetrySource, setTelemetrySource] = useState<TelemetrySourceKind>('aim_can_usb');
+  const [obdTransportPreference, setObdTransportPreference] = useState<ObdTransportPreference>('auto');
   const [trackName, setTrackName] = useState(DEFAULT_TRACK.name);
   const [selectedGoalFocuses, setSelectedGoalFocuses] = useState<SessionGoalFocus[]>([]);
   const [customGoalDescription, setCustomGoalDescription] = useState('');
@@ -129,8 +131,12 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
   useEffect(() => {
     if (coachChoiceMode !== 'auto') return;
     if (activeCoach === coachRecommendation.coachId) return;
-    setActiveCoach(coachRecommendation.coachId);
-    adapterRef.current?.setCoach(coachRecommendation.coachId);
+    const recommendedCoachId = coachRecommendation.coachId;
+    const timer = window.setTimeout(() => {
+      setActiveCoach(recommendedCoachId);
+      adapterRef.current?.setCoach(recommendedCoachId);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [activeCoach, coachChoiceMode, coachRecommendation.coachId]);
 
   useEffect(() => {
@@ -164,9 +170,10 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
         sseUrl.trim(),
         nativeMode ? sessionMode : 'telemetry',
         telemetrySource,
+        obdTransportPreference,
       );
     }
-  }, [nativeMode, sessionGoals, sessionMode, sseUrl, status, telemetrySource]);
+  }, [nativeMode, obdTransportPreference, sessionGoals, sessionMode, sseUrl, status, telemetrySource]);
 
   const handleCoachChange = useCallback((id: string) => {
     setCoachChoiceMode('manual');
@@ -230,10 +237,23 @@ export default function LiveSession({ apiKey }: LiveSessionProps) {
               value={telemetrySource}
               onChange={e => setTelemetrySource(e.target.value as TelemetrySourceKind)}
             >
+              <option value="aim_can_usb">AiM CAN USB (RH02)</option>
+              <option value="racebox_obd_fusion">RaceBox + OBDLink</option>
               <option value="synthetic">Synthetic Telemetry</option>
               <option value="phone_imu_gps">Phone IMU + GPS</option>
               <option value="racebox_ble">RaceBox BLE</option>
               <option value="obd_bluetooth">OBD Bluetooth</option>
+            </select>
+          )}
+          {nativeMode && sessionMode === 'telemetry' && telemetrySource === 'racebox_obd_fusion' && (
+            <select
+              className="tts-select"
+              value={obdTransportPreference}
+              onChange={e => setObdTransportPreference(e.target.value as ObdTransportPreference)}
+            >
+              <option value="auto">OBD Auto</option>
+              <option value="bluetooth">Bluetooth MX+</option>
+              <option value="usb">USB EX</option>
             </select>
           )}
           {!nativeMode && (

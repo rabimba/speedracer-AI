@@ -1,4 +1,4 @@
-import { cp, mkdir } from 'node:fs/promises';
+import { cp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +7,8 @@ const rootDir = path.resolve(__dirname, '..');
 const source = path.join(rootDir, 'koru-application', 'dist');
 const destination = path.join(rootDir, 'pixel-android-app', 'app', 'src', 'main', 'assets', 'web');
 
+await mkdir(destination, { recursive: true });
+await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
 await cp(source, destination, { recursive: true, force: true });
 console.log(`Copied ${path.relative(rootDir, source)} -> ${path.relative(rootDir, destination)}`);

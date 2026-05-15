@@ -1,5 +1,6 @@
 package com.trustableai.koru.runtime
 
+import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.CornerPhase
@@ -48,6 +49,11 @@ object LiveAudioPolicy {
     }
 
     fun shouldSpeak(frame: TelemetryFrame, decision: CoachingDecision): AudioGateResult {
+        val fallbackStage = frame.sourceHealth?.fallbackStage
+        if (fallbackStage == "no_live_data") return AudioGateResult(false, "no_live_data")
+        if (fallbackStage == "phone_only" && decision.action?.let { it in throttleDependentActions } == true) {
+            return AudioGateResult(false, "phone_only_throttle_dependent")
+        }
         if (decision.priority == 0) return AudioGateResult(true)
         if (decision.text.isBlank()) return AudioGateResult(false, "blank_text")
 
@@ -75,3 +81,14 @@ object LiveAudioPolicy {
         return AudioGateResult(true)
     }
 }
+
+private val throttleDependentActions = setOf(
+    CoachAction.THROTTLE,
+    CoachAction.COMMIT,
+    CoachAction.EARLY_THROTTLE,
+    CoachAction.HUSTLE,
+    CoachAction.COAST,
+    CoachAction.LIFT_MID_CORNER,
+    CoachAction.PUSH,
+    CoachAction.FULL_THROTTLE,
+)

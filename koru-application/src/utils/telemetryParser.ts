@@ -25,6 +25,18 @@ function getVal(row: Record<string, string>, ...keys: string[]): number {
   return 0;
 }
 
+/** Get optional numeric value from a row for nullable/diagnostic columns */
+function getOptionalVal(row: Record<string, string>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const v = row[key];
+    if (v !== undefined && v !== '') {
+      const n = parseFloat(v);
+      if (!isNaN(n)) return n;
+    }
+  }
+  return undefined;
+}
+
 /** Get string value from a row */
 function getStr(row: Record<string, string>, ...keys: string[]): string {
   for (const key of keys) {
@@ -60,6 +72,19 @@ export function parseTelemetryCSV(csvText: string): TelemetryFrame[] {
     const longitude = lonStr.includes('°') ? parseCoordinate(lonStr) : parseFloat(lonStr) || 0;
 
     if (latitude === 0 && longitude === 0) continue;
+    const vehicleDiagnostics = {
+      engineLoadPercent: getOptionalVal(row, 'Engine Load (%)', 'ENGINE_LOAD', 'engineLoadPercent'),
+      mafGramsPerSecond: getOptionalVal(row, 'MAF (g/s)', 'MAF', 'mafGramsPerSecond'),
+      intakeTempC: getOptionalVal(row, 'Intake Temp (C)', 'INTAKE_TEMP', 'intakeTempC'),
+      timingAdvanceDegrees: getOptionalVal(row, 'Timing Advance (deg)', 'TIMING_ADVANCE', 'timingAdvanceDegrees'),
+      shortFuelTrim1Percent: getOptionalVal(row, 'Short Fuel Trim 1 (%)', 'SHORT_FUEL_TRIM_1', 'shortFuelTrim1Percent'),
+      longFuelTrim1Percent: getOptionalVal(row, 'Long Fuel Trim 1 (%)', 'LONG_FUEL_TRIM_1', 'longFuelTrim1Percent'),
+      shortFuelTrim2Percent: getOptionalVal(row, 'Short Fuel Trim 2 (%)', 'SHORT_FUEL_TRIM_2', 'shortFuelTrim2Percent'),
+      longFuelTrim2Percent: getOptionalVal(row, 'Long Fuel Trim 2 (%)', 'LONG_FUEL_TRIM_2', 'longFuelTrim2Percent'),
+      o2Bank1Sensor1Volts: getOptionalVal(row, 'O2 B1S1 (V)', 'O2_B1S1', 'o2Bank1Sensor1Volts'),
+      o2Bank2Sensor1Volts: getOptionalVal(row, 'O2 B2S1 (V)', 'O2_B2S1', 'o2Bank2Sensor1Volts'),
+    };
+    const hasDiagnostics = Object.values(vehicleDiagnostics).some(value => typeof value === 'number');
 
     frames.push({
       time: getVal(row, 'Time', 'Elapsed time (s)', 'time', 'Time (s)'),
@@ -74,6 +99,9 @@ export function parseTelemetryCSV(csvText: string): TelemetryFrame[] {
       gLat: getVal(row, 'Accel X', 'Lateral acceleration (g)', 'G_Lat', 'gLat'),
       gLong: getVal(row, 'Accel Y', 'Longitudinal acceleration (g)', 'G_Long', 'gLong'),
       gear: getVal(row, 'Gear', 'gear') || undefined,
+      coolantTempC: getVal(row, 'Coolant Temp (C)', 'Coolant Temperature (C)', 'coolantTempC') || undefined,
+      oilTempC: getVal(row, 'Oil Temp (C)', 'Oil Temperature (C)', 'oilTempC') || undefined,
+      vehicleDiagnostics: hasDiagnostics ? vehicleDiagnostics : undefined,
     });
   }
 

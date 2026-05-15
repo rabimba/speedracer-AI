@@ -54,7 +54,7 @@ npm run pixel:e2e:prepare
    - `Telemetry + Camera Fusion`
    - `Device Camera + GPS Test`
    - `Camera Feedback (Debug)`
-6. Grant camera and/or location permissions when prompted.
+6. Grant camera, Bluetooth, USB, and/or location permissions when prompted.
 7. Start the selected session.
 
 ## What end-to-end means in the current branch
@@ -67,7 +67,9 @@ The complete flow you can test now is:
 4. the native runtime selects a telemetry path:
    - `phone_imu_gps`
    - `synthetic`
-   - future `racebox_ble` / `obd_bluetooth`
+   - `racebox_ble`
+   - `obd_bluetooth`
+   - `racebox_obd_fusion`
 5. CameraX captures live camera frames and extracts lightweight vision features
 6. telemetry frames are fused with the latest vision snapshot when the session mode uses telemetry
 7. Sonoma-specific corner/feedforward guidance is applied when the selected track is Sonoma Raceway
@@ -78,7 +80,8 @@ The complete flow you can test now is:
 ## Current limitations
 
 - `phone_imu_gps` is the first real native telemetry source, but it still infers driving intent from phone sensors and GPS.
-- RaceBox BLE and OBD ingestion are still stubbed.
+- RaceBox BLE, OBDLink Bluetooth Classic, and the fused RaceBox + OBDLink source are implemented in software but still require physical GR86 validation before they should be trusted for track coaching.
+- Steering angle and true brake pressure are still unavailable until GR86 enhanced PIDs or a direct CAN path are verified.
 - `Camera Feedback (Debug)` is useful for validating the camera lane, but it is not race-grade coaching by itself.
 - Vision features are still low-level and do not yet encode track edges, apexes, or brake markers.
 - AICore is still scaffolded.
@@ -93,7 +96,17 @@ Use `Device Camera + GPS Test` when you want to validate end-to-end realtime beh
 
 ### 2. Main fused Android lane
 
-Use `Telemetry + Camera Fusion` with `Phone IMU + GPS` as the current real on-device telemetry source. This is the main Sonoma-specific fused coaching path in the current branch.
+Use `Telemetry + Camera Fusion` with `RaceBox + OBDLink` for the intended GR86 field-test path. RaceBox Mini supplies GPS, speed, heading, and G forces at the live frame cadence; OBDLink enriches frames with RPM, throttle, coolant temperature, oil temperature, and post-run diagnostics when the standard PIDs respond.
+
+The OBD selector supports:
+
+- `Auto`: use OBDLink EX over USB OTG when attached and permitted, otherwise fall back to paired OBDLink MX+ Bluetooth.
+- `Bluetooth MX+`: force Bluetooth Classic RFCOMM to an already paired OBDLink MX+.
+- `USB EX`: force USB OTG serial for OBDLink EX.
+
+The app only sends read-only ELM/STN setup and Mode 01 PID requests. It does not clear DTCs or write vehicle configuration.
+
+Use `Phone IMU + GPS` as the no-hardware fallback when validating the Android runtime away from the car.
 
 ### 3. Camera lane debugging
 

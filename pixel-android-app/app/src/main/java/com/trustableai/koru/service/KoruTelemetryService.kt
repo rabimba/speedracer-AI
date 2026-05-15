@@ -6,10 +6,12 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.SystemClock
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.trustableai.koru.R
 import com.trustableai.koru.audio.CoachAudioDispatcher
 import com.trustableai.koru.camera.VisionFeatureStore
@@ -20,6 +22,7 @@ import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.model.bridgeValue
 import com.trustableai.koru.runtime.EdgeRuntimeManager
 import com.trustableai.koru.runtime.KoruRealtimeEngine
@@ -40,7 +43,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 class KoruTelemetryService : Service() {
     private val tag = "KoruTelemetryService"
@@ -115,11 +117,13 @@ class KoruTelemetryService : Service() {
         stopActiveLoop()
         sessionRecorder.discard()
         ensureForeground(
-            when (config.sessionMode) {
+            content = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Running direct camera feedback on device"
                 SessionMode.DEVICE_TEST -> "Running device camera plus GPS test on device"
                 SessionMode.TELEMETRY -> getString(R.string.notification_content)
             },
+            requiresLocationType = requiresLocationForegroundType(config) &&
+                PhoneImuGpsSource.hasFineLocationPermission(applicationContext),
         )
 
         activeCoachId = config.coachId
@@ -133,8 +137,15 @@ class KoruTelemetryService : Service() {
         engine.setActiveCoach(activeCoachId)
         val telemetrySelection = when (config.sessionMode) {
             SessionMode.CAMERA_DIRECT -> null
-            SessionMode.DEVICE_TEST -> TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS)
-            SessionMode.TELEMETRY -> TelemetrySourceFactory.select(applicationContext, config.telemetrySource)
+            SessionMode.DEVICE_TEST -> TelemetrySourceFactory.select(
+                applicationContext,
+                com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS,
+            )
+            SessionMode.TELEMETRY -> TelemetrySourceFactory.select(
+                applicationContext,
+                config.telemetrySource,
+                config.obdTransportPreference,
+            )
         }
         activeTelemetrySource = telemetrySelection?.source ?: SyntheticTrackSource()
         if ((config.sessionMode == SessionMode.TELEMETRY || config.sessionMode == SessionMode.DEVICE_TEST) && telemetrySelection != null) {
@@ -217,8 +228,21 @@ class KoruTelemetryService : Service() {
         sessionJob = serviceScope.launch {
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> runCameraDirectLoop(selectedBackend)
-                SessionMode.DEVICE_TEST -> runTelemetryLoop(track, telemetrySelection ?: TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS))
-                SessionMode.TELEMETRY -> runTelemetryLoop(track, telemetrySelection ?: TelemetrySourceFactory.select(applicationContext, com.trustableai.koru.model.TelemetrySourceKind.SYNTHETIC))
+                SessionMode.DEVICE_TEST -> runTelemetryLoop(
+                    track,
+                    telemetrySelection ?: TelemetrySourceFactory.select(
+                        applicationContext,
+                        com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS,
+                    ),
+                )
+                SessionMode.TELEMETRY -> runTelemetryLoop(
+                    track,
+                    telemetrySelection ?: TelemetrySourceFactory.select(
+                        applicationContext,
+                        config.telemetrySource,
+                        config.obdTransportPreference,
+                    ),
+                )
             }
         }
     }
@@ -260,6 +284,7 @@ class KoruTelemetryService : Service() {
         val activeTrack = track ?: TrackCatalog.defaultTrack
         val startedAtNanos = SystemClock.elapsedRealtimeNanos()
         var nextTickNanos = startedAtNanos
+        var lastHealthStatusAtMs = 0L
         while (currentCoroutineContext().isActive) {
             val nowNanos = SystemClock.elapsedRealtimeNanos()
             if (nowNanos < nextTickNanos) {
@@ -269,14 +294,53 @@ class KoruTelemetryService : Service() {
             val elapsedSeconds = (nowNanos - startedAtNanos) / 1_000_000_000.0
             val rawFrame = activeTelemetrySource.nextFrame(step, activeTrack, elapsedSeconds)
             val frame = fusionEngine.fuse(rawFrame, VisionFeatureStore.latest.value)
+            maybeEmitHardwareStatus(frame, telemetrySelection, nowNanos / 1_000_000L, lastHealthStatusAtMs)
+                ?.let { lastHealthStatusAtMs = it }
             emitFrameAndDecisions(frame)
             step += 1
-            nextTickNanos += TELEMETRY_FRAME_INTERVAL_NANOS
+            val frameIntervalNanos = activeTelemetrySource.frameIntervalNanos
+            nextTickNanos += frameIntervalNanos
             val afterFrameNanos = SystemClock.elapsedRealtimeNanos()
-            if (afterFrameNanos - nextTickNanos > TELEMETRY_FRAME_INTERVAL_NANOS * 2L) {
-                nextTickNanos = afterFrameNanos + TELEMETRY_FRAME_INTERVAL_NANOS
+            if (afterFrameNanos - nextTickNanos > frameIntervalNanos * 2L) {
+                nextTickNanos = afterFrameNanos + frameIntervalNanos
             }
         }
+    }
+
+    private fun maybeEmitHardwareStatus(
+        frame: TelemetryFrame,
+        telemetrySelection: TelemetrySourceSelection,
+        nowMs: Long,
+        lastHealthStatusAtMs: Long,
+    ): Long? {
+        val health = frame.sourceHealth ?: return null
+        if (nowMs - lastHealthStatusAtMs < HARDWARE_STATUS_INTERVAL_MS) return null
+        val currentStatus = KoruSessionBus.status.value
+        val fallbackStage = health.fallbackStage
+        val degraded = when (telemetrySelection.active) {
+            TelemetrySourceKind.RACEBOX_OBD_FUSION ->
+                fallbackStage != null && fallbackStage != "full"
+            TelemetrySourceKind.PHONE_IMU_GPS ->
+                fallbackStage == "no_live_data" || health.motionConnected == false
+            TelemetrySourceKind.AIM_CAN_USB ->
+                fallbackStage != null && fallbackStage != "aim_can_full"
+            else ->
+                telemetrySelection.isFallback
+        }
+        val nextState = when {
+            degraded -> LiveBackendState.DEGRADED
+            currentStatus.state == LiveBackendState.DEGRADED -> LiveBackendState.READY
+            else -> currentStatus.state
+        }
+        val stageDetail = fallbackStage?.let { " stage=$it" }.orEmpty()
+        val degradedDetail = health.degradedReason?.let { " reason=$it" }.orEmpty()
+        KoruSessionBus.tryEmitStatus(
+            currentStatus.copy(
+                state = nextState,
+                detail = "${currentStatus.backend.bridgeValue()} active. ${health.status}$stageDetail$degradedDetail",
+            ),
+        )
+        return nowMs
     }
 
     private suspend fun runCameraDirectLoop(runtimeStatus: LiveBackendStatus) {
@@ -405,19 +469,35 @@ class KoruTelemetryService : Service() {
             .build()
     }
 
-    private fun ensureForeground(content: String) {
-        if (foregroundStarted) {
-            updateNotification(content)
-            return
-        }
-        startForeground(NOTIFICATION_ID, buildNotification(content))
+    private fun ensureForeground(content: String, requiresLocationType: Boolean) {
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildNotification(content),
+            foregroundServiceTypes(requiresLocationType),
+        )
         foregroundStarted = true
+    }
+
+    private fun foregroundServiceTypes(requiresLocationType: Boolean): Int {
+        return ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+            (if (requiresLocationType) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+    }
+
+    private fun requiresLocationForegroundType(config: LiveSessionConfig): Boolean {
+        return config.sessionMode == SessionMode.DEVICE_TEST ||
+            (config.sessionMode == SessionMode.TELEMETRY &&
+                config.telemetrySource in setOf(
+                    TelemetrySourceKind.PHONE_IMU_GPS,
+                    TelemetrySourceKind.RACEBOX_OBD_FUSION,
+                    TelemetrySourceKind.AIM_CAN_USB,
+                ))
     }
 
     companion object {
         private const val NOTIFICATION_CHANNEL_ID = "koru_live_session"
         private const val NOTIFICATION_ID = 7301
-        private const val TELEMETRY_FRAME_INTERVAL_NANOS = 100_000_000L
+        private const val HARDWARE_STATUS_INTERVAL_MS = 1000L
 
         private const val ACTION_START = "com.trustableai.koru.action.START"
         private const val ACTION_STOP = "com.trustableai.koru.action.STOP"

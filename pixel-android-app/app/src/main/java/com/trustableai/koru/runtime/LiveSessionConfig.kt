@@ -1,6 +1,7 @@
 package com.trustableai.koru.runtime
 
 import com.trustableai.koru.model.CoachAction
+import com.trustableai.koru.model.ObdTransportPreference
 import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionGoalFocus
 import com.trustableai.koru.model.SessionGoalSource
@@ -16,6 +17,7 @@ data class LiveSessionConfig(
     val trackName: String,
     val sessionMode: SessionMode,
     val telemetrySource: TelemetrySourceKind,
+    val obdTransportPreference: ObdTransportPreference = ObdTransportPreference.AUTO,
     val sessionGoals: List<SessionGoal>,
     val sourceUrl: String?,
 ) {
@@ -26,6 +28,7 @@ data class LiveSessionConfig(
             .put("trackName", trackName)
             .put("sessionMode", sessionMode.bridgeValue())
             .put("telemetrySource", telemetrySource.bridgeValue())
+            .put("obdTransportPreference", obdTransportPreference.bridgeValue())
             .put("sessionGoals", JSONArray(sessionGoals.map(::sessionGoalJson)))
             .put("sourceUrl", sourceUrl)
             .toString()
@@ -43,11 +46,19 @@ data class LiveSessionConfig(
                     "camera_direct" -> SessionMode.CAMERA_DIRECT
                     else -> SessionMode.TELEMETRY
                 },
-                telemetrySource = when (root.optString("telemetrySource", "synthetic")) {
+                telemetrySource = when (root.optString("telemetrySource", "aim_can_usb")) {
+                    "synthetic" -> TelemetrySourceKind.SYNTHETIC
                     "phone_imu_gps" -> TelemetrySourceKind.PHONE_IMU_GPS
                     "racebox_ble" -> TelemetrySourceKind.RACEBOX_BLE
                     "obd_bluetooth" -> TelemetrySourceKind.OBD_BLUETOOTH
-                    else -> TelemetrySourceKind.SYNTHETIC
+                    "racebox_obd_fusion" -> TelemetrySourceKind.RACEBOX_OBD_FUSION
+                    "aim_can_usb" -> TelemetrySourceKind.AIM_CAN_USB
+                    else -> TelemetrySourceKind.AIM_CAN_USB
+                },
+                obdTransportPreference = when (root.optString("obdTransportPreference", "auto")) {
+                    "bluetooth" -> ObdTransportPreference.BLUETOOTH
+                    "usb" -> ObdTransportPreference.USB
+                    else -> ObdTransportPreference.AUTO
                 },
                 sessionGoals = parseSessionGoals(root.optJSONArray("sessionGoals")),
                 sourceUrl = root.optString("sourceUrl").ifBlank { null },

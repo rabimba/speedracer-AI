@@ -48,6 +48,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.LiveBackendState
+import com.trustableai.koru.model.ObdTransportPreference
 import com.trustableai.koru.model.SessionGoalFocus
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
@@ -112,6 +113,9 @@ fun KoruApp(
                 }
                 item {
                     LiveHud(state.latestFrame, state.decisions.lastOrNull(), state.backendStatus.state)
+                }
+                item {
+                    AimCanTestPanel(state)
                 }
                 item {
                     SavedSessionPanel(state)
@@ -235,6 +239,123 @@ private fun MetricTile(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
+private fun AimCanTestPanel(state: SessionUiState) {
+    val frame = state.latestFrame
+    val health = frame?.sourceHealth
+    val diagnostics = frame?.canVehicleDiagnostics
+    val shouldShow = state.telemetrySource == TelemetrySourceKind.AIM_CAN_USB ||
+        frame?.telemetrySource == TelemetrySourceKind.AIM_CAN_USB
+    if (!shouldShow) return
+
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("aim-can-test-panel"),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF0B1224)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionTitle(
+                title = "AiM CAN USB Test",
+                meta = health?.fallbackStage ?: "idle",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricTile("USB", if (health?.canConnected == true) "live" else "waiting", Modifier.weight(1f))
+                MetricTile("Motion", health?.motionSource ?: "--", Modifier.weight(1f))
+                MetricTile("Errors", "${health?.canDecodeErrors ?: 0}", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricTile("RPM", frame?.rpm?.toString() ?: "--", Modifier.weight(1f))
+                MetricTile(
+                    "Pedal",
+                    diagnostics?.pedalPositionPercent?.let { "%.0f%%".format(Locale.US, it) } ?: "--",
+                    Modifier.weight(1f),
+                )
+                MetricTile(
+                    "Brake PSI",
+                    diagnostics?.brakePressurePsi?.let { "%.0f".format(Locale.US, it) } ?: "--",
+                    Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricTile(
+                    "Battery",
+                    diagnostics?.batteryVoltage?.let { "%.1f V".format(Locale.US, it) } ?: "--",
+                    Modifier.weight(1f),
+                )
+                MetricTile(
+                    "Oil",
+                    diagnostics?.oilFilterTempC?.let { "%.0f C".format(Locale.US, it) }
+                        ?: frame?.oilTempC?.let { "%.0f C".format(Locale.US, it) }
+                        ?: "--",
+                    Modifier.weight(1f),
+                )
+                MetricTile(
+                    "Lat/Long G",
+                    frame?.let { "%.2f / %.2f".format(Locale.US, it.gLat, it.gLong) } ?: "--",
+                    Modifier.weight(1f),
+                )
+            }
+            CanFrameFreshnessGrid(health)
+            Text(
+                text = listOfNotNull(
+                    health?.usbDeviceName?.let { "USB: $it" },
+                    health?.rawCanSample?.let { "Raw: $it" },
+                    health?.degradedReason?.let { "Reason: $it" },
+                    if (health?.signUnverified == true) "Signed channels need first-drive sign validation" else null,
+                ).joinToString("\n").ifBlank { "Connect RH-02 PRO/CANable and start the AiM CAN USB source." },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CanFrameFreshnessGrid(health: com.trustableai.koru.model.TelemetrySourceHealth?) {
+    val frameIds = listOf("0x420", "0x421", "0x422", "0x423", "0x424", "0x450", "0x451", "0x452")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        frameIds.chunked(4).forEach { rowIds ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                rowIds.forEach { frameId ->
+                    val stale = health?.canFrameStale?.get(frameId)
+                    val age = health?.canFrameAgesMs?.get(frameId)
+                    val rate = health?.canFrameRatesHz?.get(frameId)
+                    val color = when (stale) {
+                        false -> Color(0xFFB7F34A)
+                        true -> Color(0xFFFB7185)
+                        null -> Color(0xFF64748B)
+                    }
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = color.copy(alpha = 0.12f),
+                        contentColor = color,
+                    ) {
+                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(frameId, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = age?.let { "${it}ms" } ?: "--",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = rate?.let { "%.0fHz".format(Locale.US, it) } ?: "--",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SignalLight(priority: Int?, backendState: LiveBackendState) {
     val color = when {
         priority == 0 || priority == 1 -> Color(0xFFEF4444)
@@ -291,6 +412,8 @@ private fun SessionInitialization(
                 OptionRow(
                     label = "Source",
                     options = listOf(
+                        TelemetrySourceKind.AIM_CAN_USB to "AiM CAN USB",
+                        TelemetrySourceKind.RACEBOX_OBD_FUSION to "RaceBox + OBDLink",
                         TelemetrySourceKind.PHONE_IMU_GPS to "Phone IMU + GPS",
                         TelemetrySourceKind.SYNTHETIC to "Synthetic",
                         TelemetrySourceKind.RACEBOX_BLE to "RaceBox BLE",
@@ -300,6 +423,19 @@ private fun SessionInitialization(
                     enabled = !state.isSessionActive,
                     onSelected = viewModel::setTelemetrySource,
                 )
+                if (state.telemetrySource == TelemetrySourceKind.RACEBOX_OBD_FUSION) {
+                    OptionRow(
+                        label = "OBD",
+                        options = listOf(
+                            ObdTransportPreference.AUTO to "Auto",
+                            ObdTransportPreference.BLUETOOTH to "Bluetooth MX+",
+                            ObdTransportPreference.USB to "USB EX",
+                        ),
+                        selected = state.obdTransportPreference,
+                        enabled = !state.isSessionActive,
+                        onSelected = viewModel::setObdTransportPreference,
+                    )
+                }
             }
             OptionRow(
                 label = "Track",

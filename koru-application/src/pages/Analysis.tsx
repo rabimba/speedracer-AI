@@ -43,14 +43,60 @@ export default function Analysis({ apiKey }: AnalysisProps) {
       const maxSpeed = Math.max(...speeds);
       const avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
       const maxBrake = Math.max(...frames.map(f => f.brake));
+      const maxThrottle = Math.max(...frames.map(f => f.throttle));
       const maxGLat = Math.max(...frames.map(f => Math.abs(f.gLat)));
+      const maxRpm = Math.max(...frames.map(f => f.rpm ?? 0));
+      const maxCoolant = Math.max(...frames.map(f => f.coolantTempC ?? 0));
+      const maxOil = Math.max(...frames.map(f => f.oilTempC ?? 0));
+      const diagnosticFrames = frames.filter((frame) => frame.vehicleDiagnostics);
+      const maxEngineLoad = Math.max(...frames.map(f => f.vehicleDiagnostics?.engineLoadPercent ?? 0));
+      const maxMaf = Math.max(...frames.map(f => f.vehicleDiagnostics?.mafGramsPerSecond ?? 0));
+      const maxIntakeTemp = Math.max(...frames.map(f => f.vehicleDiagnostics?.intakeTempC ?? 0));
+      const canDiagnosticFrames = frames.filter((frame) => frame.canVehicleDiagnostics);
+      const maxCanBrakePsi = Math.max(...frames.map(f => f.canVehicleDiagnostics?.brakePressurePsi ?? 0));
+      const maxCanPedal = Math.max(...frames.map(f => f.canVehicleDiagnostics?.pedalPositionPercent ?? 0));
+      const minCanOilPressure = Math.min(
+        ...frames
+          .map(f => f.canVehicleDiagnostics?.oilPressurePsi)
+          .filter((value): value is number => typeof value === 'number'),
+      );
+      const canConnectedFrames = frames.filter((frame) => frame.sourceHealth?.canConnected).length;
+      const sourceCounts = frames.reduce<Record<string, number>>((counts, frame) => {
+        const source = frame.telemetrySource ?? 'unknown';
+        counts[source] = (counts[source] ?? 0) + 1;
+        return counts;
+      }, {});
+      const primarySource = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'unknown';
+      const healthFrames = frames.filter((frame) => frame.sourceHealth);
+      const obdStaleFrames = healthFrames.filter((frame) => frame.sourceHealth?.obdStale).length;
+      const raceBoxGoodFixFrames = healthFrames.filter((frame) => frame.sourceHealth?.raceBoxFixGood).length;
+      const fallbackStageCounts = healthFrames.reduce<Record<string, number>>((counts, frame) => {
+        const stage = frame.sourceHealth?.fallbackStage ?? 'unspecified';
+        counts[stage] = (counts[stage] ?? 0) + 1;
+        return counts;
+      }, {});
+      const motionSourceCounts = healthFrames.reduce<Record<string, number>>((counts, frame) => {
+        const source = frame.sourceHealth?.motionSource ?? 'unspecified';
+        counts[source] = (counts[source] ?? 0) + 1;
+        return counts;
+      }, {});
       const visionFrames = frames.filter((frame) => frame.vision);
       const visionSummary = visionFrames.length > 0
         ? ` AvgMotion=${(visionFrames.reduce((sum, frame) => sum + (frame.vision?.motionEnergy ?? 0), 0) / visionFrames.length).toFixed(2)}`
           + ` AvgContrast=${(visionFrames.reduce((sum, frame) => sum + (frame.vision?.centerContrast ?? 0), 0) / visionFrames.length).toFixed(2)}`
           + ` AvgBalance=${(visionFrames.reduce((sum, frame) => sum + Math.abs(frame.vision?.lateralBalance ?? 0), 0) / visionFrames.length).toFixed(2)}`
         : '';
-      return `${label}: MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}${visionSummary}`;
+      const hardwareSummary = healthFrames.length > 0
+        ? ` RaceBoxGoodFix=${((raceBoxGoodFixFrames / healthFrames.length) * 100).toFixed(0)}% OBDStale=${((obdStaleFrames / healthFrames.length) * 100).toFixed(0)}%`
+          + ` FallbackStages=${formatCountSummary(fallbackStageCounts)} MotionSources=${formatCountSummary(motionSourceCounts)}`
+        : '';
+      const diagnosticsSummary = diagnosticFrames.length > 0
+        ? ` DiagnosticFrames=${diagnosticFrames.length} MaxLoad=${maxEngineLoad || 'n/a'}% MaxMAF=${maxMaf || 'n/a'}g/s MaxIntakeC=${maxIntakeTemp || 'n/a'}`
+        : '';
+      const canSummary = canDiagnosticFrames.length > 0
+        ? ` CanFrames=${canDiagnosticFrames.length} CanConnected=${canConnectedFrames}/${frames.length} MaxCanBrakePsi=${maxCanBrakePsi || 'n/a'} MaxPedal=${maxCanPedal || 'n/a'}% MinOilPsi=${Number.isFinite(minCanOilPressure) ? minCanOilPressure : 'n/a'}`
+        : '';
+      return `${label}: Source=${primarySource} MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxThrottle=${maxThrottle.toFixed(0)}% MaxRPM=${maxRpm || 'n/a'} MaxCoolantC=${maxCoolant || 'n/a'} MaxOilC=${maxOil || 'n/a'} MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}${hardwareSummary}${visionSummary}${diagnosticsSummary}${canSummary}`;
     };
 
     const trackName = lap1Session?.trackName ?? lap2Session?.trackName ?? DEFAULT_TRACK.name;
@@ -72,7 +118,13 @@ ${lap2Frames.filter((_, i) => i % 20 === 0).slice(0, 30).map(f =>
   + (f.vision ? ` Motion:${f.vision.motionEnergy.toFixed(2)} Balance:${f.vision.lateralBalance.toFixed(2)} Contrast:${f.vision.centerContrast.toFixed(2)}` : '')
 ).join('\n')}
 
-Compare sector by sector. Identify where the biggest time differences come from.`;
+Compare sector by sector and corner by corner. Identify where the biggest lap-time differences come from, whether the evidence is driver technique or hardware/sensor limitation, and what the live coach should do differently next run. Keep vehicle-health diagnostics separate from lap-time evidence.
+
+Output:
+1. Biggest time-loss corner or phase.
+2. Evidence from speed, brake, throttle, RPM, G, and hardware health.
+3. One hot/feedforward cue that should be delivered live.
+4. One cold-path post-session drill or setup focus.`;
 
     const result = await generateFeedback('pro', context);
     setComparisonResult(result);
@@ -139,4 +191,11 @@ Compare sector by sector. Identify where the biggest time differences come from.
       )}
     </div>
   );
+}
+
+function formatCountSummary(counts: Record<string, number>): string {
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([key, count]) => `${key}:${count}`)
+    .join('|') || 'none';
 }

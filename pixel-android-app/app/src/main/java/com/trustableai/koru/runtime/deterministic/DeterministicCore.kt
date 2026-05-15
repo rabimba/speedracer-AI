@@ -262,6 +262,10 @@ class CoachingQueue {
         return decision
     }
 
+    fun clear() {
+        queue.clear()
+    }
+
     data class QueuedDecision(
         val action: CoachAction?,
         val path: String,

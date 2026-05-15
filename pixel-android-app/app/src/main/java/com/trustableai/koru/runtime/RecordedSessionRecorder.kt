@@ -2,12 +2,14 @@ package com.trustableai.koru.runtime
 
 import android.content.Context
 import com.trustableai.koru.model.AudioDispatchEvent
+import com.trustableai.koru.model.CanVehicleDiagnostics
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.RecordedSessionSummary
 import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.VehicleDiagnostics
 import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
 import org.json.JSONObject
@@ -149,8 +151,50 @@ class RecordedSessionRecorder(
             .put("gLong", frame.gLong)
             .put("gear", frame.gear)
             .put("distance", frame.distanceMeters)
+            .put("coolantTempC", frame.coolantTempC)
+            .put("oilTempC", frame.oilTempC)
+            .put("vehicleDiagnostics", frame.vehicleDiagnostics?.let(::vehicleDiagnosticsJson))
+            .put("canVehicleDiagnostics", frame.canVehicleDiagnostics?.let(::canVehicleDiagnosticsJson))
             .put("sourceMode", frame.sourceMode.bridgeValue())
             .put("telemetrySource", frame.telemetrySource?.bridgeValue())
+            .put(
+                "sourceHealth",
+                frame.sourceHealth?.let { health ->
+                    JSONObject()
+                        .put("status", health.status)
+                        .put("motionSource", health.motionSource)
+                        .put("motionConnected", health.motionConnected)
+                        .put("motionFixGood", health.motionFixGood)
+                        .put("motionSampleAgeMs", health.motionSampleAgeMs)
+                        .put("fallbackStage", health.fallbackStage)
+                        .put("degradedReason", health.degradedReason)
+                        .put("phoneMotionConnected", health.phoneMotionConnected)
+                        .put("phoneMotionFixGood", health.phoneMotionFixGood)
+                        .put("phoneMotionSampleAgeMs", health.phoneMotionSampleAgeMs)
+                        .put("raceBoxConnected", health.raceBoxConnected)
+                        .put("raceBoxFixGood", health.raceBoxFixGood)
+                        .put("raceBoxFixStatus", health.raceBoxFixStatus)
+                        .put("raceBoxSatellites", health.raceBoxSatellites)
+                        .put("raceBoxSampleAgeMs", health.raceBoxSampleAgeMs)
+                        .put("obdConnected", health.obdConnected)
+                        .put("obdSampleAgeMs", health.obdSampleAgeMs)
+                        .put("obdStale", health.obdStale)
+                        .put("obdSpeedDeltaMph", health.obdSpeedDeltaMph)
+                        .put("obdTransport", health.obdTransport)
+                        .put("obdSupportedPids", JSONArray(health.obdSupportedPids))
+                        .put("obdReconnectCount", health.obdReconnectCount)
+                        .put("obdChannelAgesMs", JSONObject(health.obdChannelAgesMs))
+                        .put("obdChannelStale", JSONObject(health.obdChannelStale))
+                        .put("canConnected", health.canConnected)
+                        .put("canFrameAgesMs", JSONObject(health.canFrameAgesMs))
+                        .put("canFrameStale", JSONObject(health.canFrameStale))
+                        .put("canFrameRatesHz", JSONObject(health.canFrameRatesHz))
+                        .put("canDecodeErrors", health.canDecodeErrors)
+                        .put("usbDeviceName", health.usbDeviceName)
+                        .put("rawCanSample", health.rawCanSample)
+                        .put("signUnverified", health.signUnverified)
+                },
+            )
             .put(
                 "vision",
                 frame.vision?.let { vision ->
@@ -164,6 +208,52 @@ class RecordedSessionRecorder(
                         .put("framesPerSecond", vision.framesPerSecond)
                 },
             )
+    }
+
+    private fun vehicleDiagnosticsJson(diagnostics: VehicleDiagnostics): JSONObject {
+        return JSONObject()
+            .put("engineLoadPercent", diagnostics.engineLoadPercent)
+            .put("mafGramsPerSecond", diagnostics.mafGramsPerSecond)
+            .put("intakeTempC", diagnostics.intakeTempC)
+            .put("timingAdvanceDegrees", diagnostics.timingAdvanceDegrees)
+            .put("shortFuelTrim1Percent", diagnostics.shortFuelTrim1Percent)
+            .put("longFuelTrim1Percent", diagnostics.longFuelTrim1Percent)
+            .put("shortFuelTrim2Percent", diagnostics.shortFuelTrim2Percent)
+            .put("longFuelTrim2Percent", diagnostics.longFuelTrim2Percent)
+            .put("o2Bank1Sensor1Volts", diagnostics.o2Bank1Sensor1Volts)
+            .put("o2Bank2Sensor1Volts", diagnostics.o2Bank2Sensor1Volts)
+    }
+
+    private fun canVehicleDiagnosticsJson(diagnostics: CanVehicleDiagnostics): JSONObject {
+        return JSONObject()
+            .put("waterPressurePsi", diagnostics.waterPressurePsi)
+            .put("oilPressurePsi", diagnostics.oilPressurePsi)
+            .put("brakePressurePsi", diagnostics.brakePressurePsi)
+            .put("pedalPositionPercent", diagnostics.pedalPositionPercent)
+            .put("brakeSwitchApplied", diagnostics.brakeSwitchApplied)
+            .put("rollRateDegPerSec", diagnostics.rollRateDegPerSec)
+            .put("pitchRateDegPerSec", diagnostics.pitchRateDegPerSec)
+            .put("yawRateDegPerSec", diagnostics.yawRateDegPerSec)
+            .put("steeringAngleDeg", diagnostics.steeringAngleDeg)
+            .put("lateralG", diagnostics.lateralG)
+            .put("inlineG", diagnostics.inlineG)
+            .put("verticalG", diagnostics.verticalG)
+            .put("fuelLevelGal", diagnostics.fuelLevelGal)
+            .put("batteryVoltage", diagnostics.batteryVoltage)
+            .put("wheelSpeedFrontLeftMph", diagnostics.wheelSpeedFrontLeftMph)
+            .put("wheelSpeedFrontRightMph", diagnostics.wheelSpeedFrontRightMph)
+            .put("wheelSpeedRearLeftMph", diagnostics.wheelSpeedRearLeftMph)
+            .put("wheelSpeedRearRightMph", diagnostics.wheelSpeedRearRightMph)
+            .put("ecuSpeedMph", diagnostics.ecuSpeedMph)
+            .put("gpsSpeedMph", diagnostics.gpsSpeedMph)
+            .put("outsideTempC", diagnostics.outsideTempC)
+            .put("waterTempC", diagnostics.waterTempC)
+            .put("engineOilTempC", diagnostics.engineOilTempC)
+            .put("oilFilterTempC", diagnostics.oilFilterTempC)
+            .put("dscRegActive", diagnostics.dscRegActive)
+            .put("gearRaw", diagnostics.gearRaw)
+            .put("frameAgesMs", JSONObject(diagnostics.frameAgesMs))
+            .put("frameStale", JSONObject(diagnostics.frameStale))
     }
 
     private fun decisionJson(decision: CoachingDecision): JSONObject {

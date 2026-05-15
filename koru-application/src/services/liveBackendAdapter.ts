@@ -1,6 +1,7 @@
 import type {
   CoachingDecision,
   LiveBackendStatus,
+  ObdTransportPreference,
   SessionGoal,
   SessionMode,
   SSEConnectionStatus,
@@ -137,7 +138,8 @@ export class LiveBackendAdapter {
   connect(
     sourceUrl?: string,
     sessionMode: SessionMode = 'telemetry',
-    telemetrySource: TelemetrySourceKind = 'phone_imu_gps',
+    telemetrySource: TelemetrySourceKind = 'aim_can_usb',
+    obdTransportPreference: ObdTransportPreference = 'auto',
   ): void {
     if (this.nativeMode) {
       this.statusListeners.forEach((listener) => listener('connecting'));
@@ -147,6 +149,7 @@ export class LiveBackendAdapter {
         trackName: sessionMode === 'device_test' ? 'Device GPS Test' : this.track.name,
         sessionMode,
         telemetrySource,
+        obdTransportPreference,
         sessionGoals: this.sessionGoals,
         sourceUrl: sourceUrl?.trim() || undefined,
       });

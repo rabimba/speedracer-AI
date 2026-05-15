@@ -134,20 +134,19 @@ export default function Replay({ apiKey }: ReplayProps) {
 
     if (recordedSession?.decisions.length) {
       const cutoffMs = recordedSession.startedAt + frame.time * 1000;
-      setMessages(
-        recordedSession.decisions
-          .filter((decision) => decision.timestamp <= cutoffMs)
-          .map((decision) => ({
-            id: `${decision.timestamp}-${decision.path}-${decision.text}`,
-            path: decision.path,
-            text: decision.text,
-            timestamp: decision.timestamp,
-            backend: decision.backend,
-            priority: decision.priority,
-            confidence: decision.confidence,
-          })),
-      );
-      return;
+      const nextMessages = recordedSession.decisions
+        .filter((decision) => decision.timestamp <= cutoffMs)
+        .map((decision) => ({
+          id: `${decision.timestamp}-${decision.path}-${decision.text}`,
+          path: decision.path,
+          text: decision.text,
+          timestamp: decision.timestamp,
+          backend: decision.backend,
+          priority: decision.priority,
+          confidence: decision.confidence,
+        }));
+      const timer = window.setTimeout(() => setMessages(nextMessages), 0);
+      return () => window.clearTimeout(timer);
     }
 
     // Process through hot/cold/feedforward coaching engine
@@ -198,7 +197,7 @@ export default function Replay({ apiKey }: ReplayProps) {
       };
       setMessages(prev => [...prev, msg]);
     }
-  }, [frames, currentIdx, generateFeedback]);
+  }, [activeTrack, frames, currentIdx, generateFeedback, recordedSession]);
 
   const currentFrame = frames[currentIdx] || null;
 

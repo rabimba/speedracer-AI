@@ -10,6 +10,7 @@ import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.TelemetrySourceHealth
 import com.trustableai.koru.runtime.reasoner.OnDeviceReasoner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -52,6 +53,38 @@ class KoruRealtimeEngineSafetyTest {
         assertEquals(0, decision?.priority)
         assertEquals("Brake now", decision?.text)
         assertTrue((decision?.latencyMs ?: Long.MAX_VALUE) < LatencyProbe.HOT_PATH_BUDGET_MS)
+    }
+
+    @Test
+    fun `no live data stage produces no coaching decisions`() = runBlocking {
+        val engine = KoruRealtimeEngine(
+            track = TrackCatalog.sonomaRaceway,
+            phraseCatalog = FakePhraseRenderer,
+            reasonerProvider = { HangingReasoner },
+        )
+        val frame = TelemetryFrame(
+            timeSeconds = 12.0,
+            latitude = TrackCatalog.sonomaRaceway.centerLat,
+            longitude = TrackCatalog.sonomaRaceway.centerLon,
+            speedMph = 100.0,
+            throttle = 100.0,
+            brake = 0.0,
+            gLat = 1.1,
+            gLong = 0.4,
+            sourceMode = SessionMode.TELEMETRY,
+            sourceHealth = TelemetrySourceHealth(
+                status = "No real telemetry source available",
+                motionConnected = false,
+                motionFixGood = false,
+                fallbackStage = "no_live_data",
+                degradedReason = "racebox_and_phone_motion_unavailable",
+            ),
+        )
+
+        val decisions = engine.processFrame(frame, nowMs = 10_000L)
+        engine.close()
+
+        assertTrue(decisions.isEmpty())
     }
 
     private object FakePhraseRenderer : PhraseRenderer {

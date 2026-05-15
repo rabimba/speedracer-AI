@@ -2,6 +2,7 @@ package com.trustableai.koru.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -26,6 +27,7 @@ import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.runtime.KoruSessionBus
 import com.trustableai.koru.runtime.LiveSessionConfig
+import com.trustableai.koru.service.BluetoothRuntimePermissions
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -37,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private var cameraPreview: PreviewView? = null
     private var cameraBoundPreview: PreviewView? = null
     private var pendingLocationConfig: LiveSessionConfig? = null
+    private var pendingBluetoothConfig: LiveSessionConfig? = null
     @Volatile private var lastCameraStatusUpdateMs = 0L
 
     private val cameraPermissionLauncher =
@@ -50,22 +53,72 @@ class MainActivity : ComponentActivity() {
         }
 
     private val locationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
             val config = pendingLocationConfig
             pendingLocationConfig = null
+            val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true
             if (granted && config != null) {
                 Log.d(tag, "Location permission granted; starting native live session")
                 viewModel.startSession(config)
             } else if (!granted) {
-                KoruSessionBus.tryEmitStatus(
-                    LiveBackendStatus(
-                        backend = RuntimeBackend.DETERMINISTIC,
-                        state = LiveBackendState.ERROR,
-                        detail = "Phone IMU + GPS requires precise location permission.",
-                        usesOnDeviceModel = false,
-                        supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
-                    ),
-                )
+                if (config?.telemetrySource == TelemetrySourceKind.AIM_CAN_USB) {
+                    KoruSessionBus.tryEmitStatus(
+                        LiveBackendStatus(
+                            backend = RuntimeBackend.DETERMINISTIC,
+                            state = LiveBackendState.DEGRADED,
+                            detail = "Location permission denied. AiM CAN USB can still run, but phone GPS/IMU fallback is unavailable.",
+                            usesOnDeviceModel = false,
+                            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                        ),
+                    )
+                    viewModel.startSession(config)
+                } else {
+                    KoruSessionBus.tryEmitStatus(
+                        LiveBackendStatus(
+                            backend = RuntimeBackend.DETERMINISTIC,
+                            state = LiveBackendState.ERROR,
+                            detail = "Phone IMU + GPS requires precise location permission.",
+                            usesOnDeviceModel = false,
+                            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                        ),
+                    )
+                }
+            }
+        }
+
+    private val bluetoothPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+            val config = pendingBluetoothConfig
+            pendingBluetoothConfig = null
+            val granted = requiredBluetoothPermissions().all { permission -> grants[permission] == true }
+            if (granted && config != null) {
+                Log.d(tag, "Bluetooth permissions granted; starting hardware telemetry session")
+                startLiveSessionWithPermissions(config, allowBluetoothPrompt = false)
+            } else if (!granted) {
+                if (config != null &&
+                    config.telemetrySource in setOf(TelemetrySourceKind.RACEBOX_OBD_FUSION, TelemetrySourceKind.AIM_CAN_USB)
+                ) {
+                    KoruSessionBus.tryEmitStatus(
+                        LiveBackendStatus(
+                            backend = RuntimeBackend.DETERMINISTIC,
+                            state = LiveBackendState.DEGRADED,
+                            detail = "Bluetooth permission denied. RaceBox fallback is unavailable; starting with remaining real-data sources.",
+                            usesOnDeviceModel = false,
+                            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                        ),
+                    )
+                    startLiveSessionWithPermissions(config, allowBluetoothPrompt = false)
+                } else {
+                    KoruSessionBus.tryEmitStatus(
+                        LiveBackendStatus(
+                            backend = RuntimeBackend.DETERMINISTIC,
+                            state = LiveBackendState.ERROR,
+                            detail = "RaceBox and OBDLink telemetry require Bluetooth scan/connect permission.",
+                            usesOnDeviceModel = false,
+                            supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                        ),
+                    )
+                }
             }
         }
 
@@ -76,7 +129,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             KoruApp(
                 viewModel = viewModel,
-                onStartRequested = ::startLiveSessionWithPermissions,
+                onStartRequested = { startLiveSessionWithPermissions() },
                 onBindCameraPreview = { previewView ->
                     cameraPreview = previewView
                     bindCameraLaneIfReady()
@@ -92,8 +145,24 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun startLiveSessionWithPermissions() {
-        val config = viewModel.currentConfig()
+    private fun startLiveSessionWithPermissions(
+        config: LiveSessionConfig = viewModel.currentConfig(),
+        allowBluetoothPrompt: Boolean = true,
+    ) {
+        if (allowBluetoothPrompt && requiresBluetooth(config) && !BluetoothRuntimePermissions.hasBluetoothPermissions(this)) {
+            pendingBluetoothConfig = config
+            KoruSessionBus.tryEmitStatus(
+                LiveBackendStatus(
+                    backend = RuntimeBackend.DETERMINISTIC,
+                    state = LiveBackendState.STARTING,
+                    detail = "Requesting Bluetooth permission for RaceBox and OBDLink telemetry.",
+                    usesOnDeviceModel = false,
+                    supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                ),
+            )
+            bluetoothPermissionLauncher.launch(requiredBluetoothPermissions())
+            return
+        }
         if (requiresFineLocation(config) && !hasFineLocationPermission()) {
             pendingLocationConfig = config
             KoruSessionBus.tryEmitStatus(
@@ -105,15 +174,48 @@ class MainActivity : ComponentActivity() {
                     supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
                 ),
             )
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            locationPermissionLauncher.launch(requiredLocationPermissions())
             return
         }
         viewModel.startSession(config)
     }
 
     private fun requiresFineLocation(config: LiveSessionConfig): Boolean {
-        return (config.sessionMode == SessionMode.TELEMETRY || config.sessionMode == SessionMode.DEVICE_TEST) &&
-            config.telemetrySource == TelemetrySourceKind.PHONE_IMU_GPS
+        return config.sessionMode == SessionMode.DEVICE_TEST ||
+            (config.sessionMode == SessionMode.TELEMETRY &&
+                config.telemetrySource in setOf(
+                    TelemetrySourceKind.PHONE_IMU_GPS,
+                    TelemetrySourceKind.RACEBOX_OBD_FUSION,
+                    TelemetrySourceKind.AIM_CAN_USB,
+                ))
+    }
+
+    private fun requiresBluetooth(config: LiveSessionConfig): Boolean {
+        return config.sessionMode == SessionMode.TELEMETRY &&
+            config.telemetrySource in setOf(
+                TelemetrySourceKind.RACEBOX_BLE,
+                TelemetrySourceKind.OBD_BLUETOOTH,
+                TelemetrySourceKind.RACEBOX_OBD_FUSION,
+                TelemetrySourceKind.AIM_CAN_USB,
+            )
+    }
+
+    private fun requiredBluetoothPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+            )
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun requiredLocationPermissions(): Array<String> {
+        return arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
     }
 
     private fun ensureCameraPermission() {

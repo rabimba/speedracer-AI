@@ -2,6 +2,7 @@ import type {
   CoachingDecision,
   LiveBackendStatus,
   RecordedSessionArtifact,
+  ObdTransportPreference,
   SessionGoal,
   SessionMode,
   TelemetrySourceKind,
@@ -14,6 +15,7 @@ export interface NativeLiveSessionConfig {
   trackName: string;
   sessionMode?: SessionMode;
   telemetrySource?: TelemetrySourceKind;
+  obdTransportPreference?: ObdTransportPreference;
   sessionGoals?: SessionGoal[];
   sourceUrl?: string;
 }

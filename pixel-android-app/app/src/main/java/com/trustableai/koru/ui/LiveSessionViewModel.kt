@@ -9,6 +9,7 @@ import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
+import com.trustableai.koru.model.ObdTransportPreference
 import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionGoal
@@ -56,7 +57,8 @@ data class SessionUiState(
     val audioEnabled: Boolean = true,
     val trackName: String = TrackCatalog.defaultTrack.name,
     val sessionMode: SessionMode = SessionMode.TELEMETRY,
-    val telemetrySource: TelemetrySourceKind = TelemetrySourceKind.PHONE_IMU_GPS,
+    val telemetrySource: TelemetrySourceKind = TelemetrySourceKind.AIM_CAN_USB,
+    val obdTransportPreference: ObdTransportPreference = ObdTransportPreference.AUTO,
     val selectedGoalFocuses: Set<SessionGoalFocus> = emptySet(),
     val customGoalDescription: String = "",
     val cameraStatus: String = "Camera lane waiting for permission",
@@ -170,6 +172,7 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
             },
             sessionMode = state.sessionMode,
             telemetrySource = state.telemetrySource,
+            obdTransportPreference = state.obdTransportPreference,
             sessionGoals = sessionGoals(state),
             sourceUrl = null,
         )
@@ -219,6 +222,11 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
     fun setTelemetrySource(source: TelemetrySourceKind) {
         if (_uiState.value.isSessionActive) return
         _uiState.update { it.copy(telemetrySource = source) }
+    }
+
+    fun setObdTransportPreference(preference: ObdTransportPreference) {
+        if (_uiState.value.isSessionActive) return
+        _uiState.update { it.copy(obdTransportPreference = preference) }
     }
 
     fun setTrackName(trackName: String) {

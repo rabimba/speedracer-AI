@@ -1,0 +1,92 @@
+package com.trustableai.koru.service
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class AimCanProtocolTest {
+    @Test
+    fun `SLCAN parser handles single multiple partial malformed extended and unknown frames`() {
+        val parser = AimCanSlcanParser()
+
+        val first = parser.append("t42086419D20400006C07\r", receivedAtElapsedMs = 100L)
+        assertEquals(1, first.size)
+        assertEquals(0x420, first[0].id)
+        assertEquals(8, first[0].dlc)
+
+        val partialA = parser.append("t42282003", receivedAtElapsedMs = 120L)
+        assertEquals(0, partialA.size)
+        val partialB = parser.append("B3150100E7FF\rt423885FF590185FF3800\r", receivedAtElapsedMs = 130L)
+        assertEquals(2, partialB.size)
+        assertEquals(0x422, partialB[0].id)
+        assertEquals(0x423, partialB[1].id)
+
+        assertEquals(0, parser.append("T0000000086419D20400006C07\r", receivedAtElapsedMs = 140L).size)
+        assertEquals(0, parser.append("t55580000000000000000\r", receivedAtElapsedMs = 150L).size)
+        assertEquals(0, parser.append("bad\r", receivedAtElapsedMs = 160L).size)
+        assertEquals(1, parser.decodeErrors)
+    }
+
+    @Test
+    fun `decoder validates mapped little endian unsigned signed int16 and gps int32 channels`() {
+        var sample: AimCanSample? = null
+        val now = 1_000L
+
+        listOf(
+            "t42086419D20400006C07",
+            "t42187B0085FF98088E02",
+            "t42282003B3150100E7FF",
+            "t423885FF590185FF3800",
+            "t4248D2048A00ECFF0000",
+            "t45086D0270026B026C02",
+            "t45186A02DE02A2080100",
+        ).forEachIndexed { index, raw ->
+            val frame = AimCanSlcanParser().append("$raw\r", now + index).single()
+            sample = AimCanDecoder.applyFrame(sample, frame)
+        }
+        sample = AimCanDecoder.applyFrame(
+            sample,
+            SlcanFrame(
+                id = AimCanFrameIds.GPS_POSITION,
+                dlc = 8,
+                data = i32le(381_627_200) + i32le(-1_224_550_000),
+                receivedAtElapsedMs = now + 8,
+                raw = "t4528...",
+            ),
+        )
+
+        val decoded = sample ?: error("expected decoded sample")
+        assertEquals(6500, decoded.rpm)
+        assertEquals(123.4, decoded.gpsSpeedMph ?: -1.0, 0.01)
+        assertEquals(87.78, decoded.waterTempC ?: -1.0, 0.01)
+        assertEquals(-12.3, decoded.rollRateDegPerSec ?: 0.0, 0.01)
+        assertEquals(104.44, decoded.oilFilterTempC ?: -1.0, 0.01)
+        assertEquals(800.0, decoded.brakePressurePsi ?: -1.0, 0.01)
+        assertEquals(55.55, decoded.pedalPositionPercent ?: -1.0, 0.01)
+        assertEquals(true, decoded.brakeSwitchApplied)
+        assertEquals(-2.5, decoded.pitchRateDegPerSec ?: 0.0, 0.01)
+        assertEquals(-12.3, decoded.steeringAngleDeg ?: 0.0, 0.01)
+        assertEquals(34.5, decoded.yawRateDegPerSec ?: 0.0, 0.01)
+        assertEquals(-1.23, decoded.lateralG ?: 0.0, 0.01)
+        assertEquals(0.56, decoded.inlineG ?: 0.0, 0.01)
+        assertEquals(12.34, decoded.fuelLevelGal ?: 0.0, 0.01)
+        assertEquals(13.8, decoded.batteryVoltage ?: 0.0, 0.01)
+        assertEquals(-0.20, decoded.verticalG ?: 0.0, 0.01)
+        assertEquals(62.1, decoded.wheelSpeedFrontLeftMph ?: 0.0, 0.01)
+        assertEquals(61.8, decoded.ecuSpeedMph ?: 0.0, 0.01)
+        assertEquals(23.0, decoded.outsideTempC ?: 0.0, 0.01)
+        assertEquals(true, decoded.dscRegActive)
+        assertEquals(38.16272, decoded.gpsLatitude ?: 0.0, 0.000001)
+        assertEquals(-122.455, decoded.gpsLongitude ?: 0.0, 0.000001)
+        assertNull(decoded.gearRaw?.takeIf { it > 0 })
+    }
+
+    private fun i32le(value: Int): ByteArray {
+        return byteArrayOf(
+            value.toByte(),
+            (value shr 8).toByte(),
+            (value shr 16).toByte(),
+            (value shr 24).toByte(),
+        )
+    }
+}

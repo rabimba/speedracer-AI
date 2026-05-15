@@ -90,14 +90,20 @@ export default function CoachAvatar({
 }: CoachAvatarProps) {
   const [expanded, setExpanded] = useState(false);
   const [frameIndex, setFrameIndex] = useState(0);
-  const [clock, setClock] = useState(Date.now());
+  const [clock, setClock] = useState(0);
   const [cuePulse, setCuePulse] = useState(false);
 
   const coach = COACHES[activeCoach] || COACHES[DEFAULT_COACH];
+  const latestMessageId = latestMessage?.id;
 
   useEffect(() => {
-    const timer = window.setInterval(() => setClock(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    const tick = () => setClock(Date.now());
+    const initial = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 1000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
   }, []);
 
   const ageMs = latestMessage ? clock - latestMessage.timestamp : Number.POSITIVE_INFINITY;
@@ -107,20 +113,26 @@ export default function CoachAvatar({
   );
 
   useEffect(() => {
-    setFrameIndex(0);
+    const reset = window.setTimeout(() => setFrameIndex(0), 0);
     const timer = window.setInterval(() => {
       setFrameIndex((current) => (current + 1) % 4);
     }, FRAME_INTERVAL_MS[avatarState]);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(reset);
+      window.clearInterval(timer);
+    };
   }, [avatarState]);
 
   useEffect(() => {
-    if (!latestMessage || expanded) return;
+    if (!latestMessageId || expanded) return;
 
-    setCuePulse(true);
+    const start = window.setTimeout(() => setCuePulse(true), 0);
     const timer = window.setTimeout(() => setCuePulse(false), 4200);
-    return () => window.clearTimeout(timer);
-  }, [expanded, latestMessage?.id]);
+    return () => {
+      window.clearTimeout(start);
+      window.clearTimeout(timer);
+    };
+  }, [expanded, latestMessageId]);
 
   const buildSpriteStyle = (frameSize: number) => ({
     backgroundImage: `url(${spriteSheet})`,

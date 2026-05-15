@@ -12,9 +12,11 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.TelemetrySourceHealth
 import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.model.Track
 import kotlin.math.abs
@@ -54,6 +56,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
     private var latestGpsLongG = 0.0
     private var latestImuLatG = 0.0
     private var latestImuLongG = 0.0
+    private var latestLocationElapsedMs: Long? = null
     private var latestWorldEastMps2 = 0.0
     private var latestWorldNorthMps2 = 0.0
     private var locationThread: HandlerThread? = null
@@ -84,6 +87,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
     override fun nextFrame(step: Int, track: Track, elapsedSeconds: Double): TelemetryFrame {
         val snapshot =
             synchronized(stateLock) {
+                val nowElapsedMs = SystemClock.elapsedRealtime()
                 Snapshot(
                     latitude = latestLatitude,
                     longitude = latestLongitude,
@@ -94,6 +98,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
                     gpsLongG = latestGpsLongG,
                     imuLatG = latestImuLatG,
                     imuLongG = latestImuLongG,
+                    locationAgeMs = latestLocationElapsedMs?.let { nowElapsedMs - it },
                 )
             }
 
@@ -114,6 +119,24 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
         val brake = if (motionEligible) estimateBrake(gLong) else 0.0
         val throttle = if (motionEligible) estimateThrottle(speedMph, gLat, gLong, brake) else 0.0
         val gear = estimateGear(speedMph)
+        val fixGood = isValidGps(snapshot.latitude, snapshot.longitude)
+        val connected = fixGood && snapshot.locationAgeMs?.let { it <= PHONE_LOCATION_STALE_MS } != false
+        val sourceHealth = TelemetrySourceHealth(
+            status = when {
+                connected -> "Phone GPS/IMU live"
+                fixGood -> "Phone GPS/IMU stale location"
+                else -> "Phone GPS/IMU waiting for location fix"
+            },
+            motionSource = "phone",
+            motionConnected = connected,
+            motionFixGood = fixGood,
+            motionSampleAgeMs = snapshot.locationAgeMs,
+            fallbackStage = if (connected) "phone_only" else "no_live_data",
+            degradedReason = if (connected) null else "phone_motion_unavailable",
+            phoneMotionConnected = connected,
+            phoneMotionFixGood = fixGood,
+            phoneMotionSampleAgeMs = snapshot.locationAgeMs,
+        )
 
         return TelemetryFrame(
             timeSeconds = elapsedSeconds,
@@ -130,6 +153,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
             gear = gear,
             distanceMeters = snapshot.distanceMeters.coerceAtLeast(elapsedSeconds * snapshot.speedMps),
             telemetrySource = kind,
+            sourceHealth = sourceHealth,
         )
     }
 
@@ -218,6 +242,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
                 latestGpsLongG = 0.0
                 latestImuLatG = 0.0
                 latestImuLongG = 0.0
+                latestLocationElapsedMs = SystemClock.elapsedRealtime()
                 lastLocation = Location(lastKnown)
             }
         }
@@ -279,6 +304,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
             latestDistanceMeters += deltaDistanceMeters
             latestSpeedMps = speedMps
             latestHeadingDegrees = headingDegrees
+            latestLocationElapsedMs = SystemClock.elapsedRealtime()
             lastLocation = Location(location)
             updateImuProjectionLocked()
         }
@@ -377,6 +403,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
         val gpsLongG: Double,
         val imuLatG: Double,
         val imuLongG: Double,
+        val locationAgeMs: Long?,
     )
 
     companion object {
@@ -386,6 +413,7 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
         private const val MIN_MOTION_SPEED_MPH = 8.0
         private const val MIN_MOTION_SPEED_MPS = 3.57632
         private const val LOCATION_UPDATE_INTERVAL_MS = 100L
+        private const val PHONE_LOCATION_STALE_MS = 5_000L
 
         fun hasFineLocationPermission(context: Context): Boolean {
             return ContextCompat.checkSelfPermission(
@@ -394,4 +422,11 @@ class PhoneImuGpsSource(context: Context) : TelemetrySource, SensorEventListener
             ) == PackageManager.PERMISSION_GRANTED
         }
     }
+}
+
+private fun isValidGps(lat: Double, lon: Double): Boolean {
+    if (lat.isNaN() || lon.isNaN()) return false
+    if (lat == 0.0 && lon == 0.0) return false
+    if (abs(lat) > 90.0 || abs(lon) > 180.0) return false
+    return true
 }

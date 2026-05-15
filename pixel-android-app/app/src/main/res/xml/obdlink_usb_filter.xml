@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- OBDLink EX uses an FTDI USB-serial bridge. -->
+    <usb-device vendor-id="1027" />
+    <!-- RH-02 PRO / CANable-style adapters commonly expose USB CDC serial. -->
+    <usb-device class="2" />
+    <usb-device class="10" />
+    <!-- Common STM32 USB VID used by CANable-compatible firmware. -->
+    <usb-device vendor-id="1155" />
+    <!-- Openlight Labs CANable2 observed on the attached USB-C adapter. -->
+    <usb-device vendor-id="5840" product-id="4478" />
+</resources>

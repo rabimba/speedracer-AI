@@ -96,6 +96,14 @@ enum class TelemetrySourceKind {
     PHONE_IMU_GPS,
     RACEBOX_BLE,
     OBD_BLUETOOTH,
+    RACEBOX_OBD_FUSION,
+    AIM_CAN_USB,
+}
+
+enum class ObdTransportPreference {
+    AUTO,
+    BLUETOOTH,
+    USB,
 }
 
 data class SensorFramePayload(
@@ -121,9 +129,93 @@ data class TelemetryFrame(
     val gLong: Double,
     val gear: Int? = null,
     val distanceMeters: Double? = null,
+    val coolantTempC: Double? = null,
+    val oilTempC: Double? = null,
+    val vehicleDiagnostics: VehicleDiagnostics? = null,
+    val canVehicleDiagnostics: CanVehicleDiagnostics? = null,
     val sourceMode: SessionMode = SessionMode.TELEMETRY,
     val telemetrySource: TelemetrySourceKind? = null,
+    val sourceHealth: TelemetrySourceHealth? = null,
     val vision: VisionFeatureSnapshot? = null,
+)
+
+data class VehicleDiagnostics(
+    val engineLoadPercent: Double? = null,
+    val mafGramsPerSecond: Double? = null,
+    val intakeTempC: Double? = null,
+    val timingAdvanceDegrees: Double? = null,
+    val shortFuelTrim1Percent: Double? = null,
+    val longFuelTrim1Percent: Double? = null,
+    val shortFuelTrim2Percent: Double? = null,
+    val longFuelTrim2Percent: Double? = null,
+    val o2Bank1Sensor1Volts: Double? = null,
+    val o2Bank2Sensor1Volts: Double? = null,
+)
+
+data class CanVehicleDiagnostics(
+    val waterPressurePsi: Double? = null,
+    val oilPressurePsi: Double? = null,
+    val brakePressurePsi: Double? = null,
+    val pedalPositionPercent: Double? = null,
+    val brakeSwitchApplied: Boolean? = null,
+    val rollRateDegPerSec: Double? = null,
+    val pitchRateDegPerSec: Double? = null,
+    val yawRateDegPerSec: Double? = null,
+    val steeringAngleDeg: Double? = null,
+    val lateralG: Double? = null,
+    val inlineG: Double? = null,
+    val verticalG: Double? = null,
+    val fuelLevelGal: Double? = null,
+    val batteryVoltage: Double? = null,
+    val wheelSpeedFrontLeftMph: Double? = null,
+    val wheelSpeedFrontRightMph: Double? = null,
+    val wheelSpeedRearLeftMph: Double? = null,
+    val wheelSpeedRearRightMph: Double? = null,
+    val ecuSpeedMph: Double? = null,
+    val gpsSpeedMph: Double? = null,
+    val outsideTempC: Double? = null,
+    val waterTempC: Double? = null,
+    val engineOilTempC: Double? = null,
+    val oilFilterTempC: Double? = null,
+    val dscRegActive: Boolean? = null,
+    val gearRaw: Int? = null,
+    val frameAgesMs: Map<String, Long> = emptyMap(),
+    val frameStale: Map<String, Boolean> = emptyMap(),
+)
+
+data class TelemetrySourceHealth(
+    val status: String,
+    val motionSource: String? = null,
+    val motionConnected: Boolean? = null,
+    val motionFixGood: Boolean? = null,
+    val motionSampleAgeMs: Long? = null,
+    val fallbackStage: String? = null,
+    val degradedReason: String? = null,
+    val phoneMotionConnected: Boolean? = null,
+    val phoneMotionFixGood: Boolean? = null,
+    val phoneMotionSampleAgeMs: Long? = null,
+    val raceBoxConnected: Boolean = false,
+    val raceBoxFixGood: Boolean? = null,
+    val raceBoxFixStatus: Int? = null,
+    val raceBoxSatellites: Int? = null,
+    val raceBoxSampleAgeMs: Long? = null,
+    val obdConnected: Boolean = false,
+    val obdSampleAgeMs: Long? = null,
+    val obdStale: Boolean = false,
+    val obdSpeedDeltaMph: Double? = null,
+    val obdTransport: String? = null,
+    val obdSupportedPids: List<String> = emptyList(),
+    val obdReconnectCount: Int = 0,
+    val obdChannelAgesMs: Map<String, Long> = emptyMap(),
+    val obdChannelStale: Map<String, Boolean> = emptyMap(),
+    val canConnected: Boolean = false,
+    val canFrameAgesMs: Map<String, Long> = emptyMap(),
+    val canFrameStale: Map<String, Boolean> = emptyMap(),
+    val canFrameRatesHz: Map<String, Double> = emptyMap(),
+    val canDecodeErrors: Int = 0,
+    val usbDeviceName: String? = null,
+    val rawCanSample: String? = null,
+    val signUnverified: Boolean = false,
 )
 
 data class Corner(
@@ -286,6 +378,8 @@ fun LiveBackendState.bridgeValue(): String = name.lowercase()
 fun SessionMode.bridgeValue(): String = name.lowercase()
 
 fun TelemetrySourceKind.bridgeValue(): String = name.lowercase()
+
+fun ObdTransportPreference.bridgeValue(): String = name.lowercase()
 
 fun SessionGoalFocus.bridgeValue(): String = name.lowercase()
 

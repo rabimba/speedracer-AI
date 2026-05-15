@@ -60,7 +60,6 @@ describe('CoachingService HOT path latency', () => {
     const max = samples[samples.length - 1];
 
     // Surface the distribution so a regression shows up in test output.
-    // eslint-disable-next-line no-console
     console.log(
       `[latency] N=${N} mean=${mean.toFixed(3)}ms p50=${p50.toFixed(3)}ms ` +
       `p99=${p99.toFixed(3)}ms max=${max.toFixed(3)}ms`,
