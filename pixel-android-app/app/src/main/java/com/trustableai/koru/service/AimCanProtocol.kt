@@ -35,7 +35,7 @@ data class SlcanFrame(
 )
 
 class AimCanSlcanParser(
-    private val allowedIds: Set<Int> = AimCanFrameIds.all,
+    private val allowedIds: Set<Int>? = null,
 ) {
     private val buffer = StringBuilder()
 
@@ -87,7 +87,7 @@ class AimCanSlcanParser(
             decodeErrors += 1
             return null
         }
-        if (id !in allowedIds) return null
+        if (allowedIds != null && id !in allowedIds) return null
         if (dlc != AIM_DLC_BYTES || raw.length != HEADER_CHARS + dlc * 2) {
             decodeErrors += 1
             return null
@@ -124,10 +124,12 @@ object AimCanDecoder {
     fun applyFrame(previous: AimCanSample?, frame: SlcanFrame, decodeErrors: Int = previous?.decodeErrors ?: 0): AimCanSample {
         val base = previous ?: AimCanSample(receivedAtElapsedMs = frame.receivedAtElapsedMs)
         val updates = base.channelUpdatedAtElapsedMs + (frame.id to frame.receivedAtElapsedMs)
+        val rawSamples = base.rawCanSamplesById + (frame.id to frame.raw)
         val common = base.copy(
             receivedAtElapsedMs = frame.receivedAtElapsedMs,
             channelUpdatedAtElapsedMs = updates,
             rawCanSample = frame.raw,
+            rawCanSamplesById = rawSamples,
             decodeErrors = decodeErrors,
         )
         return when (frame.id) {
@@ -145,12 +147,24 @@ object AimCanDecoder {
                 oilPressurePsi = frame.u16(6) * 0.1,
             )
 
-            AimCanFrameIds.CONTROLS -> common.copy(
-                brakePressurePsi = frame.u16(0).toDouble(),
-                pedalPositionPercent = (frame.u16(2) * 0.01).coerceIn(0.0, 100.0),
-                brakeSwitchApplied = frame.u16(4) != 0,
-                pitchRateDegPerSec = frame.i16(6) * 0.1,
-            )
+            AimCanFrameIds.CONTROLS -> {
+                val brakePressureRaw = frame.u16(0)
+                val brakePressurePsi = brakePressureRaw * BRAKE_PRESSURE_PSI_SCALE
+                val pedalPositionRaw = frame.u16(2)
+                val brakeSwitchRaw = frame.u16(4)
+                common.copy(
+                    brakePressureRaw = brakePressureRaw,
+                    brakePressurePsi = brakePressurePsi,
+                    brakePressureZeroOffsetRaw = BRAKE_PRESSURE_ZERO_OFFSET_RAW,
+                    brakePressureCalibratedPsi = ((brakePressureRaw - BRAKE_PRESSURE_ZERO_OFFSET_RAW) * BRAKE_PRESSURE_PSI_SCALE).coerceAtLeast(0.0),
+                    brakePressureZeroOffsetPsi = BRAKE_PRESSURE_ZERO_OFFSET_RAW * BRAKE_PRESSURE_PSI_SCALE,
+                    pedalPositionRaw = pedalPositionRaw,
+                    pedalPositionPercent = (pedalPositionRaw * PEDAL_POSITION_PERCENT_SCALE).coerceIn(0.0, 100.0),
+                    brakeSwitchRaw = brakeSwitchRaw,
+                    brakeSwitchApplied = brakeSwitchRaw != 0,
+                    pitchRateDegPerSec = frame.i16(6) * 0.1,
+                )
+            }
 
             AimCanFrameIds.MOTION -> common.copy(
                 steeringAngleDeg = frame.i16(0) * 0.1,
@@ -208,5 +222,8 @@ object AimCanDecoder {
 
     private fun fahrenheitToCelsius(valueF: Double): Double = (valueF - 32.0) * (5.0 / 9.0)
 
+    private const val BRAKE_PRESSURE_PSI_SCALE = 0.1
+    private const val BRAKE_PRESSURE_ZERO_OFFSET_RAW = 10
+    private const val PEDAL_POSITION_PERCENT_SCALE = 0.01
     private const val GPS_DEG_7 = 0.0000001
 }

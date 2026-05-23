@@ -306,13 +306,19 @@ describe('recorded session analysis context', () => {
           telemetrySource: 'aim_can_usb',
           sourceMode: 'telemetry',
           canVehicleDiagnostics: {
+            brakePressureRaw: 6000,
             brakePressurePsi: 600,
+            brakePressureZeroOffsetRaw: 10,
+            brakePressureCalibratedPsi: 599,
+            brakePressureZeroOffsetPsi: 1,
+            pedalPositionRaw: 4850,
             pedalPositionPercent: 48.5,
             oilPressurePsi: 62,
             oilFilterTempC: 105,
             batteryVoltage: 13.8,
             frameAgesMs: { '0x420': 40, '0x423': 35 },
             frameStale: { '0x420': false, '0x423': false, '0x452': false },
+            rawFrameSamples: { '0x422': 't42287017621201000000' },
           },
           sourceHealth: {
             status: 'AiM CAN USB live',
@@ -323,6 +329,7 @@ describe('recorded session analysis context', () => {
             canFrameStale: { '0x420': false, '0x423': false, '0x452': false },
             canFrameRatesHz: { '0x420': 10, '0x423': 50 },
             rawCanSample: 't4238B0FF78005200D7FF',
+            rawCanSamplesById: { '0x422': 't42287017621201000000', '0x423': 't4238B0FF78005200D7FF' },
             signUnverified: true,
           },
         },
@@ -362,6 +369,11 @@ describe('recorded session analysis context', () => {
     expect(context).toContain('CAN fallback stages: aim_can_full=1, aim_can_racebox_motion=1');
     expect(context).toContain('CAN stale frame counts: 0x423=1, 0x452=1');
     expect(context).toContain('Brake pressure max: 600 psi');
+    expect(context).toContain('Brake calibrated max: 599 psi');
+    expect(context).toContain('Brake raw max: 6000');
+    expect(context).toContain('Pedal raw max: 4850');
+    expect(context).toContain('Observed CAN IDs: 0x422, 0x423');
     expect(context).toContain('Raw CAN samples: t4238B0FF78005200D7FF');
+    expect(context).toContain('Latest raw samples by ID: 0x422=t42287017621201000000, 0x423=t4238B0FF78005200D7FF');
   });
 });

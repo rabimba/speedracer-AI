@@ -155,8 +155,14 @@ data class VehicleDiagnostics(
 data class CanVehicleDiagnostics(
     val waterPressurePsi: Double? = null,
     val oilPressurePsi: Double? = null,
+    val brakePressureRaw: Int? = null,
     val brakePressurePsi: Double? = null,
+    val brakePressureZeroOffsetRaw: Int? = null,
+    val brakePressureCalibratedPsi: Double? = null,
+    val brakePressureZeroOffsetPsi: Double? = null,
+    val pedalPositionRaw: Int? = null,
     val pedalPositionPercent: Double? = null,
+    val brakeSwitchRaw: Int? = null,
     val brakeSwitchApplied: Boolean? = null,
     val rollRateDegPerSec: Double? = null,
     val pitchRateDegPerSec: Double? = null,
@@ -181,6 +187,7 @@ data class CanVehicleDiagnostics(
     val gearRaw: Int? = null,
     val frameAgesMs: Map<String, Long> = emptyMap(),
     val frameStale: Map<String, Boolean> = emptyMap(),
+    val rawFrameSamples: Map<String, String> = emptyMap(),
 )
 
 data class TelemetrySourceHealth(
@@ -215,6 +222,7 @@ data class TelemetrySourceHealth(
     val canDecodeErrors: Int = 0,
     val usbDeviceName: String? = null,
     val rawCanSample: String? = null,
+    val rawCanSamplesById: Map<String, String> = emptyMap(),
     val signUnverified: Boolean = false,
 )
 
@@ -354,6 +362,8 @@ data class RecordedSessionArtifact(
     val frames: List<TelemetryFrame>,
     val decisions: List<CoachingDecision>,
     val audioEvents: List<AudioDispatchEvent> = emptyList(),
+    val artifactPath: String? = null,
+    val canDumpPath: String? = null,
 )
 
 data class ModelInstallStatus(

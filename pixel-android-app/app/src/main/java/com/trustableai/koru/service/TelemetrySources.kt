@@ -933,13 +933,16 @@ private fun aimCanHealth(
     raceBox: RaceBoxSample?,
     raceBoxStatus: RaceBoxClientStatus?,
 ): TelemetrySourceHealth {
-    val frameAges = AimCanFrameIds.all.associate { frameId ->
-        AimCanFrameIds.key(frameId) to (can?.ageMs(frameId, nowElapsedMs) ?: Long.MAX_VALUE)
-    }
-    val frameStale = AimCanFrameIds.all.associate { frameId ->
+    val observedFrameIds = (AimCanFrameIds.all + can?.channelUpdatedAtElapsedMs.orEmpty().keys).toSortedSet()
+    val frameAges = can?.channelUpdatedAtElapsedMs.orEmpty()
+        .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
+        .mapValues { (_, updatedAt) -> nowElapsedMs - updatedAt }
+    val frameStale = observedFrameIds.associate { frameId ->
         AimCanFrameIds.key(frameId) to (can?.isFresh(frameId, nowElapsedMs, aimCanStaleMs(frameId)) != true)
     }
     val frameRates = can?.frameRatesHz.orEmpty()
+        .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
+    val rawSamples = can?.rawCanSamplesById.orEmpty()
         .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
     val raceBoxAge = raceBox?.let { nowElapsedMs - it.receivedAtElapsedMs }
     val raceBoxFresh = raceBoxAge != null && raceBoxAge <= RACEBOX_STALE_MS
@@ -964,12 +967,13 @@ private fun aimCanHealth(
         raceBoxSatellites = raceBox?.satellites,
         raceBoxSampleAgeMs = raceBoxAge,
         canConnected = canStatus.connected,
-        canFrameAgesMs = frameAges.filterValues { age -> age != Long.MAX_VALUE },
+        canFrameAgesMs = frameAges,
         canFrameStale = frameStale,
         canFrameRatesHz = frameRates,
         canDecodeErrors = can?.decodeErrors ?: canStatus.decodeErrors,
         usbDeviceName = canStatus.usbDeviceName,
         rawCanSample = can?.rawCanSample,
+        rawCanSamplesById = rawSamples,
         signUnverified = can != null,
     )
 }
@@ -1007,7 +1011,8 @@ private fun AimCanSample.primaryFreshSpeedMph(nowElapsedMs: Long): Double? {
 }
 
 private fun AimCanSample.normalizedBrakePercent(): Double? {
-    return brakePressurePsi?.let { pressure -> (pressure / BRAKE_FULL_SCALE_PSI * 100.0).coerceIn(0.0, 100.0) }
+    val pressure = brakePressureCalibratedPsi ?: brakePressurePsi ?: return null
+    return (pressure / BRAKE_FULL_SCALE_PSI * 100.0).coerceIn(0.0, 100.0)
 }
 
 private fun AimCanSample.usableGear(): Int? {
@@ -1024,8 +1029,14 @@ private fun AimCanSample.diagnostics(nowElapsedMs: Long): CanVehicleDiagnostics 
     return CanVehicleDiagnostics(
         waterPressurePsi = freshDouble(AimCanFrameIds.PRESSURE_RATES, nowElapsedMs) { waterPressurePsi },
         oilPressurePsi = freshDouble(AimCanFrameIds.PRESSURE_RATES, nowElapsedMs) { oilPressurePsi },
+        brakePressureRaw = freshInt(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakePressureRaw },
         brakePressurePsi = freshDouble(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakePressurePsi },
+        brakePressureZeroOffsetRaw = freshInt(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakePressureZeroOffsetRaw },
+        brakePressureCalibratedPsi = freshDouble(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakePressureCalibratedPsi },
+        brakePressureZeroOffsetPsi = freshDouble(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakePressureZeroOffsetPsi },
+        pedalPositionRaw = freshInt(AimCanFrameIds.CONTROLS, nowElapsedMs) { pedalPositionRaw },
         pedalPositionPercent = freshDouble(AimCanFrameIds.CONTROLS, nowElapsedMs) { pedalPositionPercent },
+        brakeSwitchRaw = freshInt(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakeSwitchRaw },
         brakeSwitchApplied = freshBoolean(AimCanFrameIds.CONTROLS, nowElapsedMs) { brakeSwitchApplied },
         rollRateDegPerSec = freshDouble(AimCanFrameIds.PRESSURE_RATES, nowElapsedMs) { rollRateDegPerSec },
         pitchRateDegPerSec = freshDouble(AimCanFrameIds.CONTROLS, nowElapsedMs) { pitchRateDegPerSec },
@@ -1048,12 +1059,14 @@ private fun AimCanSample.diagnostics(nowElapsedMs: Long): CanVehicleDiagnostics 
         oilFilterTempC = freshDouble(AimCanFrameIds.PRESSURE_RATES, nowElapsedMs) { oilFilterTempC },
         dscRegActive = freshBoolean(AimCanFrameIds.ECU, nowElapsedMs) { dscRegActive },
         gearRaw = freshInt(AimCanFrameIds.CORE, nowElapsedMs) { gearRaw },
-        frameAgesMs = AimCanFrameIds.all
-            .mapNotNull { frameId -> ageMs(frameId, nowElapsedMs)?.let { age -> AimCanFrameIds.key(frameId) to age } }
+        frameAgesMs = channelUpdatedAtElapsedMs
+            .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
+            .mapValues { (_, updatedAt) -> nowElapsedMs - updatedAt }
             .toMap(),
-        frameStale = AimCanFrameIds.all.associate { frameId ->
+        frameStale = (AimCanFrameIds.all + channelUpdatedAtElapsedMs.keys).toSortedSet().associate { frameId ->
             AimCanFrameIds.key(frameId) to !isFresh(frameId, nowElapsedMs, aimCanStaleMs(frameId))
         },
+        rawFrameSamples = rawCanSamplesById.mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) },
     )
 }
 

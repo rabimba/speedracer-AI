@@ -197,8 +197,8 @@ class AimCanUsbClient(
         val parts = buildList {
             rpm?.let { add("${it}rpm") }
             gpsSpeedMph?.let { add("${"%.1f".format(Locale.US, it)}mph GPS") }
-            pedalPositionPercent?.let { add("${"%.0f".format(Locale.US, it)}% pedal") }
-            brakePressurePsi?.let { add("${"%.0f".format(Locale.US, it)}psi brake") }
+            pedalPositionPercent?.let { add("${"%.1f".format(Locale.US, it)}% pedal") }
+            brakePressurePsi?.let { add("${"%.1f".format(Locale.US, it)}psi brake") }
             batteryVoltage?.let { add("${"%.1f".format(Locale.US, it)}V") }
         }
         return "AiM CAN USB live ${parts.joinToString(", ").ifBlank { "recognized frames" }}"

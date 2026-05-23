@@ -289,7 +289,10 @@ function summarizeCanDiagnostics(frames: TelemetryFrame[]): string {
   }
 
   const brakePressure = canDiagnosticValues(frames, (diagnostics) => diagnostics.brakePressurePsi);
+  const brakePressureCalibrated = canDiagnosticValues(frames, (diagnostics) => diagnostics.brakePressureCalibratedPsi);
+  const brakePressureRaw = canDiagnosticValues(frames, (diagnostics) => diagnostics.brakePressureRaw);
   const pedalPosition = canDiagnosticValues(frames, (diagnostics) => diagnostics.pedalPositionPercent);
+  const pedalPositionRaw = canDiagnosticValues(frames, (diagnostics) => diagnostics.pedalPositionRaw);
   const oilPressure = canDiagnosticValues(frames, (diagnostics) => diagnostics.oilPressurePsi);
   const oilFilterTemp = canDiagnosticValues(frames, (diagnostics) => diagnostics.oilFilterTempC);
   const batteryVoltage = canDiagnosticValues(frames, (diagnostics) => diagnostics.batteryVoltage);
@@ -307,19 +310,45 @@ function summarizeCanDiagnostics(frames: TelemetryFrame[]): string {
     .map((frame) => frame.sourceHealth?.rawCanSample)
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .slice(-3);
+  const rawSamplesById = latestRawSamplesById(frames);
+  const observedIds = Object.keys(rawSamplesById).sort();
 
   return [
     `- CAN diagnostic frames: ${canFrames.length}/${frames.length}`,
     `- CAN fallback stages: ${formatCountSummary(fallbackStageCounts, ['aim_can_full', 'aim_can_racebox_motion', 'aim_can_phone_motion', 'racebox_only', 'phone_only', 'no_live_data', 'unspecified'])}`,
     `- CAN stale frame counts: ${formatCountSummary(staleCounts, ['0x420', '0x421', '0x422', '0x423', '0x424', '0x450', '0x451', '0x452'])}`,
     `- Brake pressure max: ${maxNumber(brakePressure)?.toFixed(0) ?? 'n/a'} psi`,
+    `- Brake calibrated max: ${maxNumber(brakePressureCalibrated)?.toFixed(0) ?? 'n/a'} psi`,
+    `- Brake raw max: ${maxNumber(brakePressureRaw)?.toFixed(0) ?? 'n/a'}`,
     `- Pedal position max: ${maxNumber(pedalPosition)?.toFixed(0) ?? 'n/a'}%`,
+    `- Pedal raw max: ${maxNumber(pedalPositionRaw)?.toFixed(0) ?? 'n/a'}`,
     `- Oil pressure min/max: ${rangeText(oilPressure)} psi`,
     `- Oil filter temp max: ${maxNumber(oilFilterTemp)?.toFixed(0) ?? 'n/a'} C`,
     `- Battery voltage range: ${rangeText(batteryVoltage)} V`,
+    `- Observed CAN IDs: ${observedIds.join(', ') || 'n/a'}`,
     `- Raw CAN samples: ${rawSamples.join(', ') || 'n/a'}`,
+    `- Latest raw samples by ID: ${formatRawSamples(rawSamplesById)}`,
     '- Signed CAN channels are calibration-limited until lateral/inline/steering/yaw sign validation is captured.',
   ].join('\n');
+}
+
+function latestRawSamplesById(frames: TelemetryFrame[]): Record<string, string> {
+  const samples: Record<string, string> = {};
+  frames.forEach((frame) => {
+    Object.entries(frame.canVehicleDiagnostics?.rawFrameSamples ?? {}).forEach(([id, raw]) => {
+      if (typeof raw === 'string' && raw.length > 0) samples[id] = raw;
+    });
+    Object.entries(frame.sourceHealth?.rawCanSamplesById ?? {}).forEach(([id, raw]) => {
+      if (typeof raw === 'string' && raw.length > 0) samples[id] = raw;
+    });
+  });
+  return samples;
+}
+
+function formatRawSamples(samples: Record<string, string>): string {
+  const entries = Object.entries(samples).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return 'n/a';
+  return entries.slice(0, 12).map(([id, raw]) => `${id}=${raw}`).join(', ');
 }
 
 function isNearCorner(frame: TelemetryFrame, lat: number, lon: number, apexDist: number, trackLength: number): boolean {

@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.trustableai.koru.model.CanVehicleDiagnostics
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.ObdTransportPreference
@@ -271,12 +272,14 @@ private fun AimCanTestPanel(state: SessionUiState) {
                 MetricTile("RPM", frame?.rpm?.toString() ?: "--", Modifier.weight(1f))
                 MetricTile(
                     "Pedal",
-                    diagnostics?.pedalPositionPercent?.let { "%.0f%%".format(Locale.US, it) } ?: "--",
+                    diagnostics?.pedalPositionPercent?.let { "%.1f%%".format(Locale.US, it) } ?: "--",
                     Modifier.weight(1f),
                 )
                 MetricTile(
                     "Brake PSI",
-                    diagnostics?.brakePressurePsi?.let { "%.0f".format(Locale.US, it) } ?: "--",
+                    diagnostics?.brakePressureCalibratedPsi?.let { "%.1f cal".format(Locale.US, it) }
+                        ?: diagnostics?.brakePressurePsi?.let { "%.1f".format(Locale.US, it) }
+                        ?: "--",
                     Modifier.weight(1f),
                 )
             }
@@ -299,11 +302,18 @@ private fun AimCanTestPanel(state: SessionUiState) {
                     Modifier.weight(1f),
                 )
             }
+            Text(
+                text = canDecodedDiagnosticsText(diagnostics, frame),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             CanFrameFreshnessGrid(health)
             Text(
                 text = listOfNotNull(
                     health?.usbDeviceName?.let { "USB: $it" },
                     health?.rawCanSample?.let { "Raw: $it" },
+                    diagnostics?.let { controlsRawText(it) },
+                    rawSamplesText(health),
                     health?.degradedReason?.let { "Reason: $it" },
                     if (health?.signUnverified == true) "Signed channels need first-drive sign validation" else null,
                 ).joinToString("\n").ifBlank { "Connect RH-02 PRO/CANable and start the AiM CAN USB source." },
@@ -314,11 +324,66 @@ private fun AimCanTestPanel(state: SessionUiState) {
     }
 }
 
+private fun canDecodedDiagnosticsText(diagnostics: CanVehicleDiagnostics?, frame: TelemetryFrame?): String {
+    if (diagnostics == null) return "Decoded channels: waiting for mapped AiM CAN frames."
+    val wheelAverage = listOfNotNull(
+        diagnostics.wheelSpeedFrontLeftMph,
+        diagnostics.wheelSpeedFrontRightMph,
+        diagnostics.wheelSpeedRearLeftMph,
+        diagnostics.wheelSpeedRearRightMph,
+    ).takeIf { it.isNotEmpty() }?.average()
+    return listOf(
+        "Speed GPS/ECU/Wheel: ${fmt1(diagnostics.gpsSpeedMph)} / ${fmt1(diagnostics.ecuSpeedMph)} / ${fmt1(wheelAverage)} mph",
+        "Temps water/oil filter/engine/outside: ${fmt1(diagnostics.waterTempC)} / ${fmt1(diagnostics.oilFilterTempC)} / ${fmt1(diagnostics.engineOilTempC)} / ${fmt1(diagnostics.outsideTempC)} C",
+        "Pressures water/oil/brake: ${fmt1(diagnostics.waterPressurePsi)} / ${fmt1(diagnostics.oilPressurePsi)} / ${fmt1(diagnostics.brakePressurePsi)} psi",
+        "Brake calibrated/offset: ${fmt1(diagnostics.brakePressureCalibratedPsi)} / raw ${diagnostics.brakePressureZeroOffsetRaw?.toString() ?: "--"} (${fmt1(diagnostics.brakePressureZeroOffsetPsi)} psi)",
+        "Controls pedal/brake switch/DSC: ${fmt1(diagnostics.pedalPositionPercent)}% / ${diagnostics.brakeSwitchApplied?.toString() ?: "--"} / ${diagnostics.dscRegActive?.toString() ?: "--"}",
+        "Angles/rates steer/yaw/pitch/roll: ${fmt1(diagnostics.steeringAngleDeg)} deg / ${fmt1(diagnostics.yawRateDegPerSec)} / ${fmt1(diagnostics.pitchRateDegPerSec)} / ${fmt1(diagnostics.rollRateDegPerSec)} deg/s",
+        "G lat/long/vertical: ${fmt1(frame?.gLat ?: diagnostics.lateralG)} / ${fmt1(frame?.gLong ?: diagnostics.inlineG)} / ${fmt1(diagnostics.verticalG)}",
+        "Wheel FL/FR/RL/RR: ${fmt1(diagnostics.wheelSpeedFrontLeftMph)} / ${fmt1(diagnostics.wheelSpeedFrontRightMph)} / ${fmt1(diagnostics.wheelSpeedRearLeftMph)} / ${fmt1(diagnostics.wheelSpeedRearRightMph)} mph",
+        "Fuel/Battery/Gear raw: ${fmt1(diagnostics.fuelLevelGal)} gal / ${fmt1(diagnostics.batteryVoltage)} V / ${diagnostics.gearRaw?.toString() ?: "--"}",
+    ).joinToString("\n")
+}
+
+private fun controlsRawText(diagnostics: CanVehicleDiagnostics): String? {
+    return listOfNotNull(
+        diagnostics.brakePressureRaw?.let { "brakeRaw=$it" },
+        diagnostics.brakePressurePsi?.let { "brakePsi=${fmt1(it)}" },
+        diagnostics.brakePressureZeroOffsetRaw?.let { "brakeZeroRaw=$it" },
+        diagnostics.brakePressureCalibratedPsi?.let { "brakeCalPsi=${fmt1(it)}" },
+        diagnostics.pedalPositionRaw?.let { "pedalRaw=$it" },
+        diagnostics.brakeSwitchRaw?.let { "brakeSwitchRaw=$it" },
+    ).joinToString(prefix = "0x422 raw: ", separator = ", ").takeIf { it != "0x422 raw: " }
+}
+
+private fun rawSamplesText(health: com.trustableai.koru.model.TelemetrySourceHealth?): String? {
+    val samples = health?.rawCanSamplesById.orEmpty()
+    if (samples.isEmpty()) return null
+    val ids = samples.keys.sorted()
+    val selected = (CAN_TEST_FRAME_IDS.filter { it in samples } + ids.filter { it !in CAN_TEST_FRAME_IDS }).take(12)
+    return buildString {
+        append("Observed CAN IDs: ")
+        append(ids.joinToString(", "))
+        append('\n')
+        append("Raw by ID: ")
+        append(selected.joinToString(" | ") { id -> "$id=${samples[id]}" })
+    }
+}
+
+private fun fmt1(value: Double?): String {
+    return value?.let { "%.1f".format(Locale.US, it) } ?: "--"
+}
+
 @Composable
 private fun CanFrameFreshnessGrid(health: com.trustableai.koru.model.TelemetrySourceHealth?) {
-    val frameIds = listOf("0x420", "0x421", "0x422", "0x423", "0x424", "0x450", "0x451", "0x452")
+    val observedIds = (
+        CAN_TEST_FRAME_IDS +
+            health?.canFrameRatesHz.orEmpty().keys +
+            health?.canFrameAgesMs.orEmpty().keys +
+            health?.rawCanSamplesById.orEmpty().keys
+        ).distinct().sorted()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        frameIds.chunked(4).forEach { rowIds ->
+        observedIds.chunked(4).forEach { rowIds ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 rowIds.forEach { frameId ->
                     val stale = health?.canFrameStale?.get(frameId)
@@ -354,6 +419,8 @@ private fun CanFrameFreshnessGrid(health: com.trustableai.koru.model.TelemetrySo
         }
     }
 }
+
+private val CAN_TEST_FRAME_IDS = listOf("0x420", "0x421", "0x422", "0x423", "0x424", "0x450", "0x451", "0x452")
 
 @Composable
 private fun SignalLight(priority: Int?, backendState: LiveBackendState) {
@@ -659,6 +726,20 @@ private fun SavedSessionPanel(state: SessionUiState) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                session.canDumpPath?.let { path ->
+                    Text(
+                        "CAN dump: $path",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                session.artifactPath?.let { path ->
+                    Text(
+                        "Session JSON: $path",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

@@ -14,6 +14,7 @@ import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.lang.StringBuilder
 import java.util.Locale
 
 class RecordedSessionRecorder(
@@ -67,6 +68,7 @@ class RecordedSessionRecorder(
             decisionCount = session.decisions.size,
             durationSeconds = ((endedAtMs - session.startedAtMs) / 1000.0),
         )
+        val paths = preferredExportPaths(session.id)
         val artifact = RecordedSessionArtifact(
             schemaVersion = 2,
             id = session.id,
@@ -80,6 +82,8 @@ class RecordedSessionRecorder(
             frames = session.frames.toList(),
             decisions = session.decisions.toList(),
             audioEvents = session.audioEvents.toList(),
+            artifactPath = paths?.artifactPath,
+            canDumpPath = paths?.canDumpPath,
         )
         persist(artifact)
         return artifact
@@ -90,12 +94,42 @@ class RecordedSessionRecorder(
         activeSession = null
     }
 
-    private fun persist(artifact: RecordedSessionArtifact) {
-        if (!persistArtifacts) return
-        val appContext = context ?: return
-        val sessionDir = File(appContext.filesDir, "recorded_sessions").apply { mkdirs() }
-        val file = File(sessionDir, "${artifact.id}.json")
-        file.writeText(artifactJson(artifact).toString())
+    private fun persist(artifact: RecordedSessionArtifact): PersistedSessionPaths? {
+        if (!persistArtifacts) return null
+        val appContext = context ?: return null
+        val sessionDirs = listOfNotNull(
+            File(appContext.filesDir, "recorded_sessions"),
+            appContext.getExternalFilesDir("recorded_sessions"),
+        ).distinctBy { it.absolutePath }
+        var exportedPaths: PersistedSessionPaths? = null
+        sessionDirs.forEach { sessionDir ->
+            sessionDir.mkdirs()
+            val file = File(sessionDir, "${artifact.id}.json")
+            val canDumpFile = File(sessionDir, "${artifact.id}.can-slcan.txt")
+            val pathsForThisDir = PersistedSessionPaths(
+                artifactPath = file.absolutePath,
+                canDumpPath = canDumpFile.absolutePath,
+            )
+            val artifactForThisDir = artifact.copy(
+                artifactPath = pathsForThisDir.artifactPath,
+                canDumpPath = pathsForThisDir.canDumpPath,
+            )
+            file.writeText(artifactJson(artifactForThisDir).toString())
+            canDumpFile.writeText(rawCanDumpText(artifactForThisDir))
+            exportedPaths = pathsForThisDir
+        }
+        return exportedPaths
+    }
+
+    private fun preferredExportPaths(sessionId: String): PersistedSessionPaths? {
+        if (!persistArtifacts) return null
+        val appContext = context ?: return null
+        val sessionDir = appContext.getExternalFilesDir("recorded_sessions")
+            ?: File(appContext.filesDir, "recorded_sessions")
+        return PersistedSessionPaths(
+            artifactPath = File(sessionDir, "$sessionId.json").absolutePath,
+            canDumpPath = File(sessionDir, "$sessionId.can-slcan.txt").absolutePath,
+        )
     }
 
     internal fun artifactJson(artifact: RecordedSessionArtifact): JSONObject {
@@ -125,6 +159,8 @@ class RecordedSessionRecorder(
             .put("frames", JSONArray(artifact.frames.map(::frameJson)))
             .put("decisions", JSONArray(artifact.decisions.map(::decisionJson)))
             .put("audioEvents", JSONArray(artifact.audioEvents.map(::audioEventJson)))
+            .put("artifactPath", artifact.artifactPath)
+            .put("canDumpPath", artifact.canDumpPath)
     }
 
     private fun goalJson(goal: SessionGoal): JSONObject {
@@ -192,6 +228,7 @@ class RecordedSessionRecorder(
                         .put("canDecodeErrors", health.canDecodeErrors)
                         .put("usbDeviceName", health.usbDeviceName)
                         .put("rawCanSample", health.rawCanSample)
+                        .put("rawCanSamplesById", JSONObject(health.rawCanSamplesById))
                         .put("signUnverified", health.signUnverified)
                 },
             )
@@ -228,8 +265,14 @@ class RecordedSessionRecorder(
         return JSONObject()
             .put("waterPressurePsi", diagnostics.waterPressurePsi)
             .put("oilPressurePsi", diagnostics.oilPressurePsi)
+            .put("brakePressureRaw", diagnostics.brakePressureRaw)
             .put("brakePressurePsi", diagnostics.brakePressurePsi)
+            .put("brakePressureZeroOffsetRaw", diagnostics.brakePressureZeroOffsetRaw)
+            .put("brakePressureCalibratedPsi", diagnostics.brakePressureCalibratedPsi)
+            .put("brakePressureZeroOffsetPsi", diagnostics.brakePressureZeroOffsetPsi)
+            .put("pedalPositionRaw", diagnostics.pedalPositionRaw)
             .put("pedalPositionPercent", diagnostics.pedalPositionPercent)
+            .put("brakeSwitchRaw", diagnostics.brakeSwitchRaw)
             .put("brakeSwitchApplied", diagnostics.brakeSwitchApplied)
             .put("rollRateDegPerSec", diagnostics.rollRateDegPerSec)
             .put("pitchRateDegPerSec", diagnostics.pitchRateDegPerSec)
@@ -254,6 +297,35 @@ class RecordedSessionRecorder(
             .put("gearRaw", diagnostics.gearRaw)
             .put("frameAgesMs", JSONObject(diagnostics.frameAgesMs))
             .put("frameStale", JSONObject(diagnostics.frameStale))
+            .put("rawFrameSamples", JSONObject(diagnostics.rawFrameSamples))
+    }
+
+    private fun rawCanDumpText(artifact: RecordedSessionArtifact): String {
+        val builder = StringBuilder()
+        builder.append("# Koru AiM CAN raw dump\n")
+        builder.append("# session=").append(artifact.id)
+            .append(" track=").append(artifact.trackName)
+            .append(" frames=").append(artifact.frames.size)
+            .append('\n')
+        builder.append("# columns: timeSeconds canId rawSlcan brakeRaw brakePsi brakeZeroOffsetRaw brakeCalPsi pedalRaw pedalPercent brakeSwitchRaw\n")
+        artifact.frames.forEach { frame ->
+            val diagnostics = frame.canVehicleDiagnostics
+            val samples = frame.sourceHealth?.rawCanSamplesById.orEmpty() + diagnostics?.rawFrameSamples.orEmpty()
+            samples.toSortedMap().forEach { (canId, raw) ->
+                builder.append(String.format(Locale.US, "%.3f", frame.timeSeconds))
+                    .append(' ').append(canId)
+                    .append(' ').append(raw)
+                    .append(' ').append(diagnostics?.brakePressureRaw ?: "")
+                    .append(' ').append(diagnostics?.brakePressurePsi ?: "")
+                    .append(' ').append(diagnostics?.brakePressureZeroOffsetRaw ?: "")
+                    .append(' ').append(diagnostics?.brakePressureCalibratedPsi ?: "")
+                    .append(' ').append(diagnostics?.pedalPositionRaw ?: "")
+                    .append(' ').append(diagnostics?.pedalPositionPercent ?: "")
+                    .append(' ').append(diagnostics?.brakeSwitchRaw ?: "")
+                    .append('\n')
+            }
+        }
+        return builder.toString()
     }
 
     private fun decisionJson(decision: CoachingDecision): JSONObject {
@@ -294,5 +366,10 @@ class RecordedSessionRecorder(
         val frames: MutableList<TelemetryFrame>,
         val decisions: MutableList<CoachingDecision>,
         val audioEvents: MutableList<AudioDispatchEvent>,
+    )
+
+    private data class PersistedSessionPaths(
+        val artifactPath: String,
+        val canDumpPath: String,
     )
 }

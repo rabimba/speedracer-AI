@@ -50,8 +50,14 @@ export interface VehicleDiagnostics {
 export interface CanVehicleDiagnostics {
   waterPressurePsi?: number;
   oilPressurePsi?: number;
+  brakePressureRaw?: number;
   brakePressurePsi?: number;
+  brakePressureZeroOffsetRaw?: number;
+  brakePressureCalibratedPsi?: number;
+  brakePressureZeroOffsetPsi?: number;
+  pedalPositionRaw?: number;
   pedalPositionPercent?: number;
+  brakeSwitchRaw?: number;
   brakeSwitchApplied?: boolean;
   rollRateDegPerSec?: number;
   pitchRateDegPerSec?: number;
@@ -76,6 +82,7 @@ export interface CanVehicleDiagnostics {
   gearRaw?: number;
   frameAgesMs?: Record<string, number>;
   frameStale?: Record<string, boolean>;
+  rawFrameSamples?: Record<string, string>;
 }
 
 export interface TelemetrySourceHealth {
@@ -110,6 +117,7 @@ export interface TelemetrySourceHealth {
   canDecodeErrors?: number;
   usbDeviceName?: string;
   rawCanSample?: string;
+  rawCanSamplesById?: Record<string, string>;
   signUnverified?: boolean;
 }
 
@@ -221,6 +229,8 @@ export interface RecordedSessionArtifact {
   frames: TelemetryFrame[];
   decisions: CoachingDecision[];
   audioEvents?: AudioDispatchEvent[];
+  artifactPath?: string;
+  canDumpPath?: string;
 }
 
 // ── Coaching ───────────────────────────────────────────────

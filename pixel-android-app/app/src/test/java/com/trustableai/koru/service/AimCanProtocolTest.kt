@@ -22,7 +22,9 @@ class AimCanProtocolTest {
         assertEquals(0x423, partialB[1].id)
 
         assertEquals(0, parser.append("T0000000086419D20400006C07\r", receivedAtElapsedMs = 140L).size)
-        assertEquals(0, parser.append("t55580000000000000000\r", receivedAtElapsedMs = 150L).size)
+        val unknownStandard = parser.append("t55580000000000000000\r", receivedAtElapsedMs = 150L)
+        assertEquals(1, unknownStandard.size)
+        assertEquals(0x555, unknownStandard[0].id)
         assertEquals(0, parser.append("bad\r", receivedAtElapsedMs = 160L).size)
         assertEquals(1, parser.decodeErrors)
     }
@@ -61,8 +63,13 @@ class AimCanProtocolTest {
         assertEquals(87.78, decoded.waterTempC ?: -1.0, 0.01)
         assertEquals(-12.3, decoded.rollRateDegPerSec ?: 0.0, 0.01)
         assertEquals(104.44, decoded.oilFilterTempC ?: -1.0, 0.01)
-        assertEquals(800.0, decoded.brakePressurePsi ?: -1.0, 0.01)
+        assertEquals(800, decoded.brakePressureRaw)
+        assertEquals(80.0, decoded.brakePressurePsi ?: -1.0, 0.01)
+        assertEquals(10, decoded.brakePressureZeroOffsetRaw)
+        assertEquals(79.0, decoded.brakePressureCalibratedPsi ?: -1.0, 0.01)
+        assertEquals(5555, decoded.pedalPositionRaw)
         assertEquals(55.55, decoded.pedalPositionPercent ?: -1.0, 0.01)
+        assertEquals(1, decoded.brakeSwitchRaw)
         assertEquals(true, decoded.brakeSwitchApplied)
         assertEquals(-2.5, decoded.pitchRateDegPerSec ?: 0.0, 0.01)
         assertEquals(-12.3, decoded.steeringAngleDeg ?: 0.0, 0.01)
@@ -79,6 +86,23 @@ class AimCanProtocolTest {
         assertEquals(38.16272, decoded.gpsLatitude ?: 0.0, 0.000001)
         assertEquals(-122.455, decoded.gpsLongitude ?: 0.0, 0.000001)
         assertNull(decoded.gearRaw?.takeIf { it > 0 })
+        assertEquals("t42282003B3150100E7FF", decoded.rawCanSamplesById[AimCanFrameIds.CONTROLS])
+    }
+
+    @Test
+    fun `captured stationary brake frame uses tenths psi scale and raw count zero offset`() {
+        val frame = AimCanSlcanParser().append("t42280C00000000000100\r", receivedAtElapsedMs = 2_000L).single()
+
+        val decoded = AimCanDecoder.applyFrame(null, frame)
+
+        assertEquals(12, decoded.brakePressureRaw)
+        assertEquals(1.2, decoded.brakePressurePsi ?: -1.0, 0.01)
+        assertEquals(10, decoded.brakePressureZeroOffsetRaw)
+        assertEquals(0.2, decoded.brakePressureCalibratedPsi ?: -1.0, 0.01)
+        assertEquals(0, decoded.pedalPositionRaw)
+        assertEquals(0.0, decoded.pedalPositionPercent ?: -1.0, 0.01)
+        assertEquals(0, decoded.brakeSwitchRaw)
+        assertEquals(false, decoded.brakeSwitchApplied)
     }
 
     private fun i32le(value: Int): ByteArray {

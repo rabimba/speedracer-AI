@@ -54,7 +54,10 @@ export default function Analysis({ apiKey }: AnalysisProps) {
       const maxIntakeTemp = Math.max(...frames.map(f => f.vehicleDiagnostics?.intakeTempC ?? 0));
       const canDiagnosticFrames = frames.filter((frame) => frame.canVehicleDiagnostics);
       const maxCanBrakePsi = Math.max(...frames.map(f => f.canVehicleDiagnostics?.brakePressurePsi ?? 0));
+      const maxCanBrakeCalPsi = Math.max(...frames.map(f => f.canVehicleDiagnostics?.brakePressureCalibratedPsi ?? 0));
+      const maxCanBrakeRaw = Math.max(...frames.map(f => f.canVehicleDiagnostics?.brakePressureRaw ?? 0));
       const maxCanPedal = Math.max(...frames.map(f => f.canVehicleDiagnostics?.pedalPositionPercent ?? 0));
+      const maxCanPedalRaw = Math.max(...frames.map(f => f.canVehicleDiagnostics?.pedalPositionRaw ?? 0));
       const minCanOilPressure = Math.min(
         ...frames
           .map(f => f.canVehicleDiagnostics?.oilPressurePsi)
@@ -94,7 +97,7 @@ export default function Analysis({ apiKey }: AnalysisProps) {
         ? ` DiagnosticFrames=${diagnosticFrames.length} MaxLoad=${maxEngineLoad || 'n/a'}% MaxMAF=${maxMaf || 'n/a'}g/s MaxIntakeC=${maxIntakeTemp || 'n/a'}`
         : '';
       const canSummary = canDiagnosticFrames.length > 0
-        ? ` CanFrames=${canDiagnosticFrames.length} CanConnected=${canConnectedFrames}/${frames.length} MaxCanBrakePsi=${maxCanBrakePsi || 'n/a'} MaxPedal=${maxCanPedal || 'n/a'}% MinOilPsi=${Number.isFinite(minCanOilPressure) ? minCanOilPressure : 'n/a'}`
+        ? ` CanFrames=${canDiagnosticFrames.length} CanConnected=${canConnectedFrames}/${frames.length} MaxCanBrakePsi=${maxCanBrakePsi || 'n/a'} MaxCanBrakeCalPsi=${maxCanBrakeCalPsi || 'n/a'} MaxCanBrakeRaw=${maxCanBrakeRaw || 'n/a'} MaxPedal=${maxCanPedal || 'n/a'}% MaxPedalRaw=${maxCanPedalRaw || 'n/a'} MinOilPsi=${Number.isFinite(minCanOilPressure) ? minCanOilPressure : 'n/a'}`
         : '';
       return `${label}: Source=${primarySource} MaxSpeed=${maxSpeed.toFixed(0)}mph AvgSpeed=${avgSpeed.toFixed(0)}mph MaxBrake=${maxBrake.toFixed(0)}% MaxThrottle=${maxThrottle.toFixed(0)}% MaxRPM=${maxRpm || 'n/a'} MaxCoolantC=${maxCoolant || 'n/a'} MaxOilC=${maxOil || 'n/a'} MaxGLat=${maxGLat.toFixed(2)}g Frames=${frames.length}${hardwareSummary}${visionSummary}${diagnosticsSummary}${canSummary}`;
     };

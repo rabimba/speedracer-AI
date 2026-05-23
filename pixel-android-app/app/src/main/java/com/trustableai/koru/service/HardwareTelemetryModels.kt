@@ -126,8 +126,14 @@ data class AimCanSample(
     val rollRateDegPerSec: Double? = null,
     val oilFilterTempC: Double? = null,
     val oilPressurePsi: Double? = null,
+    val brakePressureRaw: Int? = null,
     val brakePressurePsi: Double? = null,
+    val brakePressureZeroOffsetRaw: Int? = null,
+    val brakePressureCalibratedPsi: Double? = null,
+    val brakePressureZeroOffsetPsi: Double? = null,
+    val pedalPositionRaw: Int? = null,
     val pedalPositionPercent: Double? = null,
+    val brakeSwitchRaw: Int? = null,
     val brakeSwitchApplied: Boolean? = null,
     val pitchRateDegPerSec: Double? = null,
     val steeringAngleDeg: Double? = null,
@@ -150,6 +156,7 @@ data class AimCanSample(
     val channelUpdatedAtElapsedMs: Map<Int, Long> = emptyMap(),
     val frameRatesHz: Map<Int, Double> = emptyMap(),
     val rawCanSample: String? = null,
+    val rawCanSamplesById: Map<Int, String> = emptyMap(),
     val decodeErrors: Int = 0,
 ) {
     fun isFresh(frameId: Int, nowElapsedMs: Long, staleMs: Long): Boolean {

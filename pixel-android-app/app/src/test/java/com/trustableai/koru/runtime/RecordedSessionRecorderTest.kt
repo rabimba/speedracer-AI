@@ -107,12 +107,19 @@ class RecordedSessionRecorderTest {
                 gLong = -0.41,
                 telemetrySource = TelemetrySourceKind.AIM_CAN_USB,
                 canVehicleDiagnostics = CanVehicleDiagnostics(
+                    brakePressureRaw = 6000,
                     brakePressurePsi = 600.0,
+                    brakePressureZeroOffsetRaw = 10,
+                    brakePressureCalibratedPsi = 599.0,
+                    brakePressureZeroOffsetPsi = 1.0,
+                    pedalPositionRaw = 4850,
                     pedalPositionPercent = 48.5,
+                    brakeSwitchRaw = 1,
                     brakeSwitchApplied = true,
                     batteryVoltage = 13.8,
                     frameAgesMs = mapOf("0x420" to 40L, "0x423" to 35L),
                     frameStale = mapOf("0x420" to false, "0x452" to false),
+                    rawFrameSamples = mapOf("0x422" to "t42287017621201000000"),
                 ),
                 sourceHealth = TelemetrySourceHealth(
                     status = "AiM CAN USB live",
@@ -128,6 +135,7 @@ class RecordedSessionRecorderTest {
                     canDecodeErrors = 1,
                     usbDeviceName = "RH-02 PRO",
                     rawCanSample = "t4238B0FF78005200D7FF",
+                    rawCanSamplesById = mapOf("0x422" to "t42287017621201000000"),
                     signUnverified = true,
                 ),
             ),
@@ -139,12 +147,18 @@ class RecordedSessionRecorderTest {
         val sourceHealth = frame.getJSONObject("sourceHealth")
 
         assertEquals("aim_can_usb", frame.getString("telemetrySource"))
+        assertEquals(6000, canDiagnostics.getInt("brakePressureRaw"))
         assertEquals(600.0, canDiagnostics.getDouble("brakePressurePsi"), 0.01)
+        assertEquals(10, canDiagnostics.getInt("brakePressureZeroOffsetRaw"))
+        assertEquals(599.0, canDiagnostics.getDouble("brakePressureCalibratedPsi"), 0.01)
+        assertEquals(4850, canDiagnostics.getInt("pedalPositionRaw"))
         assertEquals(true, canDiagnostics.getBoolean("brakeSwitchApplied"))
         assertEquals(40L, canDiagnostics.getJSONObject("frameAgesMs").getLong("0x420"))
+        assertEquals("t42287017621201000000", canDiagnostics.getJSONObject("rawFrameSamples").getString("0x422"))
         assertEquals(true, sourceHealth.getBoolean("canConnected"))
         assertEquals("RH-02 PRO", sourceHealth.getString("usbDeviceName"))
         assertEquals("t4238B0FF78005200D7FF", sourceHealth.getString("rawCanSample"))
+        assertEquals("t42287017621201000000", sourceHealth.getJSONObject("rawCanSamplesById").getString("0x422"))
         assertEquals(true, sourceHealth.getBoolean("signUnverified"))
         assertEquals(50.0, sourceHealth.getJSONObject("canFrameRatesHz").getDouble("0x423"), 0.01)
     }
