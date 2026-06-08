@@ -55,7 +55,7 @@ class SonomaTrainingE2ETest {
 
         Thread.sleep(22_000)
 
-        clickText("Stop Session", timeoutMs = 20_000)
+        longClickHoldStopSession(timeoutMs = 20_000)
         assertTrue("Saved Session panel did not appear", waitForText("Saved Session", 25_000))
     }
 
@@ -87,7 +87,29 @@ class SonomaTrainingE2ETest {
             device.wait(Until.hasObject(By.pkg(targetPackage)), 15_000),
         )
         dismissPermissionDialogs()
+        ensureTargetAppForeground()
         assertTrue("Native cockpit did not render", waitForText("Session Initialization", 20_000))
+    }
+
+    private fun ensureTargetAppForeground() {
+        repeat(5) {
+            if (isTargetAppForeground()) {
+                Thread.sleep(500)
+                return
+            }
+            shell("am start -W -n $targetPackage/com.trustableai.koru.ui.MainActivity")
+            Thread.sleep(1_000)
+        }
+        assertTrue(
+            "Target app $targetPackage is not in foreground. Leave the phone on a flat surface with the screen untouched during E2E.",
+            isTargetAppForeground(),
+        )
+    }
+
+    private fun isTargetAppForeground(): Boolean {
+        val windowState = shell("dumpsys window displays")
+        return windowState.contains(targetPackage) &&
+            (windowState.contains("mCurrentFocus=Window") || windowState.contains("mFocusedApp=ActivityRecord"))
     }
 
     private fun prepareInteractiveDisplay() {
@@ -96,8 +118,6 @@ class SonomaTrainingE2ETest {
             "input keyevent KEYCODE_WAKEUP",
             "wm dismiss-keyguard",
             "cmd dreams stop-dreaming",
-            "input keyevent KEYCODE_BACK",
-            "input keyevent KEYCODE_HOME",
         ).forEach { shell(it) }
         Thread.sleep(750)
     }
@@ -128,6 +148,50 @@ class SonomaTrainingE2ETest {
         shell("appops set $runnerPackage mock_location allow")
     }
 
+
+    private fun longClickHoldStopSession(timeoutMs: Long = 10_000) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var target: UiObject2? = null
+        while (System.currentTimeMillis() < deadline && target == null) {
+            target = device.findObject(By.desc("Hold to stop session"))
+            if (target == null) {
+                Thread.sleep(250)
+            }
+        }
+        assertNotNull("Could not find hold-to-stop control", target)
+        val bounds = target!!.visibleBounds
+        val centerX = bounds.centerX()
+        val centerY = bounds.centerY()
+        // Compose hold-stop uses pointerInput; shell swipe duration maps to a real long-press.
+        shell("input swipe $centerX $centerY $centerX $centerY 1600")
+        Thread.sleep(750)
+        dismissPermissionDialogs()
+    }
+
+    private fun longClickText(text: String, timeoutMs: Long = 10_000) {
+        val node = waitForObject(text, timeoutMs)
+        assertNotNull("Could not find UI text '$text'", node)
+        longClickBestTarget(node!!)
+        Thread.sleep(350)
+        dismissPermissionDialogs()
+    }
+
+    private fun longClickBestTarget(node: UiObject2) {
+        var target: UiObject2? = node
+        while (target != null && !target.isClickable) {
+            target = target.parent
+        }
+        val clickTarget = target ?: node
+        val bounds = clickTarget.visibleBounds
+        device.swipe(
+            bounds.centerX(),
+            bounds.centerY(),
+            bounds.centerX(),
+            bounds.centerY(),
+            1_600,
+        )
+    }
+
     private fun clickText(text: String, timeoutMs: Long = 10_000) {
         val node = waitForObject(text, timeoutMs)
         assertNotNull("Could not find UI text '$text'", node)
@@ -151,6 +215,10 @@ class SonomaTrainingE2ETest {
     private fun waitForObject(text: String, timeoutMs: Long): UiObject2? {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
+            if (!isTargetAppForeground()) {
+                shell("am start -W -n $targetPackage/com.trustableai.koru.ui.MainActivity")
+                Thread.sleep(750)
+            }
             device.findObject(By.text(text))?.let { return it }
             device.findObject(By.textContains(text))?.let { return it }
             runCatching {

@@ -87,6 +87,60 @@ class KoruRealtimeEngineSafetyTest {
         assertTrue(decisions.isEmpty())
     }
 
+    @Test
+    fun `p0 brake is not re-fired within cooldown for same corner`() = runBlocking {
+        val engine = KoruRealtimeEngine(
+            track = TrackCatalog.sonomaRaceway,
+            phraseCatalog = FakePhraseRenderer,
+            reasonerProvider = { HangingReasoner },
+        )
+        val frame = TelemetryFrame(
+            timeSeconds = 12.0,
+            latitude = 38.16272,
+            longitude = -122.45500,
+            speedMph = 95.0,
+            throttle = 0.0,
+            brake = 0.0,
+            gLat = 0.0,
+            gLong = 0.0,
+            sourceMode = SessionMode.TELEMETRY,
+        )
+
+        val first = engine.processFrame(frame, nowMs = 10_000L)
+        val second = engine.processFrame(frame, nowMs = 12_000L)
+        val third = engine.processFrame(frame, nowMs = 15_000L)
+        engine.close()
+
+        assertEquals(CoachAction.BRAKE, first.singleOrNull()?.action)
+        assertTrue(second.isEmpty())
+        assertEquals(CoachAction.BRAKE, third.singleOrNull()?.action)
+    }
+
+    @Test
+    fun `contextual brake is suppressed below speed gate`() = runBlocking {
+        val engine = KoruRealtimeEngine(
+            track = TrackCatalog.sonomaRaceway,
+            phraseCatalog = FakePhraseRenderer,
+            reasonerProvider = { HangingReasoner },
+        )
+        val frame = TelemetryFrame(
+            timeSeconds = 12.0,
+            latitude = 38.16272,
+            longitude = -122.45500,
+            speedMph = 20.0,
+            throttle = 0.0,
+            brake = 0.0,
+            gLat = 0.0,
+            gLong = 0.0,
+            sourceMode = SessionMode.TELEMETRY,
+        )
+
+        val decisions = engine.processFrame(frame, nowMs = 10_000L)
+        engine.close()
+
+        assertTrue(decisions.none { it.action == CoachAction.BRAKE && it.priority == 0 })
+    }
+
     private object FakePhraseRenderer : PhraseRenderer {
         override fun phraseIdFor(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
             return "test/${action.name}"

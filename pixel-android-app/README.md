@@ -10,6 +10,8 @@ The current deployment target in this branch is Sonoma Raceway. The native track
 
 The Android field-test surface is now Jetpack Compose + Material 3. The first two modes run through the foreground-service telemetry pathway. The debug lane uses the activity-local camera-direct pathway.
 
+The live app does not host a WebView. `MainActivity` renders `KoruApp` with Jetpack Compose, and on-device EDGE inference runs through native Kotlin (`EdgeRuntimeManager` -> `LiteRtLmReasoner` -> MediaPipe `LlmInference`). Legacy React assets under `app/src/main/assets/web/` may still be synced by `npm run pixel:e2e:prepare`, but the live Android path does not load them.
+
 ## Model choice
 
 For the native Android backend in this repo, use a native LiteRT-LM artifact such as:

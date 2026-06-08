@@ -5,12 +5,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.trustableai.koru.model.CoachAction
@@ -59,9 +60,11 @@ class KoruAppComposeTest {
     @Test
     fun sessionSetupModeSourceAndAudioControlsRender() {
         composeRule.onNodeWithText("Session Initialization").assertIsDisplayed()
+        composeRule.onNodeWithTag("destination-paddock").assertIsDisplayed()
+        composeRule.onNodeWithTag("destination-diagnostics").assertIsDisplayed()
         composeRule.onNodeWithTag("option-mode-telemetry-+-camera").assertIsDisplayed()
         composeRule.onNodeWithTag("option-source-phone-imu-+-gps").assertIsDisplayed()
-        composeRule.onNodeWithTag("start-session").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("setup-start-session").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("option-source-synthetic").performScrollTo().performClick()
         composeRule.onNodeWithTag("option-mode-device-test").performScrollTo().performClick()
@@ -85,11 +88,20 @@ class KoruAppComposeTest {
     @Test
     fun startStopRendersActiveSessionState() {
         composeRule.onNodeWithTag("option-source-synthetic").performScrollTo().performClick()
-        composeRule.onNodeWithTag("start-session").performScrollTo().performClick()
+        composeRule.onNodeWithTag("setup-start-session").performScrollTo().performClick()
         composeRule.waitUntil(5_000L) {
-            composeRule.onAllNodesWithText("Stop Session").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("track-mode").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("stop-session").performScrollTo().performClick()
+        composeRule.onNodeWithTag("track-mode").assertIsDisplayed()
+        composeRule.onNodeWithTag("mute-session").assertIsDisplayed()
+        composeRule.onNodeWithTag("hold-stop-session").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("Diagnostics").fetchSemanticsNodes().isEmpty())
+
+        composeRule.onNodeWithTag("hold-stop-session").performTouchInput {
+            down(center)
+            advanceEventTime(1_600)
+            up()
+        }
         composeRule.waitUntil(5_000L) {
             composeRule.onAllNodesWithText("Start Session").fetchSemanticsNodes().isNotEmpty()
         }
@@ -98,6 +110,8 @@ class KoruAppComposeTest {
     @Test
     fun liveHudShowsPriorityDecisionAndSavedSessionStatus() {
         val nowMs = System.currentTimeMillis()
+        composeRule.onNodeWithText("Signal + text").performScrollTo().performClick()
+
         composeRule.runOnIdle {
             KoruSessionBus.tryEmitStatus(
                 LiveBackendStatus(
@@ -147,13 +161,41 @@ class KoruAppComposeTest {
         }
 
         composeRule.waitUntil(3_000L) {
+            composeRule.onAllNodesWithTag("track-mode").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("track-mode").assertIsDisplayed()
+        composeRule.waitUntil(3_000L) {
             composeRule.onAllNodesWithText("Brake now").fetchSemanticsNodes().isNotEmpty()
         }
-        assertTrue(composeRule.onAllNodesWithText("Brake now").fetchSemanticsNodes().isNotEmpty())
+        composeRule.onNodeWithText("Brake now").assertIsDisplayed()
         composeRule.onNodeWithText("P0 HOT BRAKE BRAKE_ZONE").assertIsDisplayed()
-        composeRule.onNodeWithTag("koru-list").performScrollToIndex(2)
-        composeRule.onNodeWithText("Saved Session").performScrollTo().assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            KoruSessionBus.tryEmitStatus(
+                LiveBackendStatus(
+                    backend = RuntimeBackend.DETERMINISTIC,
+                    state = LiveBackendState.IDLE,
+                    detail = "Android session idle",
+                    usesOnDeviceModel = false,
+                    supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
+                ),
+            )
+        }
+        composeRule.waitUntil(3_000L) {
+            composeRule.onAllNodesWithText("Saved Session").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Saved Session").assertIsDisplayed()
         composeRule.onNodeWithText("10 frames, 1 decisions, schema v2").assertIsDisplayed()
+    }
+
+    @Test
+    fun diagnosticsDestinationContainsHardwareAndModelHealth() {
+        composeRule.onNodeWithText("Diagnostics").performClick()
+
+        composeRule.onNodeWithTag("diagnostics-screen").assertIsDisplayed()
+        composeRule.onNodeWithText("Backend Status").assertIsDisplayed()
+        composeRule.onNodeWithText("Camera Lane").assertIsDisplayed()
+        composeRule.onNodeWithTag("edge-inference-metrics").assertIsDisplayed()
     }
 
     private class InteractiveDeviceRule : TestRule {

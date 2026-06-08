@@ -5,6 +5,7 @@ import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.RuntimeBackend
+import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.TelemetrySourceHealth
 import org.junit.Assert.assertEquals
@@ -13,6 +14,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LiveAudioPolicyTest {
+    @Test
+    fun `non priority zero timing profiles keep at least four seconds of silence`() {
+        SkillLevel.entries.forEach { skill ->
+            val profile = LiveAudioPolicy.timingProfile(skill)
+            assertTrue(profile.cooldownMs + profile.deliveryMs >= LiveAudioPolicy.NON_P0_SILENCE_WINDOW_MS)
+        }
+    }
+
     @Test
     fun `no live data suppresses even priority zero audio`() {
         val gate = LiveAudioPolicy.shouldSpeak(

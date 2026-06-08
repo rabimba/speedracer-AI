@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  koru-application:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: koru-application
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install monorepo dependencies
+        run: npm ci
+        working-directory: .
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+
+  streaming-telemetry-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: streaming-telemetry-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s . -p 'test_*.py'
+
+  pixel-android-app:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: pixel-android-app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests
+        env:
+          JAVA_HOME: /Applications/Android Studio.app/Contents/jbr/Contents/Home
+        run: ./gradlew testDebugUnitTest

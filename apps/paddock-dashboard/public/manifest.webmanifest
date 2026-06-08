@@ -1,0 +1,17 @@
+{
+  "name": "Trustable AI Paddock Command",
+  "short_name": "AI Paddock",
+  "description": "Offline paddock analysis and Learning Plan sync for Trustable AI Racing Coach.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080a0d",
+  "theme_color": "#080a0d",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

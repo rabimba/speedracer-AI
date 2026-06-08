@@ -37,6 +37,8 @@ class KoruRealtimeEngine(
     private var activeCoachId = "superaj"
     private var lastHotAction: CoachAction? = null
     private var lastFeedforwardCornerId: Int? = null
+    private var lastSafetyBrakeAtMs = 0L
+    private var lastSafetyBrakeCornerId: Int? = null
     private var currentPhase: CornerPhase = CornerPhase.STRAIGHT
     private var actionStamp = 1
 
@@ -104,7 +106,7 @@ class KoruRealtimeEngine(
                     timeSeconds = frame.timeSeconds,
                     cognitiveLoad = driverState.cognitiveLoad,
                 )
-            if ((action == lastHotAction && priority != 0) || suppress) {
+            if (shouldSuppressRepeatedHotAction(action, priority, nowMs, detection.corner?.id) || suppress) {
                 order += 1
                 return
             }
@@ -123,7 +125,7 @@ class KoruRealtimeEngine(
             order += 1
         }
 
-        contextualBrakeAction(frame, detection.phase, detection.corner)?.let(::considerHotAction)
+        contextualBrakeAction(frame, detection.phase, detection.corner, nowMs)?.let(::considerHotAction)
         DecisionMatrix.forEachAction(frame, ::considerHotAction)
 
         bestAction
@@ -139,6 +141,10 @@ class KoruRealtimeEngine(
                         nowMs = nowMs,
                     )
                 if (decision.priority == 0) {
+                    if (decision.action == CoachAction.BRAKE) {
+                        lastSafetyBrakeAtMs = nowMs
+                        lastSafetyBrakeCornerId = detection.corner?.id
+                    }
                     queue.enqueue(queue.preempt(decision), nowMs)
                 } else {
                     queue.enqueue(decision, nowMs)
@@ -247,8 +253,11 @@ class KoruRealtimeEngine(
         return fallbackStage == null ||
             fallbackStage == "full" ||
             fallbackStage == "racebox_only" ||
+            fallbackStage == "phone_only" ||
+            fallbackStage == "phone_obd_fusion" ||
             fallbackStage == "aim_can_full" ||
-            fallbackStage == "aim_can_racebox_motion"
+            fallbackStage == "aim_can_racebox_motion" ||
+            fallbackStage == "aim_can_phone_motion"
     }
 
     private fun shouldSuppressForTelemetryTrust(action: CoachAction, fallbackStage: String?): Boolean {
@@ -268,8 +277,11 @@ class KoruRealtimeEngine(
         frame: TelemetryFrame,
         phase: CornerPhase,
         corner: com.trustableai.koru.model.Corner?,
+        nowMs: Long,
     ): CoachAction? {
         if (phase != CornerPhase.BRAKE_ZONE) return null
+        if (frame.speedMph < MIN_CONTEXTUAL_BRAKE_SPEED_MPH) return null
+        if (isSafetyBrakeOnCooldown(nowMs, corner?.id)) return null
         val targetSpeed = corner?.targetSpeed ?: 60.0
         val tooFastForEntry = frame.speedMph >= targetSpeed + 25.0 || frame.speedMph >= 85.0
         val notActuallyBraking = frame.brake < 12.0 && frame.gLong > -0.25
@@ -278,6 +290,30 @@ class KoruRealtimeEngine(
         } else {
             null
         }
+    }
+
+    private fun shouldSuppressRepeatedHotAction(
+        action: CoachAction,
+        priority: Int,
+        nowMs: Long,
+        cornerId: Int?,
+    ): Boolean {
+        if (action != lastHotAction) return false
+        if (action == CoachAction.BRAKE && priority == 0) {
+            return isSafetyBrakeOnCooldown(nowMs, cornerId)
+        }
+        return priority != 0
+    }
+
+    private fun isSafetyBrakeOnCooldown(nowMs: Long, cornerId: Int?): Boolean {
+        if (nowMs - lastSafetyBrakeAtMs >= SAFETY_BRAKE_COOLDOWN_MS) return false
+        val lastCornerId = lastSafetyBrakeCornerId
+        return lastCornerId == null || lastCornerId == cornerId
+    }
+
+    companion object {
+        private const val MIN_CONTEXTUAL_BRAKE_SPEED_MPH = 25.0
+        private const val SAFETY_BRAKE_COOLDOWN_MS = 4000L
     }
 }
 

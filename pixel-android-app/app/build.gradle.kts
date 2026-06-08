@@ -16,6 +16,7 @@ android {
     versionName = "0.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    testInstrumentationRunnerArguments["timeout_msec"] = "900000"
 
     buildConfigField("String", "DEFAULT_MODEL_VERSION", "\"gemma-4-e2b-it\"")
     buildConfigField("String", "DEFAULT_MODEL_CHECKSUM", "\"ab7838cdfc8f77e54d8ca45eadceb20452d9f01e4bfade03e5dce27911b27e42\"")
@@ -67,7 +68,9 @@ dependencies {
   implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
   implementation("androidx.camera:camera-view:$cameraxVersion")
   implementation("androidx.compose.foundation:foundation")
+  implementation("androidx.compose.material:material-icons-extended")
   implementation("androidx.compose.material3:material3")
+  implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
   implementation("androidx.compose.ui:ui")
   implementation("androidx.compose.ui:ui-tooling-preview")
   implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

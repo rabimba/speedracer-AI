@@ -1,6 +1,7 @@
 package com.trustableai.koru.runtime
 
 import com.trustableai.koru.model.CoachingDecision
+import com.trustableai.koru.model.EdgeInferenceMetrics
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.LiveBackendState
@@ -30,6 +31,7 @@ object KoruSessionBus {
             supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
         ),
     )
+    private val edgeInferenceMetricsFlow = MutableStateFlow<EdgeInferenceMetrics?>(null)
 
     val telemetry: SharedFlow<TelemetryFrame> = telemetryFlow.asSharedFlow()
     val decisions: SharedFlow<CoachingDecision> = decisionFlow.asSharedFlow()
@@ -38,6 +40,7 @@ object KoruSessionBus {
     val decisionHistory: StateFlow<List<CoachingDecision>> = decisionHistoryFlow.asStateFlow()
     val latestSavedSession: StateFlow<RecordedSessionArtifact?> = latestSavedSessionFlow.asStateFlow()
     val status: StateFlow<LiveBackendStatus> = statusFlow.asStateFlow()
+    val edgeInferenceMetrics: StateFlow<EdgeInferenceMetrics?> = edgeInferenceMetricsFlow.asStateFlow()
 
     fun tryEmitFrame(frame: TelemetryFrame) {
         latestTelemetryFlow.value = frame
@@ -58,10 +61,15 @@ object KoruSessionBus {
         statusFlow.value = status
     }
 
+    fun tryEmitEdgeInferenceMetrics(metrics: EdgeInferenceMetrics) {
+        edgeInferenceMetricsFlow.value = metrics
+    }
+
     fun resetLiveState() {
         latestTelemetryFlow.value = null
         decisionHistoryFlow.value = emptyList()
         latestSavedSessionFlow.value = null
+        edgeInferenceMetricsFlow.value = null
     }
 
     private const val MAX_DECISION_HISTORY = 40

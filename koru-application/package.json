@@ -17,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@trustable/core-telemetry": "file:../packages/core-telemetry",
     "@google/genai": "^1.45.0",
     "@types/papaparse": "^5.5.2",
     "autoprefixer": "^10.4.27",

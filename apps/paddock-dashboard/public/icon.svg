@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Trustable AI">
+  <rect width="96" height="96" rx="18" fill="#080a0d"/>
+  <path d="M18 61c12-24 28-36 60-26" fill="none" stroke="#b6ff3d" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="28" cy="61" r="7" fill="#ff3b30"/>
+  <circle cx="68" cy="38" r="7" fill="#41d9ff"/>
+</svg>

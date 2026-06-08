@@ -20,6 +20,7 @@ data class TimingProfile(
 )
 
 object LiveAudioPolicy {
+    const val NON_P0_SILENCE_WINDOW_MS = 4000L
     private const val MIN_MOVING_SPEED_MPH = 18.0
     private const val MIN_FEEDFORWARD_SPEED_MPH = 25.0
     private const val MIN_EDGE_CONFIDENCE = 0.68
@@ -35,13 +36,13 @@ object LiveAudioPolicy {
                 )
             SkillLevel.INTERMEDIATE ->
                 TimingProfile(
-                    cooldownMs = 1500L,
+                    cooldownMs = NON_P0_SILENCE_WINDOW_MS - 1800L,
                     deliveryMs = 1800L,
                     blackoutPhases = setOf(CornerPhase.APEX),
                 )
             SkillLevel.ADVANCED ->
                 TimingProfile(
-                    cooldownMs = 650L,
+                    cooldownMs = NON_P0_SILENCE_WINDOW_MS - 1200L,
                     deliveryMs = 1200L,
                     blackoutPhases = emptySet(),
                 )

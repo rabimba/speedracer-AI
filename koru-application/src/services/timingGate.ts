@@ -7,7 +7,7 @@ export interface TimingGateConfig {
 }
 
 const DEFAULT_CONFIG: TimingGateConfig = {
-  cooldownMs: 1500,
+  cooldownMs: 2000,
   deliveryMs: 2000,
   blackoutPhases: ['MID_CORNER', 'APEX'],
 };

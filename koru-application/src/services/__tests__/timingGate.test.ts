@@ -50,8 +50,8 @@ describe('TimingGate', () => {
     expect(gate.getState()).toBe('COOLDOWN');
     expect(gate.canDeliver(3)).toBe(false);
 
-    // Advance past cooldown duration (default 1500ms -> total 3500ms since start)
-    vi.setSystemTime(4500);
+    // Advance past cooldown duration (default 2000ms -> total 4000ms since start)
+    vi.setSystemTime(5000);
     gate.update('STRAIGHT');
     expect(gate.getState()).toBe('OPEN');
   });

@@ -1,9 +1,11 @@
 package com.trustableai.koru.runtime.reasoner
 
 import android.content.Context
+import android.os.Process
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.EdgeReasoningWindow
@@ -12,8 +14,12 @@ import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ReasonerDecision
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.RuntimeAccelerator
+import com.trustableai.koru.runtime.EdgeInferenceMetricsTracker
+import com.trustableai.koru.runtime.KoruSessionBus
 import com.trustableai.koru.runtime.ModelAssetManager
 import com.trustableai.koru.runtime.PhraseCatalog
+import com.trustableai.koru.runtime.benchmark.LiteRtInferenceConfig
+import com.trustableai.koru.runtime.benchmark.LiteRtPromptFactory
 import org.json.JSONObject
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
@@ -29,6 +35,7 @@ class LiteRtLmReasoner(
 ) : OnDeviceReasoner {
     override val backend: RuntimeBackend = RuntimeBackend.LITERTLM
     private val tag = "KoruLiteRtReasoner"
+    private val inferenceConfig = LiteRtInferenceConfig.PRODUCTION
     private val inferenceLock = Any()
     private val executorLock = Any()
     private var llmInference: LlmInference? = null
@@ -69,13 +76,17 @@ class LiteRtLmReasoner(
                     val options =
                         LlmInference.LlmInferenceOptions.builder()
                             .setModelPath(installStatus.filePath)
-                            .setMaxTokens(MAX_RESPONSE_TOKENS)
-                            .setMaxTopK(32)
-                            .setPreferredBackend(LlmInference.Backend.GPU)
+                            .setMaxTokens(inferenceConfig.maxTokens)
+                            .setMaxTopK(inferenceConfig.maxTopK)
+                            .setPreferredBackend(inferenceConfig.backend)
                             .build()
-                    synchronized(inferenceLock) {
-                        llmInference?.close()
-                        llmInference = LlmInference.createFromOptions(context, options)
+                    val warmedInference =
+                        synchronized(inferenceLock) {
+                            llmInference?.close()
+                            LlmInference.createFromOptions(context, options).also { llmInference = it }
+                        }
+                    if (inferenceConfig.runWarmupPass) {
+                        runWarmupInference(warmedInference)
                     }
                 }
             } else {
@@ -116,8 +127,8 @@ class LiteRtLmReasoner(
         if (System.currentTimeMillis() < disabledUntilMs) return null
         if (!usable) return null
         val inference = synchronized(inferenceLock) { llmInference } ?: return null
-        val response = runBoundedInference(inference, promptFor(window), window.triggerId) ?: return null
-        return parseDecision(response, window)
+        val inferenceResult = runBoundedInference(inference, promptFor(window), window.triggerId) ?: return null
+        return parseDecision(inferenceResult.response, window)
     }
 
     override suspend fun close() {
@@ -135,26 +146,83 @@ class LiteRtLmReasoner(
         }
     }
 
+    private data class InferenceResult(
+        val response: String,
+        val outputTokens: Int,
+        val latencyMs: Long,
+    )
+
     private fun runBoundedInference(
         inference: LlmInference,
         prompt: String,
         triggerId: String,
-    ): String? {
+    ): InferenceResult? {
         val future =
             synchronized(executorLock) {
                 inferenceExecutor.submit(
                     Callable {
+                        if (inferenceConfig.urgentThreadPriority) {
+                            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY)
+                        }
                         val sessionOptions =
                             LlmInferenceSession.LlmInferenceSessionOptions.builder()
-                                .setTopK(8)
-                                .setTopP(0.80f)
-                                .setTemperature(0.15f)
+                                .setTopK(inferenceConfig.sessionTopK)
+                                .setTopP(inferenceConfig.sessionTopP)
+                                .setTemperature(inferenceConfig.sessionTemperature)
                                 .setRandomSeed(17)
                                 .build()
                         val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
                         try {
                             session.addQueryChunk(prompt)
-                            session.generateResponse()
+                            val startedAtNanos = System.nanoTime()
+                            val promptTokens = tokenCount(session, prompt)
+                            val responseFuture =
+                                session.generateResponseAsync(
+                                    ProgressListener { partialResult, done ->
+                                        val elapsedMs = elapsedMsSince(startedAtNanos)
+                                        val partialTokens = tokenCount(session, partialResult)
+                                        if (partialTokens > 0) {
+                                            KoruSessionBus.tryEmitEdgeInferenceMetrics(
+                                                EdgeInferenceMetricsTracker.build(
+                                                    backend = backend,
+                                                    triggerId = triggerId,
+                                                    outputTokens = partialTokens,
+                                                    latencyMs = elapsedMs,
+                                                    promptTokens = promptTokens,
+                                                ),
+                                            )
+                                        }
+                                        if (done) {
+                                            val outputTokens = tokenCount(session, partialResult)
+                                            KoruSessionBus.tryEmitEdgeInferenceMetrics(
+                                                EdgeInferenceMetricsTracker.build(
+                                                    backend = backend,
+                                                    triggerId = triggerId,
+                                                    outputTokens = outputTokens,
+                                                    latencyMs = elapsedMs,
+                                                    promptTokens = promptTokens,
+                                                ),
+                                            )
+                                        }
+                                    },
+                                )
+                            val response = responseFuture.get(MAX_INFERENCE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                            val latencyMs = elapsedMsSince(startedAtNanos)
+                            val outputTokens = tokenCount(session, response)
+                            KoruSessionBus.tryEmitEdgeInferenceMetrics(
+                                EdgeInferenceMetricsTracker.build(
+                                    backend = backend,
+                                    triggerId = triggerId,
+                                    outputTokens = outputTokens,
+                                    latencyMs = latencyMs,
+                                    promptTokens = promptTokens,
+                                ),
+                            )
+                            InferenceResult(
+                                response = response,
+                                outputTokens = outputTokens,
+                                latencyMs = latencyMs,
+                            )
                         } finally {
                             session.close()
                         }
@@ -172,6 +240,21 @@ class LiteRtLmReasoner(
             Log.w(tag, "LiteRT reasoner failed for $triggerId", error)
             null
         }
+    }
+
+    private fun tokenCount(session: LlmInferenceSession, text: String): Int {
+        if (text.isBlank()) return 0
+        return runCatching { session.sizeInTokens(text) }
+            .getOrDefault(estimateTokenCount(text))
+            .coerceAtLeast(0)
+    }
+
+    private fun estimateTokenCount(text: String): Int {
+        return (text.length / 4.0).toInt().coerceAtLeast(1)
+    }
+
+    private fun elapsedMsSince(startedAtNanos: Long): Long {
+        return ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(1L)
     }
 
     private fun retireAfterTimeout(inference: LlmInference, triggerId: String) {
@@ -211,18 +294,37 @@ class LiteRtLmReasoner(
     }
 
     private fun promptFor(window: EdgeReasoningWindow): String {
-        val features =
-            window.features.entries
-                .sortedBy { it.key }
-                .joinToString(",") { (key, value) -> "$key=${"%.2f".format(value)}" }
-        return """
-            You are Koru EDGE, a non-safety driving coach.
-            Return only JSON: {"speak":true,"action":"${window.actionHint.name}","priority":${window.priority},"text":"under 14 words","confidence":0.0}
-            Never output priority 0. P0 safety is handled by HOT.
-            Explain root cause over symptom when useful.
-            Trigger=${window.triggerId}; cause=${window.causeHint ?: "none"}; phase=${window.phase.name}; corner=${window.cornerName ?: "none"}; skill=${window.skillLevel.name}; features={$features}
-            Suggested=${window.suggestedText}
-        """.trimIndent()
+        return LiteRtPromptFactory.promptFor(window, inferenceConfig.promptStyle)
+    }
+
+    private fun runWarmupInference(inference: LlmInference) {
+        runCatching {
+            synchronized(executorLock) {
+                inferenceExecutor.submit(
+                    Callable {
+                        if (inferenceConfig.urgentThreadPriority) {
+                            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY)
+                        }
+                        val sessionOptions =
+                            LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                                .setTopK(inferenceConfig.sessionTopK)
+                                .setTopP(inferenceConfig.sessionTopP)
+                                .setTemperature(inferenceConfig.sessionTemperature)
+                                .setRandomSeed(17)
+                                .build()
+                        val session = LlmInferenceSession.createFromOptions(inference, sessionOptions)
+                        try {
+                            session.addQueryChunk("{\"speak\":false,\"action\":\"MAINTAIN\",\"priority\":1,\"text\":\"warmup\",\"confidence\":0.0}")
+                            session.generateResponseAsync().get(WARMUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                        } finally {
+                            session.close()
+                        }
+                    },
+                ).get(WARMUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            }
+        }.onFailure { error ->
+            Log.w(tag, "LiteRT warmup pass failed; continuing with cold engine", error)
+        }
     }
 
     private fun parseDecision(response: String, window: EdgeReasoningWindow): ReasonerDecision {
@@ -262,9 +364,9 @@ class LiteRtLmReasoner(
     }
 
     companion object {
-        private const val MAX_RESPONSE_TOKENS = 48
         private const val MAX_TEXT_CHARS = 120
         private const val MAX_INFERENCE_TIMEOUT_MS = 650L
+        private const val WARMUP_TIMEOUT_MS = 15_000L
         private const val TIMEOUT_BACKOFF_MS = 30_000L
     }
 }

@@ -3,6 +3,8 @@ package com.trustableai.koru.audio
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -25,6 +27,7 @@ class CoachAudioDispatcher internal constructor(
     private val pendingSpeech = mutableMapOf<String, PendingSpeech>()
     @Volatile private var currentPriority = Int.MAX_VALUE
     @Volatile private var currentUtteranceId: String? = null
+    @Volatile private var lastP0Action: CoachAction? = null
 
     init {
         speechEngine.setCallbacks(
@@ -67,10 +70,26 @@ class CoachAudioDispatcher internal constructor(
         }
 
         if (priority == 0) {
+            if (isPlaybackActive() && action == lastP0Action) {
+                onAudioEvent(
+                    event(
+                        decisionId = decisionId,
+                        utteranceId = utteranceId,
+                        action = action,
+                        priority = priority,
+                        requestedAtMs = requestedAtMs,
+                        status = AudioDispatchStatus.BUSY,
+                        fallbackReason = "p0_repeat_while_playing",
+                    ),
+                )
+                return
+            }
             speechEngine.stop()
+            clipPlayer.stopClip()
             resetSpeechState()
             val clipName = safetyClipName(action, text)
             if (clipPlayer.playClip(clipName)) {
+                lastP0Action = action
                 val dispatchEvent =
                     event(
                         decisionId = decisionId,
@@ -95,6 +114,21 @@ class CoachAudioDispatcher internal constructor(
                 fallbackReason = "clip_unavailable:$clipName",
                 forceFlush = true,
                 onAudioEvent = onAudioEvent,
+            )
+            return
+        }
+
+        if (isPlaybackActive()) {
+            onAudioEvent(
+                event(
+                    decisionId = decisionId,
+                    utteranceId = utteranceId,
+                    action = action,
+                    priority = priority,
+                    requestedAtMs = requestedAtMs,
+                    status = AudioDispatchStatus.BUSY,
+                    fallbackReason = "playback_active",
+                ),
             )
             return
         }
@@ -210,8 +244,11 @@ class CoachAudioDispatcher internal constructor(
     private fun resetSpeechState() {
         currentPriority = Int.MAX_VALUE
         currentUtteranceId = null
+        lastP0Action = null
         pendingSpeech.clear()
     }
+
+    private fun isPlaybackActive(): Boolean = clipPlayer.isPlaying || speechEngine.isSpeaking
 
     private fun event(
         decisionId: String,
@@ -259,7 +296,11 @@ class CoachAudioDispatcher internal constructor(
 }
 
 internal interface SafetyClipPlayer {
+    val isPlaying: Boolean
+
     fun playClip(resourceName: String): Boolean
+
+    fun stopClip()
 
     fun shutdown()
 }
@@ -279,9 +320,14 @@ internal interface CoachSpeechEngine {
 
 private class AndroidSafetyClipPlayer(context: Context) : SafetyClipPlayer {
     private val appContext = context.applicationContext
+    private val handler = Handler(Looper.getMainLooper())
+    @Volatile private var activeStreamId = 0
+    private var clearPlayingRunnable: Runnable? = null
+    override val isPlaying: Boolean
+        get() = activeStreamId != 0
     private val soundPool =
         SoundPool.Builder()
-            .setMaxStreams(2)
+            .setMaxStreams(1)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
@@ -303,11 +349,28 @@ private class AndroidSafetyClipPlayer(context: Context) : SafetyClipPlayer {
     override fun playClip(resourceName: String): Boolean {
         val soundId = safetyClipIds[resourceName]
         if (soundId == null || soundId !in loadedSoundIds) return false
-        soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
+        stopClip()
+        val streamId = soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
+        if (streamId == 0) return false
+        activeStreamId = streamId
+        clearPlayingRunnable?.let { handler.removeCallbacks(it) }
+        val clearRunnable = Runnable { activeStreamId = 0 }
+        clearPlayingRunnable = clearRunnable
+        handler.postDelayed(clearRunnable, CLIP_PLAYBACK_MS)
         return true
     }
 
+    override fun stopClip() {
+        clearPlayingRunnable?.let { handler.removeCallbacks(it) }
+        clearPlayingRunnable = null
+        if (activeStreamId != 0) {
+            soundPool.stop(activeStreamId)
+            activeStreamId = 0
+        }
+    }
+
     override fun shutdown() {
+        stopClip()
         soundPool.release()
     }
 
@@ -315,6 +378,10 @@ private class AndroidSafetyClipPlayer(context: Context) : SafetyClipPlayer {
         val resourceId = appContext.resources.getIdentifier(resourceName, "raw", appContext.packageName)
         if (resourceId == 0) return
         safetyClipIds[resourceName] = soundPool.load(appContext, resourceId, 1)
+    }
+
+    companion object {
+        private const val CLIP_PLAYBACK_MS = 1800L
     }
 }
 

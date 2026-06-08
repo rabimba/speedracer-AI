@@ -1,10 +1,21 @@
 .DS_Store
 
+node_modules/
+.turbo/
+apps/*/dist/
+apps/*/.turbo/
+packages/*/dist/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+streaming-telemetry-server/venv/
+
 # IDE caches
 .idea/caches/
 
 # Android local build state
 pixel-android-app/.gradle/
+pixel-android-app/.kotlin/
 pixel-android-app/build/
 pixel-android-app/app/build/
 *.apk

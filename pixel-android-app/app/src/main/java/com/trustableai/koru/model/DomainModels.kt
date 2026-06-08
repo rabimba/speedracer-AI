@@ -314,6 +314,7 @@ enum class AudioDispatchStatus {
     TTS_STARTED,
     TTS_UNAVAILABLE,
     DISABLED,
+    BUSY,
 }
 
 data class AudioDispatchEvent(
@@ -337,6 +338,16 @@ data class LiveBackendStatus(
     val usesOnDeviceModel: Boolean,
     val supportedPaths: List<CoachingPath>,
     val accelerator: RuntimeAccelerator = RuntimeAccelerator.NONE,
+)
+
+data class EdgeInferenceMetrics(
+    val backend: RuntimeBackend,
+    val triggerId: String? = null,
+    val outputTokens: Int = 0,
+    val promptTokens: Int? = null,
+    val latencyMs: Long = 0,
+    val tokensPerSecond: Double = 0.0,
+    val measuredAtMs: Long = System.currentTimeMillis(),
 )
 
 data class RecordedSessionSummary(

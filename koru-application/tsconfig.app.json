@@ -23,7 +23,11 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    "paths": {
+      "@trustable/core-telemetry": ["../packages/core-telemetry/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

@@ -1,12 +1,14 @@
 package com.trustableai.koru.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.CoachingPath
+import com.trustableai.koru.model.EdgeInferenceMetrics
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ObdTransportPreference
@@ -18,7 +20,11 @@ import com.trustableai.koru.model.SessionGoalSource
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.TelemetrySourceKind
+import com.trustableai.koru.model.TrackHudMode
+import com.trustableai.koru.model.bridgeValue
+import com.trustableai.koru.model.trackHudModeFromBridge
 import com.trustableai.koru.runtime.CameraDirectSessionController
+import com.trustableai.koru.runtime.CoachRecommender
 import com.trustableai.koru.runtime.KoruSessionBus
 import com.trustableai.koru.runtime.LiveSessionConfig
 import com.trustableai.koru.runtime.TrackCatalog
@@ -63,6 +69,8 @@ data class SessionUiState(
     val customGoalDescription: String = "",
     val cameraStatus: String = "Camera lane waiting for permission",
     val activeSessionMode: SessionMode? = null,
+    val edgeInferenceMetrics: EdgeInferenceMetrics? = null,
+    val trackHudMode: TrackHudMode = TrackHudMode.SIGNAL_ONLY,
 ) {
     val isSessionActive: Boolean
         get() = activeSessionMode != null ||
@@ -74,7 +82,12 @@ data class SessionUiState(
 class LiveSessionViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private val cameraDirectController = CameraDirectSessionController(appContext)
-    private val _uiState = MutableStateFlow(SessionUiState())
+    private val preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val _uiState = MutableStateFlow(
+        SessionUiState(
+            trackHudMode = trackHudModeFromBridge(preferences.getString(KEY_TRACK_HUD_MODE, null)),
+        ),
+    )
     val uiState: StateFlow<SessionUiState> = _uiState.asStateFlow()
 
     val coachOptions = listOf(
@@ -156,6 +169,11 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             KoruSessionBus.latestSavedSession.collect { session ->
                 _uiState.update { it.copy(savedSession = session) }
+            }
+        }
+        viewModelScope.launch {
+            KoruSessionBus.edgeInferenceMetrics.collect { metrics ->
+                _uiState.update { it.copy(edgeInferenceMetrics = metrics) }
             }
         }
     }
@@ -262,6 +280,15 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
 
     fun sessionGoals(): List<SessionGoal> = sessionGoals(_uiState.value)
 
+    fun recommendedCoachId(): String =
+        CoachRecommender.recommendCoachId(sessionGoals(), _uiState.value.sessionMode)
+
+    fun setTrackHudMode(mode: TrackHudMode) {
+        if (_uiState.value.isSessionActive) return
+        _uiState.update { it.copy(trackHudMode = mode) }
+        preferences.edit().putString(KEY_TRACK_HUD_MODE, mode.bridgeValue()).apply()
+    }
+
     override fun onCleared() {
         cameraDirectController.shutdown()
         super.onCleared()
@@ -285,5 +312,10 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
                 )
             }
             .take(3)
+    }
+
+    private companion object {
+        const val PREFS_NAME = "koru_session_prefs"
+        const val KEY_TRACK_HUD_MODE = "track_hud_mode"
     }
 }

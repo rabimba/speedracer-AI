@@ -60,12 +60,81 @@ class CoachAudioDispatcherTest {
         assertTrue((events.last().ttsStartLatencyMs ?: Long.MAX_VALUE) < 100L)
     }
 
-    private class FakeClipPlayer(private val playable: Boolean) : SafetyClipPlayer {
+    @Test
+    fun `second p0 cue during active playback is suppressed`() {
+        val clipPlayer = FakeClipPlayer(playable = true, staysPlaying = true)
+        val speechEngine = FakeSpeechEngine(initialized = true)
+        val dispatcher = CoachAudioDispatcher(clipPlayer, speechEngine)
+        val events = mutableListOf<AudioDispatchEvent>()
+
+        dispatcher.speak(
+            text = "Brake now",
+            utteranceId = "hot-1",
+            priority = 0,
+            action = CoachAction.BRAKE,
+            decisionId = "decision-1",
+            onAudioEvent = events::add,
+        )
+        dispatcher.speak(
+            text = "Brake now",
+            utteranceId = "hot-2",
+            priority = 0,
+            action = CoachAction.BRAKE,
+            decisionId = "decision-2",
+            onAudioEvent = events::add,
+        )
+
+        assertEquals(1, clipPlayer.playedClips.size)
+        assertEquals(AudioDispatchStatus.CLIP_STARTED, events.first().status)
+        assertEquals(AudioDispatchStatus.BUSY, events.last().status)
+        assertEquals("p0_repeat_while_playing", events.last().fallbackReason)
+    }
+
+    @Test
+    fun `non p0 cue during active playback is suppressed`() {
+        val clipPlayer = FakeClipPlayer(playable = true, staysPlaying = true)
+        val speechEngine = FakeSpeechEngine(initialized = true)
+        val dispatcher = CoachAudioDispatcher(clipPlayer, speechEngine)
+        val events = mutableListOf<AudioDispatchEvent>()
+
+        dispatcher.speak(
+            text = "Brake now",
+            utteranceId = "hot-1",
+            priority = 0,
+            action = CoachAction.BRAKE,
+            decisionId = "decision-1",
+            onAudioEvent = events::add,
+        )
+        dispatcher.speak(
+            text = "Commit harder",
+            utteranceId = "hot-2",
+            priority = 2,
+            action = CoachAction.COMMIT,
+            decisionId = "decision-2",
+            onAudioEvent = events::add,
+        )
+
+        assertFalse(speechEngine.speakCalled)
+        assertEquals(AudioDispatchStatus.BUSY, events.last().status)
+        assertEquals("playback_active", events.last().fallbackReason)
+    }
+
+    private class FakeClipPlayer(
+        private val playable: Boolean,
+        private val staysPlaying: Boolean = false,
+    ) : SafetyClipPlayer {
         val playedClips = mutableListOf<String>()
+        override var isPlaying: Boolean = false
+            private set
 
         override fun playClip(resourceName: String): Boolean {
             playedClips += resourceName
+            isPlaying = staysPlaying
             return playable
+        }
+
+        override fun stopClip() {
+            isPlaying = false
         }
 
         override fun shutdown() = Unit
