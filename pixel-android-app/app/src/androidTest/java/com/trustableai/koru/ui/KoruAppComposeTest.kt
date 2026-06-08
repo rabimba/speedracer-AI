@@ -59,9 +59,9 @@ class KoruAppComposeTest {
 
     @Test
     fun sessionSetupModeSourceAndAudioControlsRender() {
-        composeRule.onNodeWithText("Session Initialization").assertIsDisplayed()
-        composeRule.onNodeWithTag("destination-paddock").assertIsDisplayed()
-        composeRule.onNodeWithTag("destination-diagnostics").assertIsDisplayed()
+        waitForSetupScreen()
+        composeRule.onNodeWithText("Paddock").assertIsDisplayed()
+        composeRule.onNodeWithText("Diagnostics").assertIsDisplayed()
         composeRule.onNodeWithTag("option-mode-telemetry-+-camera").assertIsDisplayed()
         composeRule.onNodeWithTag("option-source-phone-imu-+-gps").assertIsDisplayed()
         composeRule.onNodeWithTag("setup-start-session").performScrollTo().assertIsDisplayed()
@@ -77,16 +77,18 @@ class KoruAppComposeTest {
 
     @Test
     fun goalSelectorEnforcesMaximumThreeGoals() {
-        composeRule.onNodeWithTag("goal-braking").performClick()
-        composeRule.onNodeWithTag("goal-throttle").performClick()
-        composeRule.onNodeWithTag("goal-vision").performClick()
-        composeRule.onNodeWithTag("goal-lines").performClick()
+        waitForSetupScreen()
+        composeRule.onNodeWithTag("goal-braking").performScrollTo().performClick()
+        composeRule.onNodeWithTag("goal-throttle").performScrollTo().performClick()
+        composeRule.onNodeWithTag("goal-vision").performScrollTo().performClick()
+        composeRule.onNodeWithTag("goal-lines").performScrollTo().performClick()
 
         composeRule.onNodeWithText("3/3 goals").assertIsDisplayed()
     }
 
     @Test
     fun startStopRendersActiveSessionState() {
+        waitForSetupScreen()
         composeRule.onNodeWithTag("option-source-synthetic").performScrollTo().performClick()
         composeRule.onNodeWithTag("setup-start-session").performScrollTo().performClick()
         composeRule.waitUntil(5_000L) {
@@ -109,6 +111,7 @@ class KoruAppComposeTest {
 
     @Test
     fun liveHudShowsPriorityDecisionAndSavedSessionStatus() {
+        waitForSetupScreen()
         val nowMs = System.currentTimeMillis()
         composeRule.onNodeWithText("Signal + text").performScrollTo().performClick()
 
@@ -190,12 +193,21 @@ class KoruAppComposeTest {
 
     @Test
     fun diagnosticsDestinationContainsHardwareAndModelHealth() {
+        waitForSetupScreen()
         composeRule.onNodeWithText("Diagnostics").performClick()
 
         composeRule.onNodeWithTag("diagnostics-screen").assertIsDisplayed()
         composeRule.onNodeWithText("Backend Status").assertIsDisplayed()
-        composeRule.onNodeWithText("Camera Lane").assertIsDisplayed()
+        composeRule.onNodeWithText("Accelerator Comparison").assertIsDisplayed()
+        composeRule.onNodeWithText("Camera Lane").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("edge-inference-metrics").assertIsDisplayed()
+    }
+
+    private fun waitForSetupScreen() {
+        composeRule.waitUntil(5_000L) {
+            composeRule.onAllNodesWithText("Session Initialization").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Session Initialization").assertIsDisplayed()
     }
 
     private class InteractiveDeviceRule : TestRule {

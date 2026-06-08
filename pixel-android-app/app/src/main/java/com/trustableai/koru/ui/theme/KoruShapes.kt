@@ -6,18 +6,18 @@ import androidx.compose.ui.unit.dp
 
 val KoruShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(12.dp),
+    extraLarge = RoundedCornerShape(16.dp),
 )
 
 object KoruDimens {
     val ScreenPadding = 24.dp
     val SectionSpacing = 16.dp
     val CardPadding = 20.dp
-    val ChipRadius = 12.dp
-    val CardRadius = 16.dp
+    val ChipRadius = 8.dp
+    val CardRadius = 8.dp
     val PillRadius = 999.dp
     val MinTouchTarget = 56.dp
 }

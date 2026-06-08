@@ -10,7 +10,8 @@
   "scripts": {
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "artifacts:pixel:capture": "node scripts/capture-pixel-demo-artifacts.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.4"

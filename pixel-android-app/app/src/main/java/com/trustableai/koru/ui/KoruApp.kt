@@ -84,6 +84,8 @@ import com.trustableai.koru.model.EdgeInferenceMetrics
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ObdTransportPreference
+import com.trustableai.koru.model.RuntimeAccelerator
+import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionGoalFocus
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
@@ -457,6 +459,7 @@ private fun DiagnosticsScreen(
             meta = state.backendStatus.backend.name.lowercase(Locale.US),
         )
         BackendDetailPanel(state)
+        AcceleratorReadinessPanel(state.backendStatus)
         AimCanTestPanel(state)
         CameraPanel(
             cameraStatus = state.cameraStatus,
@@ -542,25 +545,41 @@ private fun ScreenHeader(
     title: String,
     meta: String,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .koruCardBorder(RoundedCornerShape(KoruDimens.CardRadius)),
+        shape = RoundedCornerShape(KoruDimens.CardRadius),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = eyebrow.uppercase(Locale.US),
-                style = MaterialTheme.typography.labelMedium,
+        Row(
+            modifier = Modifier.padding(KoruDimens.CardPadding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(52.dp),
+                shape = RoundedCornerShape(KoruDimens.PillRadius),
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
+                content = {},
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = eyebrow.uppercase(Locale.US),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            StatusPill(meta, MaterialTheme.colorScheme.onSurfaceVariant, Icons.Filled.Info)
         }
-        StatusPill(meta, MaterialTheme.colorScheme.onSurfaceVariant, Icons.Filled.Info)
     }
 }
 
@@ -661,9 +680,17 @@ private fun MetricTile(
                     text = label.uppercase(Locale.US),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1010,15 +1037,121 @@ private fun BackendDetailPanel(state: SessionUiState) {
         tag = "backend-status-panel",
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricTile("Backend", state.backendStatus.backend.name.lowercase(Locale.US), Modifier.weight(1f))
+            MetricTile("Backend", backendDisplayName(state.backendStatus.backend), Modifier.weight(1f))
             MetricTile("Model", state.backendStatus.model ?: "--", Modifier.weight(1f))
-            MetricTile("Accelerator", state.backendStatus.accelerator.name.lowercase(Locale.US), Modifier.weight(1f))
+            MetricTile("Accelerator", acceleratorDisplayName(state.backendStatus.accelerator), Modifier.weight(1f))
         }
         Text(
             text = state.backendStatus.detail,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+private fun backendDisplayName(backend: RuntimeBackend): String =
+    when (backend) {
+        RuntimeBackend.BROWSER -> "browser"
+        RuntimeBackend.AICORE -> "AICore"
+        RuntimeBackend.LITERTLM -> "LiteRT"
+        RuntimeBackend.DETERMINISTIC -> "fallback"
+    }
+
+private fun acceleratorDisplayName(accelerator: RuntimeAccelerator): String =
+    when (accelerator) {
+        RuntimeAccelerator.NONE -> "none"
+        RuntimeAccelerator.MEDIAPIPE_LITERT -> "LiteRT"
+        RuntimeAccelerator.AICORE -> "AICore"
+        RuntimeAccelerator.UNKNOWN -> "unknown"
+    }
+
+@Composable
+private fun AcceleratorReadinessPanel(backendStatus: LiveBackendStatus) {
+    WorkSurface(
+        title = "Accelerator Comparison",
+        meta = "CPU / GPU / NPU",
+        tag = "accelerator-comparison-panel",
+    ) {
+        AcceleratorStatusRow(
+            label = "CPU",
+            status = "Fallback ready",
+            detail = "Deterministic HOT/P0 path remains available even when model token generation is blocked.",
+            color = KoruPalette.SignalReady,
+            icon = Icons.Filled.Speed,
+        )
+        AcceleratorStatusRow(
+            label = "GPU",
+            status = when {
+                backendStatus.backend == RuntimeBackend.LITERTLM && backendStatus.state == LiveBackendState.READY -> "Token lane ready"
+                backendStatus.detail.contains("unsupported", ignoreCase = true) -> "Model blocked"
+                else -> "Probe required"
+            },
+            detail = when {
+                backendStatus.backend == RuntimeBackend.LITERTLM && backendStatus.state == LiveBackendState.READY ->
+                    "MediaPipe LiteRT is serving EDGE token generation."
+                backendStatus.detail.contains("unsupported", ignoreCase = true) ->
+                    "Current LiteRT-LM artifact is rejected before native MediaPipe startup."
+                else ->
+                    "Run the accelerator comparison test with a compatible model staged on device."
+            },
+            color = if (backendStatus.backend == RuntimeBackend.LITERTLM && backendStatus.state == LiveBackendState.READY) {
+                KoruPalette.SignalReady
+            } else {
+                KoruPalette.SignalAdvisory
+            },
+            icon = Icons.Filled.GraphicEq,
+        )
+        AcceleratorStatusRow(
+            label = "NPU",
+            status = if (backendStatus.backend == RuntimeBackend.AICORE) "AICore detected" else "Status only",
+            detail = if (backendStatus.backend == RuntimeBackend.AICORE) {
+                "AICore SDK is present, but token-speed benchmarking still needs Prompt API integration."
+            } else {
+                "This build records AICore availability; it does not expose NPU token generation yet."
+            },
+            color = if (backendStatus.backend == RuntimeBackend.AICORE) KoruPalette.SignalReady else KoruPalette.SignalNeutral,
+            icon = Icons.Filled.Sensors,
+        )
+    }
+}
+
+@Composable
+private fun AcceleratorStatusRow(
+    label: String,
+    status: String,
+    detail: String,
+    color: Color,
+    icon: ImageVector,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(KoruDimens.ChipRadius))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(shape = CircleShape, color = color.copy(alpha = 0.16f), contentColor = color) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(8.dp)
+                    .size(18.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                StatusPill(status, color)
+            }
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

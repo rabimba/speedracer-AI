@@ -1,0 +1,48 @@
+{
+  "deviceModel": "Google Pixel 10 (API 36)",
+  "generatedAtMs": 1780937546052,
+  "modelPath": "\/data\/local\/tmp\/koru\/models\/gemma-4-e2b-it\/gemma-4-E2B-it.litertlm",
+  "modelReadyForNativeAndroid": false,
+  "note": "GPU and CPU use MediaPipe LlmInference token generation. NPU is reported as AICore status because this build scaffolds AICore and does not expose a token-generation API.",
+  "accelerators": [
+    {
+      "accelerator": "GPU",
+      "backend": "MEDIAPIPE_LITERT",
+      "measurementType": "token_generation",
+      "strategy": "gpu_token_generation",
+      "medianTokensPerSecond": 0,
+      "p95TokensPerSecond": 0,
+      "medianTtftMs": 0,
+      "p95TtftMs": 0,
+      "medianLatencyMs": 0,
+      "error": "Model not ready at \/data\/local\/tmp\/koru\/models\/gemma-4-e2b-it\/gemma-4-E2B-it.litertlm",
+      "runs": []
+    },
+    {
+      "accelerator": "CPU",
+      "backend": "MEDIAPIPE_LITERT",
+      "measurementType": "token_generation",
+      "strategy": "cpu_token_generation",
+      "medianTokensPerSecond": 0,
+      "p95TokensPerSecond": 0,
+      "medianTtftMs": 0,
+      "p95TtftMs": 0,
+      "medianLatencyMs": 0,
+      "error": "Model not ready at \/data\/local\/tmp\/koru\/models\/gemma-4-e2b-it\/gemma-4-E2B-it.litertlm",
+      "runs": []
+    },
+    {
+      "accelerator": "NPU",
+      "backend": "AICORE",
+      "measurementType": "status_only",
+      "medianTokensPerSecond": null,
+      "p95TokensPerSecond": null,
+      "medianTtftMs": null,
+      "medianLatencyMs": null,
+      "state": "UNAVAILABLE",
+      "detail": "AICore SDK not detected in the current build\/runtime.",
+      "error": "AICore token-generation benchmark is not implemented in this build.",
+      "acceleratorRuntime": "NONE"
+    }
+  ]
+}

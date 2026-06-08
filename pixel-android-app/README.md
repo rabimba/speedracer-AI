@@ -18,6 +18,8 @@ For the native Android backend in this repo, use a native LiteRT-LM artifact suc
 
 - `https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm`
 
+Current Pixel 10 validation note, 2026-06-08: the staged `gemma-4-E2B-it.litertlm` file checksum-verifies, but the bundled MediaPipe `tasks-genai:0.10.27` runtime rejects its `tf_lite_audio_adapter` model type during native startup. Keep the model guard enabled and treat that artifact as not validated for native Android token generation until a compatible text-only LiteRT-LM artifact or runtime update is used.
+
 Do not use:
 
 - `gemma-4-E2B-it-web.task`
@@ -121,6 +123,24 @@ cd /Users/rkaranjai/Documents/trustable-ai-codelab/pixel-android-app
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest assembleDebug connectedDebugAndroidTest
 adb logcat -c
 adb logcat -v time | rg "KoruTelemetryService|KoruAudioDispatcher|AndroidRuntime|FATAL|ANR|FGS"
+```
+
+To write a CPU/GPU/NPU accelerator comparison artifact without bypassing the model guard:
+
+```bash
+cd /Users/rkaranjai/Documents/trustable-ai-codelab/pixel-android-app
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.trustableai.koru.runtime.benchmark.AcceleratorComparisonInstrumentedTest#compareCpuGpuNpuTokenGenerationSpeed \
+  -Pandroid.testInstrumentationRunnerArguments.runsPerStrategy=1
+adb pull /sdcard/Download/koru-accelerator-comparison-report.json \
+  /Users/rkaranjai/Documents/trustable-ai-codelab/submission-artifacts/benchmarks/accelerator-comparison-report.json
+```
+
+To capture submission screenshots and a short interaction video from an unlocked Pixel:
+
+```bash
+cd /Users/rkaranjai/Documents/trustable-ai-codelab
+npm run artifacts:pixel:capture
 ```
 
 During a running `Telemetry + Camera Fusion` session, `dumpsys` should show the foreground service:
