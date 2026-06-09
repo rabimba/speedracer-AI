@@ -1,0 +1,89 @@
+<!-- ============================================================
+  RACECRAFT BLOG — POST 4 of 5  ·  "Putting Gemma in the Cockpit"
+  PUBLISH: New post → HTML view (<>) → paste between BEGIN/END markers.
+  Labels: gemma4, edge, android, LLM, Machine Learning, story
+  The benchmark figure shows REAL measured numbers from a Pixel 10 run
+  (2026-06-08): GPU 10.3, CPU 6.9, NPU 14.3 median tok/s. Regenerate via
+  ./submission-artifacts/benchmarks/run_device_benchmark.sh if you re-run.
+============================================================ -->
+<!-- ===== BEGIN BLOGGER PASTE ===== -->
+<div style="max-width:760px;margin:0 auto;font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;color:#1a1a1a;">
+
+  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#00a06a;font-family:Inter,Arial,sans-serif;font-weight:700;margin:0 0 6px;">Racecraft · Part 4 of 5</p>
+  <h1 style="font-size:34px;line-height:1.2;margin:0 0 8px;">Putting Gemma in the Cockpit</h1>
+  <p style="font-style:italic;color:#666;margin:0 0 28px;">On-device Gemma 4 E2B, LiteRT-LM, and a week lost to a single tensor named <code>tf_lite_audio_adapter</code> — followed by the afternoon the Neural Processing Unit finally beat everything else on the phone.</p>
+
+  <p>By Part 3 the architecture had a slow, smart lane fully decoupled from the fast, dumb one. That decoupling was the permission slip for the most ambitious idea in the project: <strong>run a real language model on the phone.</strong> No cloud, no round-trip, no dependency on a cell signal at a track in the hills — just a 2.3-billion-parameter model reasoning about your driving from the passenger seat, literally.</p>
+
+  <p>The model is <strong>Gemma 4 E2B</strong> — the "2B-effective" variant that punches far above its active-parameter count and is small enough to live on a Pixel. The plan: package it as a <code>.litertlm</code> artifact and run it through the on-device <strong>LiteRT-LM</strong> runtime for the EDGE lane's tactical enrichment, reserving the cloud Gemini call strictly for big-picture strategy. On-device for what should be private and fast; cloud only for what can afford a round trip.</p>
+
+  <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">Because of that: the native rewrite</h2>
+  <p>The earliest builds were a hybrid — a WebView wrapping a web app. Fine for a demo, wrong for a field tool. To actually own the camera, foreground services, local audio, telemetry fusion, and model lifecycle, the app went fully native: <strong>Kotlin + Jetpack Compose + Material 3</strong>, with a clean reactive flow (<code>Compose UI → LiveSessionViewModel → KoruSessionBus StateFlow</code>). Killing the WebView removed a class of serialization and state-sync bugs and put the hot path right next to the Android sensors.</p>
+
+  <p>I built the benchmark harness to want real numbers, not vibes: a warmup pass to discount cold-start, time-to-first-token captured off the streaming callback, and median/p95 tokens-per-second and latency across runs, per accelerator. Then I went to load the model. And the model said no.</p>
+
+  <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">Until one day: a single rejected tensor</h2>
+  <p>The native runtime refused to load the Gemma 4 E2B <code>.litertlm</code> for token generation, because it <strong>rejects an operation called <code>tf_lite_audio_adapter</code></strong> baked into that artifact's graph. The export I had was multimodal, carrying audio-adapter machinery the text-generation runtime won't accept. So <code>modelReadyForNativeAndroid</code> stayed stubbornly <code>false</code>, and the harness did exactly what I designed it to do: it refused to report a number it couldn't honestly measure. For a while, every lane in the chart was a dashed "PENDING" box — a measured absence, not a fake bar.</p>
+
+  <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">Because of that: a text-only export and a Tensor-shaped key</h2>
+  <p>Unblocking it took three specific moves, and the NPU needed all three:</p>
+  <ul>
+    <li><strong>A text-only re-export.</strong> Re-exporting Gemma 4 E2B without the audio adapter produced a graph the runtime accepts. <code>modelReadyForNativeAndroid</code> flipped to <code>true</code> and the GPU and CPU lanes lit up immediately.</li>
+    <li><strong>A Tensor-specific artifact for the NPU.</strong> The NPU doesn't run the generic file — it runs a dedicated <code>gemma-4-E2B-it_Google_Tensor_G5.litertlm</code>, compiled for the Pixel's Tensor G5, dispatched through the packaged <code>libLiteRtDispatch_GoogleTensor.so</code> runtime in the APK. No dispatch library, no NPU.</li>
+    <li><strong>Per-lane process isolation.</strong> A native NPU dispatch failure can abort the whole process, which would have taken the other lanes down with it. So the runner now runs each accelerator in its <em>own</em> instrumentation process and merges the per-lane reports afterward. A crash on one lane is recorded as that lane's result, not a lost run.</li>
+  </ul>
+
+  <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">Until finally: the numbers</h2>
+  <p>With a native-ready model and the Tensor dispatch runtime in place, all three lanes generate tokens through the official LiteRT-LM benchmark API. Here is the real chart the pipeline produces — no longer a wall of PENDING:</p>
+
+  <figure style="margin:28px 0;">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" style="width:100%;height:auto;border-radius:12px;border:1px solid #e3e3e3;" font-family="Inter, Arial, sans-serif">
+      <rect width="760" height="420" rx="14" fill="#0b1020"/>
+      <text x="380" y="34" fill="#e8edff" font-size="20" font-weight="700" text-anchor="middle">On-device Token Generation — GPU vs CPU vs NPU</text>
+      <text x="380" y="58" fill="#9fb0d6" font-size="13" text-anchor="middle">Google Pixel 10 (API 36) · median tokens/sec</text>
+      <line x1="70" y1="350" x2="730" y2="350" stroke="#2a3556" stroke-width="1.5"/>
+      <rect x="125" y="163.4" width="110" height="186.6" rx="6" fill="#2563eb"/>
+      <text x="180" y="155.4" fill="#e8edff" font-size="14" font-weight="700" text-anchor="middle">10.3</text>
+      <text x="180" y="374" fill="#cdd8f5" font-size="14" font-weight="600" text-anchor="middle">GPU</text>
+      <text x="180" y="392" fill="#7e8db5" font-size="11" text-anchor="middle">LITERT_LM</text>
+      <rect x="345" y="224.4" width="110" height="125.6" rx="6" fill="#0ea5e9"/>
+      <text x="400" y="216.4" fill="#e8edff" font-size="14" font-weight="700" text-anchor="middle">6.9</text>
+      <text x="400" y="374" fill="#cdd8f5" font-size="14" font-weight="600" text-anchor="middle">CPU</text>
+      <text x="400" y="392" fill="#7e8db5" font-size="11" text-anchor="middle">LITERT_LM</text>
+      <rect x="565" y="90" width="110" height="260" rx="6" fill="#7c3aed"/>
+      <text x="620" y="82" fill="#e8edff" font-size="14" font-weight="700" text-anchor="middle">14.3</text>
+      <text x="620" y="374" fill="#cdd8f5" font-size="14" font-weight="600" text-anchor="middle">NPU</text>
+      <text x="620" y="392" fill="#7e8db5" font-size="11" text-anchor="middle">LITERT_LM</text>
+    </svg>
+    <figcaption style="font-family:Inter,Arial,sans-serif;font-size:13px;color:#888;text-align:center;margin-top:8px;">Median tokens/sec on a Pixel 10. The NPU wins — and the throughput bars don't even tell the most important half of the story.</figcaption>
+  </figure>
+
+  <table style="width:100%;border-collapse:collapse;font-family:Inter,Arial,sans-serif;font-size:15px;margin:8px 0 20px;">
+    <thead><tr style="border-bottom:2px solid #ddd;text-align:left;">
+      <th style="padding:8px 10px;">Lane</th><th style="padding:8px 10px;">Runtime</th>
+      <th style="padding:8px 10px;text-align:right;">Median tok/s</th><th style="padding:8px 10px;text-align:right;">TTFT</th></tr></thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #eee;"><td style="padding:8px 10px;">GPU</td><td style="padding:8px 10px;">LiteRT-LM</td><td style="padding:8px 10px;text-align:right;">10.3</td><td style="padding:8px 10px;text-align:right;">1108 ms</td></tr>
+      <tr style="border-bottom:1px solid #eee;"><td style="padding:8px 10px;">CPU</td><td style="padding:8px 10px;">LiteRT-LM</td><td style="padding:8px 10px;text-align:right;">6.9</td><td style="padding:8px 10px;text-align:right;">8545 ms</td></tr>
+      <tr style="background:#f3fbf7;"><td style="padding:8px 10px;font-weight:700;color:#00935f;">NPU</td><td style="padding:8px 10px;">LiteRT-LM · Tensor G5</td><td style="padding:8px 10px;text-align:right;font-weight:700;color:#00935f;">14.3</td><td style="padding:8px 10px;text-align:right;font-weight:700;color:#00935f;">424 ms</td></tr>
+    </tbody>
+  </table>
+
+  <p>The NPU isn't just the throughput winner at <strong>14.3 tok/s</strong> (about 2× the CPU). The number that actually matters for a coach is <strong>time-to-first-token</strong>: <strong>424&nbsp;ms on the NPU, versus 1.1&nbsp;s on the GPU and a brutal 8.5&nbsp;s on the CPU.</strong> TTFT is how long the driver waits before the first word of enrichment arrives — and on the CPU that wait is long enough that the moment is gone. The NPU's sub-half-second first token is the difference between enrichment that feels present and enrichment that feels like a memory. That's why the efficient silicon matters here specifically: not for peak throughput bragging rights, but for latency-to-first-word.</p>
+
+  <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">One honest footnote on "the NPU"</h2>
+  <p>Worth being precise, because trustability is the whole point. The measured NPU lane above runs <em>Gemma through LiteRT-LM on the Tensor dispatch backend</em> — that's what produced 14.3 tok/s. Separately, the in-app conversational reasoner (<code>AiCoreReasoner</code>) still treats Google's AICore Prompt API as a health-probed lane rather than its primary generator:</p>
+
+  <pre style="background:#0b1120;color:#eaf0ff;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;padding:16px;border-radius:10px;overflow-x:auto;">// AiCoreReasoner.warmup() — a health probe for the AICore Prompt API lane.
+usable = runCatching { Class.forName("com.google.ai.edge.aicore.GenerativeModel") }.isSuccess
+val state = if (usable) DEGRADED else UNAVAILABLE</pre>
+
+  <p>So: the benchmark proves the Tensor NPU can generate Gemma tokens fast, and it's now the default EDGE-lane target. The conversational AICore Prompt API integration is still a wired, observable lane we can promote when its structured-output path is production-ready. Both things are true at once, and saying so plainly is the point — trustability cuts both ways: the app is honest with the driver, and the writeup is honest with you.</p>
+
+  <blockquote style="border-left:4px solid #00a06a;margin:28px 0;padding:6px 0 6px 20px;font-style:italic;color:#333;font-size:21px;">The decoupling from Part 3 is what made this safe to chase: the model lane could be blocked, then slow, then fast — and the car kept getting coached the whole time.</blockquote>
+
+  <p>The smart lane finally generates tokens, on the most efficient silicon in the phone, in under half a second to first word. Which leaves the question the whole series has been circling: deterministic core, adaptive model, honest numbers — how do you put it together and actually <em>trust</em> it on a track? <strong>Next, the finale: earning trust at speed — determinism, on-device validation, and the recorded Pixel session that proves the core is real.</strong></p>
+
+  <p style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#888;border-top:1px solid #eee;padding-top:16px;margin-top:36px;">Racecraft · on-device real-time driving coach built around Gemma&nbsp;4. Code: <a href="https://github.com/rabimba/speedracer-AI" style="color:#00a06a;">github.com/rabimba/speedracer-AI</a>.</p>
+</div>
+<!-- ===== END BLOGGER PASTE ===== -->

@@ -23,25 +23,58 @@ class ModelAssetManager(private val context: Context) {
     }
 
     fun installStatus(version: String = BuildConfig.DEFAULT_MODEL_VERSION): ModelInstallStatus {
-        val modelFile = resolveModelFile(version)
+        return installStatusFor(
+            version = version,
+            fileName = BuildConfig.DEFAULT_MODEL_FILENAME,
+            checksum = BuildConfig.DEFAULT_MODEL_CHECKSUM,
+            requireMediaPipeNativeCompatible = true,
+        )
+    }
+
+    fun liteRtLmInstallStatus(version: String = BuildConfig.DEFAULT_MODEL_VERSION): ModelInstallStatus {
+        return installStatusFor(
+            version = version,
+            fileName = BuildConfig.DEFAULT_MODEL_FILENAME,
+            checksum = BuildConfig.DEFAULT_MODEL_CHECKSUM,
+            requireMediaPipeNativeCompatible = false,
+        )
+    }
+
+    fun liteRtLmNpuInstallStatus(version: String = BuildConfig.DEFAULT_MODEL_VERSION): ModelInstallStatus {
+        return installStatusFor(
+            version = version,
+            fileName = BuildConfig.DEFAULT_NPU_MODEL_FILENAME,
+            checksum = BuildConfig.DEFAULT_NPU_MODEL_CHECKSUM,
+            requireMediaPipeNativeCompatible = false,
+        )
+    }
+
+    private fun installStatusFor(
+        version: String,
+        fileName: String,
+        checksum: String,
+        requireMediaPipeNativeCompatible: Boolean,
+    ): ModelInstallStatus {
+        val modelFile = resolveModelFile(version, fileName)
         val isPresent = modelFile.exists()
         val nativeContainer = modelFile.extension.equals("litertlm", ignoreCase = true)
         val unsupportedNativeMarkers = isPresent && hasUnsupportedLiteRtLmMarkers(readHeader(modelFile))
-        val nativeCompatible = nativeContainer && !unsupportedNativeMarkers
+        val nativeCompatible =
+            nativeContainer && (!requireMediaPipeNativeCompatible || !unsupportedNativeMarkers)
         val checksumVerified = when {
             !isPresent -> false
             !nativeCompatible -> false
-            BuildConfig.DEFAULT_MODEL_CHECKSUM.isBlank() -> true
-            else -> computeSha256(modelFile) == BuildConfig.DEFAULT_MODEL_CHECKSUM
+            checksum.isBlank() -> true
+            else -> computeSha256(modelFile) == checksum
         }
         val issue = when {
             !isPresent -> null
             !nativeContainer ->
-                "Detected ${modelFile.name}. Stage the text-only ${BuildConfig.DEFAULT_MODEL_FILENAME} LiteRT-LM artifact for the native backend."
-            unsupportedNativeMarkers ->
+                "Detected ${modelFile.name}. Stage a .litertlm artifact for the native backend."
+            requireMediaPipeNativeCompatible && unsupportedNativeMarkers ->
                 "Detected unsupported multimodal LiteRT-LM markers in ${modelFile.name}. Stage a text-only LiteRT-LM artifact before enabling MediaPipe EDGE."
             !checksumVerified ->
-                "Checksum mismatch for ${modelFile.name}. Re-stage from ${BuildConfig.DEFAULT_MODEL_URL}."
+                "Checksum mismatch for ${modelFile.name}. Re-stage the model artifact."
             else -> null
         }
         return ModelInstallStatus(
@@ -70,9 +103,20 @@ class ModelAssetManager(private val context: Context) {
     }
 
     fun resolveModelFile(version: String = BuildConfig.DEFAULT_MODEL_VERSION): File {
+        return resolveModelFile(version, BuildConfig.DEFAULT_MODEL_FILENAME)
+    }
+
+    fun resolveNpuModelFile(version: String = BuildConfig.DEFAULT_MODEL_VERSION): File {
+        return resolveModelFile(version, BuildConfig.DEFAULT_NPU_MODEL_FILENAME)
+    }
+
+    private fun resolveModelFile(
+        version: String,
+        fileName: String,
+    ): File {
         val devVersionDir = File(devModelRoot, version)
         val devCandidates = sequenceOf(
-            File(devVersionDir, BuildConfig.DEFAULT_MODEL_FILENAME),
+            File(devVersionDir, fileName),
             File(devVersionDir, "model.litertlm"),
             File(devVersionDir, "model.task"),
         )
@@ -80,9 +124,14 @@ class ModelAssetManager(private val context: Context) {
             if (candidate.exists()) return candidate
         }
 
-        val internalFile = versionedModelFile(version)
+        val internalFile =
+            if (fileName == BuildConfig.DEFAULT_MODEL_FILENAME) {
+                versionedModelFile(version)
+            } else {
+                File(File(modelRoot, version).apply { mkdirs() }, fileName)
+            }
         if (internalFile.exists()) return internalFile
-        return File(devVersionDir, BuildConfig.DEFAULT_MODEL_FILENAME)
+        return File(devVersionDir, fileName)
     }
 
     private fun computeSha256(file: File): String {

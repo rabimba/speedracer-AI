@@ -1,48 +1,154 @@
 {
   "deviceModel": "Google Pixel 10 (API 36)",
-  "generatedAtMs": 1780937546052,
-  "modelPath": "\/data\/local\/tmp\/koru\/models\/gemma-4-e2b-it\/gemma-4-E2B-it.litertlm",
-  "modelReadyForNativeAndroid": false,
-  "note": "GPU and CPU use MediaPipe LlmInference token generation. NPU is reported as AICore status because this build scaffolds AICore and does not expose a token-generation API.",
+  "generatedAtMs": 1780957465345,
+  "modelPath": "/data/local/tmp/koru/models/gemma-4-e2b-it/gemma-4-E2B-it.litertlm",
+  "npuModelPath": "/data/local/tmp/koru/models/gemma-4-e2b-it/gemma-4-E2B-it_Google_Tensor_G5.litertlm",
+  "modelReadyForNativeAndroid": true,
+  "note": "GPU, CPU, and NPU use the official LiteRT-LM benchmark API. Each lane is isolated in a separate instrumentation process so native crashes are recorded per lane.",
   "accelerators": [
     {
       "accelerator": "GPU",
-      "backend": "MEDIAPIPE_LITERT",
+      "backend": "LITERT_LM",
+      "strategy": "gpu_litertlm_benchmark",
+      "modelPath": "/data/local/tmp/koru/models/gemma-4-e2b-it/gemma-4-E2B-it.litertlm",
       "measurementType": "token_generation",
-      "strategy": "gpu_token_generation",
-      "medianTokensPerSecond": 0,
-      "p95TokensPerSecond": 0,
-      "medianTtftMs": 0,
-      "p95TtftMs": 0,
-      "medianLatencyMs": 0,
-      "error": "Model not ready at \/data\/local\/tmp\/koru\/models\/gemma-4-e2b-it\/gemma-4-E2B-it.litertlm",
-      "runs": []
+      "medianTokensPerSecond": 10.283632501674271,
+      "p95TokensPerSecond": 10.283632501674271,
+      "medianPrefillTokensPerSecond": 259.5138034033638,
+      "medianTtftMs": 1108,
+      "p95TtftMs": 1108,
+      "medianLatencyMs": 42085,
+      "state": null,
+      "detail": null,
+      "error": null,
+      "runs": [
+        {
+          "runIndex": 0,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 77334,
+          "ttftMs": 1154,
+          "latencyMs": 47885,
+          "prefillTokensPerSecond": 242.1776237307356,
+          "tokensPerSecond": 10.283632501674271
+        },
+        {
+          "runIndex": 1,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 58276,
+          "ttftMs": 1081,
+          "latencyMs": 37513,
+          "prefillTokensPerSecond": 259.5138034033638,
+          "tokensPerSecond": 10.48525352412537
+        },
+        {
+          "runIndex": 2,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 60221,
+          "ttftMs": 1108,
+          "latencyMs": 42085,
+          "prefillTokensPerSecond": 262.37414717986627,
+          "tokensPerSecond": 7.551106174474769
+        }
+      ]
     },
     {
       "accelerator": "CPU",
-      "backend": "MEDIAPIPE_LITERT",
+      "backend": "LITERT_LM",
+      "strategy": "cpu_litertlm_benchmark",
+      "modelPath": "/data/local/tmp/koru/models/gemma-4-e2b-it/gemma-4-E2B-it.litertlm",
       "measurementType": "token_generation",
-      "strategy": "cpu_token_generation",
-      "medianTokensPerSecond": 0,
-      "p95TokensPerSecond": 0,
-      "medianTtftMs": 0,
-      "p95TtftMs": 0,
-      "medianLatencyMs": 0,
-      "error": "Model not ready at \/data\/local\/tmp\/koru\/models\/gemma-4-e2b-it\/gemma-4-E2B-it.litertlm",
-      "runs": []
+      "medianTokensPerSecond": 6.9232064284765205,
+      "p95TokensPerSecond": 6.9232064284765205,
+      "medianPrefillTokensPerSecond": 30.473461011821165,
+      "medianTtftMs": 8545,
+      "p95TtftMs": 8545,
+      "medianLatencyMs": 28660,
+      "state": null,
+      "detail": null,
+      "error": null,
+      "runs": [
+        {
+          "runIndex": 0,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 18052,
+          "ttftMs": 7402,
+          "latencyMs": 25187,
+          "prefillTokensPerSecond": 35.2069818345153,
+          "tokensPerSecond": 7.603507755458809
+        },
+        {
+          "runIndex": 1,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 21174,
+          "ttftMs": 8545,
+          "latencyMs": 28660,
+          "prefillTokensPerSecond": 30.473461011821165,
+          "tokensPerSecond": 6.9232064284765205
+        },
+        {
+          "runIndex": 2,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 20890,
+          "ttftMs": 8588,
+          "latencyMs": 29417,
+          "prefillTokensPerSecond": 30.361358515888988,
+          "tokensPerSecond": 6.36420559798279
+        }
+      ]
     },
     {
       "accelerator": "NPU",
-      "backend": "AICORE",
-      "measurementType": "status_only",
-      "medianTokensPerSecond": null,
-      "p95TokensPerSecond": null,
-      "medianTtftMs": null,
-      "medianLatencyMs": null,
-      "state": "UNAVAILABLE",
-      "detail": "AICore SDK not detected in the current build\/runtime.",
-      "error": "AICore token-generation benchmark is not implemented in this build.",
-      "acceleratorRuntime": "NONE"
+      "backend": "LITERT_LM",
+      "strategy": "npu_litertlm_benchmark",
+      "modelPath": "/data/local/tmp/koru/models/gemma-4-e2b-it/gemma-4-E2B-it_Google_Tensor_G5.litertlm",
+      "measurementType": "token_generation",
+      "medianTokensPerSecond": 14.328996705840453,
+      "p95TokensPerSecond": 14.328996705840453,
+      "medianPrefillTokensPerSecond": 721.1690291943393,
+      "medianTtftMs": 424,
+      "p95TtftMs": 424,
+      "medianLatencyMs": 14128,
+      "state": null,
+      "detail": null,
+      "error": null,
+      "runs": [
+        {
+          "runIndex": 0,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 15369,
+          "ttftMs": 424,
+          "latencyMs": 12979,
+          "prefillTokensPerSecond": 721.1690291943393,
+          "tokensPerSecond": 14.328996705840453
+        },
+        {
+          "runIndex": 1,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 18418,
+          "ttftMs": 477,
+          "latencyMs": 14128,
+          "prefillTokensPerSecond": 625.9784887382801,
+          "tokensPerSecond": 14.685556446127217
+        },
+        {
+          "runIndex": 2,
+          "promptTokens": 256,
+          "outputTokens": 64,
+          "initMs": 20442,
+          "ttftMs": 414,
+          "latencyMs": 15490,
+          "prefillTokensPerSecond": 745.3400886378232,
+          "tokensPerSecond": 14.091888794748247
+        }
+      ]
     }
   ]
 }

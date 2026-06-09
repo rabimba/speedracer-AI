@@ -19,9 +19,12 @@ android {
     testInstrumentationRunnerArguments["timeout_msec"] = "900000"
 
     buildConfigField("String", "DEFAULT_MODEL_VERSION", "\"gemma-4-e2b-it\"")
-    buildConfigField("String", "DEFAULT_MODEL_CHECKSUM", "\"ab7838cdfc8f77e54d8ca45eadceb20452d9f01e4bfade03e5dce27911b27e42\"")
+    buildConfigField("String", "DEFAULT_MODEL_CHECKSUM", "\"181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c\"")
     buildConfigField("String", "DEFAULT_MODEL_FILENAME", "\"gemma-4-E2B-it.litertlm\"")
     buildConfigField("String", "DEFAULT_MODEL_URL", "\"https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm\"")
+    buildConfigField("String", "DEFAULT_NPU_MODEL_CHECKSUM", "\"62faebcfd101acb841c33249530430397e031eb17d4dd3d2a71193d135705f27\"")
+    buildConfigField("String", "DEFAULT_NPU_MODEL_FILENAME", "\"gemma-4-E2B-it_Google_Tensor_G5.litertlm\"")
+    buildConfigField("String", "DEFAULT_NPU_MODEL_URL", "\"https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G5.litertlm\"")
     buildConfigField("String", "MODEL_DEV_ROOT", "\"/data/local/tmp/koru/models\"")
   }
 
@@ -46,11 +49,18 @@ android {
 
   kotlinOptions {
     jvmTarget = "17"
+    freeCompilerArgs += listOf("-Xskip-metadata-version-check")
   }
 
   buildFeatures {
     buildConfig = true
     compose = true
+  }
+
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
   }
 }
 
@@ -78,6 +88,7 @@ dependencies {
   implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
   implementation("com.github.mik3y:usb-serial-for-android:3.10.0")
+  implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
   implementation("com.google.mediapipe:tasks-genai:0.10.27")
 
   debugImplementation("androidx.compose.ui:ui-tooling")

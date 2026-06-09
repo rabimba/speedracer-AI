@@ -4,10 +4,6 @@ import android.os.Build
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
-import com.trustableai.koru.runtime.PhraseCatalog
-import com.trustableai.koru.runtime.reasoner.AiCoreReasoner
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -20,78 +16,60 @@ import java.io.FileInputStream
 
 @RunWith(AndroidJUnit4::class)
 class AcceleratorComparisonInstrumentedTest {
-    private lateinit var runner: LlmBenchmarkRunner
+    private lateinit var runner: OfficialLiteRtLmBenchmarkRunner
 
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        runner = LlmBenchmarkRunner(context)
+        runner = OfficialLiteRtLmBenchmarkRunner(context)
     }
 
     @After
     fun tearDown() {
-        if (::runner.isInitialized) {
-            runner.close()
-        }
     }
 
     @Test
     fun compareCpuGpuNpuTokenGenerationSpeed() {
         val args = InstrumentationRegistry.getArguments()
         val runsPerStrategy = args.getString("runsPerStrategy")?.toIntOrNull() ?: 1
+        val npuNativeLibraryDir =
+            args.getString("npuNativeLibraryDir")
+                ?.takeIf { it.isNotBlank() }
+        val acceleratorFilter = args.getString("accelerator")?.uppercase()
+        val reportSuffix = args.getString("reportSuffix")?.takeIf { it.isNotBlank() } ?: ""
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val allConfigs = runner.defaultMatrix(npuNativeLibraryDir)
         val configs =
-            listOf(
-                LiteRtInferenceConfig.PRODUCTION.copy(
-                    name = "gpu_token_generation",
-                    backend = LlmInference.Backend.GPU,
-                ),
-                LiteRtInferenceConfig.PRODUCTION.copy(
-                    name = "cpu_token_generation",
-                    backend = LlmInference.Backend.CPU,
-                ),
-            )
-        val liteRtResults = configs.map { config ->
+            acceleratorFilter
+                ?.let { filter -> allConfigs.filter { it.accelerator.name == filter } }
+                ?.takeIf { it.isNotEmpty() }
+                ?: allConfigs
+        val results = configs.map { config ->
             runner.runStrategy(config = config, runs = runsPerStrategy)
         }
-        val phraseCatalog = PhraseCatalog(context)
-        val aiCoreStatus = runBlocking {
-            phraseCatalog.ensureLoaded()
-            AiCoreReasoner(context, phraseCatalog, "superaj").warmup()
-        }
+        val genericModelPath =
+            runner.modelPathFor(allConfigs.first { it.accelerator == OfficialLiteRtLmAccelerator.GPU })
+        val npuModelPath =
+            runner.modelPathFor(allConfigs.first { it.accelerator == OfficialLiteRtLmAccelerator.NPU })
         val report =
             JSONObject()
                 .put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL} (API ${Build.VERSION.SDK_INT})")
                 .put("generatedAtMs", System.currentTimeMillis())
-                .put("modelPath", runner.modelPath())
-                .put("modelReadyForNativeAndroid", runner.modelReady())
+                .put("modelPath", genericModelPath)
+                .put("npuModelPath", npuModelPath)
+                .put("modelReadyForNativeAndroid", results.any { it.error == null && it.medianTokensPerSecond > 0.0 })
                 .put(
                     "note",
-                    "GPU and CPU use MediaPipe LlmInference token generation. NPU is reported as AICore status because this build scaffolds AICore and does not expose a token-generation API.",
+                    "GPU, CPU, and NPU use the official LiteRT-LM benchmark API. GPU/CPU use the generic Gemma 4 E2B LiteRT-LM artifact; NPU uses the Pixel Tensor G5 artifact when available.",
                 )
                 .put("accelerators", JSONArray().apply {
-                    liteRtResults.forEach { result ->
-                        put(result.toAcceleratorJson())
-                    }
-                    put(
-                        JSONObject()
-                            .put("accelerator", "NPU")
-                            .put("backend", "AICORE")
-                            .put("measurementType", "status_only")
-                            .put("medianTokensPerSecond", JSONObject.NULL)
-                            .put("p95TokensPerSecond", JSONObject.NULL)
-                            .put("medianTtftMs", JSONObject.NULL)
-                            .put("medianLatencyMs", JSONObject.NULL)
-                            .put("state", aiCoreStatus.state.name)
-                            .put("detail", aiCoreStatus.detail)
-                            .put("error", "AICore token-generation benchmark is not implemented in this build.")
-                            .put("acceleratorRuntime", aiCoreStatus.accelerator.name),
-                    )
+                    results.forEach { result -> put(result.toJson()) }
                 })
-        val outputFile = File(context.getExternalFilesDir(null), "accelerator-comparison-report.json")
+        val outputName = "accelerator-comparison-report${reportSuffix}.json"
+        val outputFile = File(context.getExternalFilesDir(null), outputName)
         outputFile.parentFile?.mkdirs()
         outputFile.writeText(report.toString(2))
-        val publicReportPath = "/sdcard/Download/koru-accelerator-comparison-report.json"
+        val publicReportPath = "/sdcard/Download/koru-${outputName}"
         shell("cp ${outputFile.absolutePath} $publicReportPath")
         Log.i(TAG, "Wrote accelerator comparison report to ${outputFile.absolutePath}")
         Log.i(TAG, "Copied accelerator comparison report to $publicReportPath")
@@ -99,32 +77,6 @@ class AcceleratorComparisonInstrumentedTest {
 
         assertTrue("Accelerator comparison report missing at ${outputFile.absolutePath}", outputFile.exists())
     }
-
-    private fun LlmBenchmarkStrategyResult.toAcceleratorJson(): JSONObject =
-        JSONObject()
-            .put("accelerator", backend)
-            .put("backend", "MEDIAPIPE_LITERT")
-            .put("measurementType", "token_generation")
-            .put("strategy", strategy)
-            .put("medianTokensPerSecond", medianTokensPerSecond)
-            .put("p95TokensPerSecond", p95TokensPerSecond)
-            .put("medianTtftMs", medianTtftMs)
-            .put("p95TtftMs", p95TtftMs)
-            .put("medianLatencyMs", medianLatencyMs)
-            .put("error", error ?: JSONObject.NULL)
-            .put("runs", JSONArray().apply {
-                runs.forEach { run ->
-                    put(
-                        JSONObject()
-                            .put("runIndex", run.runIndex)
-                            .put("outputTokens", run.outputTokens)
-                            .put("promptTokens", run.promptTokens)
-                            .put("latencyMs", run.latencyMs)
-                            .put("ttftMs", run.ttftMs)
-                            .put("tokensPerSecond", run.tokensPerSecond),
-                    )
-                }
-            })
 
     private fun shell(command: String): String {
         val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)

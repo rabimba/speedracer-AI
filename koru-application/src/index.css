@@ -3,28 +3,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg-primary: #000000;
-  --bg-secondary: #0a0a0a;
-  --bg-card: #111111;
-  --bg-card-hover: #181818;
-  --bg-input: #0d0d0d;
-  --border: #222222;
-  --border-focus: #555555;
+  /* Racecraft — deep midnight carbon with a racing-green signature */
+  --bg-primary: #080b14;
+  --bg-secondary: #0c111d;
+  --bg-card: #111829;
+  --bg-card-hover: #18223a;
+  --bg-input: #0b1120;
+  --border: #1e2942;
+  --border-focus: #3a4d7a;
 
-  --text-primary: #e8e8e8;
-  --text-secondary: #999999;
-  --text-muted: #666666;
+  --text-primary: #eaf0ff;
+  --text-secondary: #9fb0d6;
+  --text-muted: #6b7aa3;
 
-  --accent: #ffffff;
-  --accent-dim: #cccccc;
-  --green: #4ade80;
-  --red: #f87171;
-  --amber: #fbbf24;
+  --accent: #f4f8ff;
+  --accent-dim: #c7d2ee;
+
+  /* signature brand + telemetry status colors */
+  --brand: #00e08a;        /* racing green — go / commit / live */
+  --brand-2: #ffb454;      /* amber — caution / feedforward */
+  --brand-3: #38bdf8;      /* sky — GPU / data */
+  --glow: 0 0 0 1px rgba(0,224,138,0.35), 0 0 24px rgba(0,224,138,0.18);
+
+  --green: #34e29b;
+  --red: #ff6b6b;
+  --amber: #ffb454;
   --cyan: #67e8f9;
 
-  --radius: 10px;
-  --radius-sm: 6px;
-  --radius-xs: 4px;
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 12px 32px rgba(0,0,0,0.45);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 5px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,9 +42,14 @@ html, body, #root {
   width: 100%;
   height: 100%;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-primary);
+  background:
+    radial-gradient(1200px 600px at 78% -10%, rgba(0,224,138,0.10), transparent 60%),
+    radial-gradient(900px 500px at 0% 0%, rgba(56,189,248,0.06), transparent 55%),
+    var(--bg-primary);
   color: var(--text-primary);
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .app {
@@ -1676,7 +1690,52 @@ html, body, #root {
 
 /* ── Scrollbar ────────────────────────────────────────────── */
 
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #333; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
+
+/* ── Racecraft visual polish (additive; references existing classes) ── */
+
+::selection { background: rgba(0,224,138,0.28); color: var(--text-primary); }
+
+.navbar { backdrop-filter: blur(10px); background: rgba(12,17,29,0.82); }
+
+/* live "go" dot — glowing racing-green pulse */
+.navbar-logo {
+  width: 9px; height: 9px;
+  background: var(--brand);
+  box-shadow: var(--glow);
+  animation: rc-pulse 2.4s ease-in-out infinite;
+}
+@keyframes rc-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0,224,138,0.35), 0 0 14px rgba(0,224,138,0.18); }
+  50%      { box-shadow: 0 0 0 1px rgba(0,224,138,0.55), 0 0 26px rgba(0,224,138,0.38); }
+}
+
+.navbar-title { background: linear-gradient(90deg, var(--text-primary), var(--brand)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+/* active nav gets a brand underline accent */
+.navbar-link.active {
+  background: linear-gradient(180deg, rgba(0,224,138,0.10), transparent);
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+
+/* cards lift + glow subtly on hover */
+.card, .panel, .stat-card { box-shadow: var(--shadow-card); }
+.card:hover, .stat-card:hover { border-color: var(--border-focus); }
+
+/* primary buttons get a confident brand gradient */
+.settings-btn, .btn-primary {
+  background: linear-gradient(180deg, var(--brand), #00b974);
+  color: #04130c;
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 6px 18px rgba(0,224,138,0.25);
+}
+.settings-btn:hover, .btn-primary:hover { filter: brightness(1.06); }
+
+/* connected status reads as truly "live" */
+.api-status.connected { background: rgba(0,224,138,0.10); border-color: rgba(0,224,138,0.4); color: var(--brand); }
+
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }

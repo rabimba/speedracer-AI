@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" font-family="Inter, -apple-system, Segoe UI, Roboto, sans-serif">
+  <rect width="1000" height="420" rx="14" fill="#080b14"/>
+  <text x="40" y="48" fill="#eaf0ff" font-size="24" font-weight="800">The latency budget, to scale</text>
+  <text x="40" y="74" fill="#6b7aa3" font-size="13">Where each lane lands against the 300–500&#160;ms perception window. Log-ish scale; numbers are real where measured.</text>
+
+  <!-- axis -->
+  <line x1="60" y1="300" x2="960" y2="300" stroke="#2a3556" stroke-width="2"/>
+  <g fill="#6b7aa3" font-size="11" font-family="JetBrains Mono, monospace" text-anchor="middle">
+    <text x="120" y="324">5 ms</text><line x1="120" y1="296" x2="120" y2="304" stroke="#2a3556"/>
+    <text x="330" y="324">50 ms</text><line x1="330" y1="296" x2="330" y2="304" stroke="#2a3556"/>
+    <text x="560" y="324">500 ms</text><line x1="560" y1="296" x2="560" y2="304" stroke="#2a3556"/>
+    <text x="820" y="324">5 s</text><line x1="820" y1="296" x2="820" y2="304" stroke="#2a3556"/>
+  </g>
+
+  <!-- perception window -->
+  <rect x="60" y="120" width="500" height="180" fill="rgba(0,224,138,0.06)"/>
+  <line x1="560" y1="110" x2="560" y2="300" stroke="#00e08a" stroke-dasharray="5 5" stroke-width="1.5"/>
+  <text x="305" y="138" fill="#00e08a" font-size="12" font-weight="700" text-anchor="middle">300–500&#160;ms perception window — feedback must land here</text>
+
+  <!-- HOT bar -->
+  <rect x="60" y="160" width="60" height="34" rx="8" fill="#ff6b6b"/>
+  <text x="130" y="182" fill="#fff" font-size="13" font-weight="700">HOT · ~5&#160;ms p95 (measured, Pixel 10)</text>
+
+  <!-- HOT budget ceiling -->
+  <rect x="60" y="204" width="270" height="14" rx="7" fill="#3a1418"/>
+  <text x="340" y="215" fill="#9b7e82" font-size="11">HOT budget ceiling = 50&#160;ms</text>
+
+  <!-- COLD bar -->
+  <rect x="60" y="244" width="760" height="34" rx="8" fill="#0b1722" stroke="#38bdf8"/>
+  <rect x="560" y="244" width="260" height="34" rx="8" fill="rgba(56,189,248,0.18)"/>
+  <text x="74" y="266" fill="#38bdf8" font-size="13" font-weight="700">COLD · Gemini 2.5 Flash Lite · 2–5&#160;s — runs off the critical path</text>
+
+  <!-- note -->
+  <text x="60" y="372" fill="#cdd8f5" font-size="13">The HOT lane finishes ~10× inside its own ceiling and ~60–100× faster than the cloud lane.</text>
+  <text x="60" y="394" fill="#6b7aa3" font-size="12">That gap is the whole reason safety never shares a code path with a model. The COLD lane is allowed to be slow because nobody waits for it.</text>
+</svg>

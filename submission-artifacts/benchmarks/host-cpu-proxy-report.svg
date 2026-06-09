@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+<rect width="760" height="420" rx="14" fill="#0b1020"/>
+<text x="380.0" y="34" fill="#e8edff" font-size="20" font-weight="700" text-anchor="middle">On-device Token Generation — GPU vs CPU vs NPU</text>
+<text x="380.0" y="58" fill="#9fb0d6" font-size="13" text-anchor="middle">HOST CPU PROXY — aarch64 (Linux) · median tokens/sec</text>
+<line x1="70" y1="350" x2="730" y2="350" stroke="#2a3556" stroke-width="1.5"/>
+<rect x="340.0" y="90.0" width="120.0" height="260.0" rx="6" fill="#64748b"/>
+<text x="400.0" y="82.0" fill="#e8edff" font-size="14" font-weight="700" text-anchor="middle">1534.1</text>
+<text x="400.0" y="374.0" fill="#cdd8f5" font-size="14" font-weight="600" text-anchor="middle">HOST_CPU_SYNTHETIC</text>
+<text x="400.0" y="392.0" fill="#7e8db5" font-size="11" text-anchor="middle">PYTHON_TOY_MATVEC</text>
+</svg>

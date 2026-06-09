@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -11,9 +11,12 @@ const modelRoot = path.join(rootDir, 'pixel-android-app', 'models');
 const metadataPath = path.join(modelRoot, 'current-model.json');
 
 const DEFAULT_NATIVE_URL = 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
+const DEFAULT_NPU_URL = 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G5.litertlm';
 const DEFAULT_VERSION = 'gemma-4-e2b-it';
 const DEFAULT_FILENAME = 'gemma-4-E2B-it.litertlm';
-const DEFAULT_SHA256 = 'ab7838cdfc8f77e54d8ca45eadceb20452d9f01e4bfade03e5dce27911b27e42';
+const DEFAULT_NPU_FILENAME = 'gemma-4-E2B-it_Google_Tensor_G5.litertlm';
+const DEFAULT_SHA256 = '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c';
+const DEFAULT_NPU_SHA256 = '62faebcfd101acb841c33249530430397e031eb17d4dd3d2a71193d135705f27';
 
 function env(name, fallback) {
   return process.env[name] || fallback;
@@ -77,51 +80,84 @@ async function downloadWithCurl(url, outPath) {
 }
 
 async function main() {
-  const requestedUrl = env('KORU_PIXEL_MODEL_URL', DEFAULT_NATIVE_URL);
-  const requestedFilename = env('KORU_PIXEL_MODEL_FILENAME', parseFilename(requestedUrl) || DEFAULT_FILENAME);
-  const requestedVersion = env('KORU_PIXEL_MODEL_VERSION', inferVersion(requestedFilename) || DEFAULT_VERSION);
-  const requestedSha = env('KORU_PIXEL_MODEL_SHA256', DEFAULT_SHA256);
+  const requestedVersion = env('KORU_PIXEL_MODEL_VERSION', DEFAULT_VERSION);
+  const specs = [
+    {
+      role: 'gpu_cpu',
+      sourceUrl: env('KORU_PIXEL_MODEL_URL', DEFAULT_NATIVE_URL),
+      filename: env('KORU_PIXEL_MODEL_FILENAME', DEFAULT_FILENAME),
+      sha256: env('KORU_PIXEL_MODEL_SHA256', DEFAULT_SHA256),
+    },
+    {
+      role: 'npu_tensor_g5',
+      sourceUrl: env('KORU_PIXEL_NPU_MODEL_URL', DEFAULT_NPU_URL),
+      filename: env('KORU_PIXEL_NPU_MODEL_FILENAME', DEFAULT_NPU_FILENAME),
+      sha256: env('KORU_PIXEL_NPU_MODEL_SHA256', DEFAULT_NPU_SHA256),
+    },
+  ];
 
-  if (requestedFilename.endsWith('-web.task')) {
-    fail([
-      `Refusing to stage ${requestedFilename} for the native Android backend.`,
-      'That file is the web/WebGPU artifact from the Hugging Face repo.',
-      `For the native Pixel backend, use ${DEFAULT_FILENAME} instead.`,
-      `Suggested URL: ${DEFAULT_NATIVE_URL}`,
-    ].join('\n'));
-  }
-
-  if (!requestedFilename.endsWith('.litertlm') && !requestedFilename.endsWith('.task')) {
-    fail(`Unsupported model filename: ${requestedFilename}. Expected .litertlm or .task`);
-  }
-
-  const versionDir = path.join(modelRoot, requestedVersion);
-  const destinationPath = path.join(versionDir, requestedFilename);
-  await mkdir(versionDir, { recursive: true });
-
-  if (!(await exists(destinationPath))) {
-    console.log(`Downloading ${requestedFilename} to ${destinationPath}`);
-    await downloadWithCurl(requestedUrl, destinationPath);
-  } else {
-    console.log(`Model already present: ${destinationPath}`);
-  }
-
-  if (requestedSha) {
-    const actualSha = await sha256(destinationPath);
-    if (actualSha !== requestedSha) {
-      fail(`SHA256 mismatch for ${destinationPath}\nExpected: ${requestedSha}\nActual:   ${actualSha}`);
+  const prepared = [];
+  for (const spec of specs) {
+    if (spec.filename.endsWith('-web.task')) {
+      fail([
+        `Refusing to stage ${spec.filename} for the native Android backend.`,
+        'That file is the web/WebGPU artifact from the Hugging Face repo.',
+        `For the native Pixel backend, use ${DEFAULT_FILENAME} and ${DEFAULT_NPU_FILENAME} instead.`,
+      ].join('\n'));
     }
-    console.log(`Verified SHA256 for ${requestedFilename}`);
+
+    if (!spec.filename.endsWith('.litertlm') && !spec.filename.endsWith('.task')) {
+      fail(`Unsupported model filename: ${spec.filename}. Expected .litertlm or .task`);
+    }
+
+    const versionDir = path.join(modelRoot, requestedVersion);
+    const destinationPath = path.join(versionDir, spec.filename);
+    await mkdir(versionDir, { recursive: true });
+
+    if (await exists(destinationPath)) {
+      if (spec.sha256) {
+        const actualSha = await sha256(destinationPath);
+        if (actualSha === spec.sha256) {
+          console.log(`Model already present and verified: ${destinationPath}`);
+        } else {
+          console.log(`Existing model checksum mismatch; replacing ${destinationPath}`);
+          console.log(`Expected: ${spec.sha256}`);
+          console.log(`Actual:   ${actualSha}`);
+          await unlink(destinationPath);
+          await downloadWithCurl(spec.sourceUrl, destinationPath);
+        }
+      } else {
+        console.log(`Model already present: ${destinationPath}`);
+      }
+    } else {
+      console.log(`Downloading ${spec.filename} to ${destinationPath}`);
+      await downloadWithCurl(spec.sourceUrl, destinationPath);
+    }
+
+    if (spec.sha256) {
+      const actualSha = await sha256(destinationPath);
+      if (actualSha !== spec.sha256) {
+        fail(`SHA256 mismatch for ${destinationPath}\nExpected: ${spec.sha256}\nActual:   ${actualSha}`);
+      }
+      console.log(`Verified SHA256 for ${spec.filename}`);
+    }
+
+    prepared.push({
+      role: spec.role,
+      sourceUrl: spec.sourceUrl,
+      version: requestedVersion,
+      filename: spec.filename,
+      sha256: spec.sha256,
+      localPath: destinationPath,
+      remoteRoot: `/data/local/tmp/koru/models/${requestedVersion}`,
+      remotePath: `/data/local/tmp/koru/models/${requestedVersion}/${spec.filename}`,
+    });
   }
 
+  const primary = prepared[0];
   const metadata = {
-    sourceUrl: requestedUrl,
-    version: requestedVersion,
-    filename: requestedFilename,
-    sha256: requestedSha,
-    localPath: destinationPath,
-    remoteRoot: `/data/local/tmp/koru/models/${requestedVersion}`,
-    remotePath: `/data/local/tmp/koru/models/${requestedVersion}/${requestedFilename}`,
+    ...primary,
+    models: prepared,
     preparedAt: new Date().toISOString(),
   };
 

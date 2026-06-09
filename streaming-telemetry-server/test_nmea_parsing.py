@@ -2,10 +2,12 @@ import sys
 import os
 import unittest
 
-# Add current directory to sys.path so we can import ingest
+# Add current directory to sys.path so we can import the parser module.
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from ingest import parse_nmea_sentence
+# Import from the dependency-light nmea module rather than the full ingest
+# server, so the parser can be tested without FastAPI / serial transports.
+from nmea import parse_nmea_sentence
 
 class TestNMEAParsing(unittest.TestCase):
     def test_gprmc(self):

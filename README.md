@@ -1,6 +1,8 @@
-# Trustable AI Race Coach
+# Racecraft — Trustable AI Race Coach
 
-Today's best telemetry systems — including the SOTA Garmin Catalyst — run on fixed, deterministic rules. They tell you what went wrong after the fact, with numbers. This project takes a different approach: a multimodal, agentic AI system built on Google's latest stack (Gemini Nano on-device + Gemini API) that processes real-time data streams to deliver context-aware coaching as it happens, adapted to driver skill level.
+> **Racecraft** (repo: [`github.com/rabimba/speedracer-AI`](https://github.com/rabimba/speedracer-AI)) — a trustable, on-device, real-time driving coach. _Internal module ids still use the original `koru` codename to avoid build churn; "Racecraft" is the product brand._
+
+Today's best telemetry systems — including the SOTA Garmin Catalyst — run on fixed, deterministic rules. They tell you what went wrong after the fact, with numbers. Racecraft takes a different approach: a multimodal, agentic AI system built on Google's on-device stack (**Gemma 4 E2B** via LiteRT-LM / AICore on-device + **Gemini 2.5 Flash Lite** in the cloud) that processes real-time data streams to deliver context-aware coaching as it happens, adapted to driver skill level.
 
 The goal is to build a reference architecture that proves a split-brain AI can be trusted in a mission-critical, zero-latency environment. The patterns and learnings from high-frequency racing telemetry are designed to translate to broader enterprise domains where real-time AI decision-making under pressure is the challenge.
 
@@ -10,6 +12,16 @@ The GR86 field-test goal is narrower and practical: give the driver timely feedb
 Catalyst tells you what you did wrong with numbers.
 This system tells you in real time how to adapt and fix it, adjusted to your skill level.
 ```
+
+## Submission Artifacts (2026-06)
+
+- **Start here — Google submission writeup:** [`SUBMISSION.md`](SUBMISSION.md) — achievements, technical details, measured results.
+
+- **Audit & honest status:** [`docs/audit-2026-06-08.md`](docs/audit-2026-06-08.md) — what runs, what's blocked, verified latency numbers.
+- **Blog series (5 parts, Blogger-ready HTML):** [`docs/blog/`](docs/blog/) — origin → coaching paradigm → Split-Brain latency → on-device Gemma + NPU → trust & validation.
+- **GPU vs CPU vs NPU benchmark:** [`submission-artifacts/benchmarks/`](submission-artifacts/benchmarks/) — renderer, device runner, methodology proxy, and the honest current report.
+- **Submission index:** [`submission-artifacts/README.md`](submission-artifacts/README.md).
+- **Push to GitHub:** see [`PUBLISH.md`](PUBLISH.md) for the exact commands (sandbox has no git auth).
 
 ## Table of Contents
 
