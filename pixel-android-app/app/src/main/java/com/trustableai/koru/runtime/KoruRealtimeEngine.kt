@@ -2,6 +2,7 @@ package com.trustableai.koru.runtime
 
 import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.CoachingDecision
+import com.trustableai.koru.model.CoachingObjective
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.RuntimeBackend
@@ -80,18 +81,29 @@ class KoruRealtimeEngine(
         adaptTiming(driverState.skillLevel)
 
         var bestAction: CoachAction? = null
+        var bestIntent: CoachingIntentEvaluation? = null
         var bestPriority = Int.MAX_VALUE
         var bestGoalBoost = Int.MIN_VALUE
         var bestOrder = Int.MAX_VALUE
         var order = 0
         val stamp = nextActionStamp()
 
-        fun considerHotAction(action: CoachAction) {
+        fun considerHotAction(action: CoachAction, isEmergencyBrake: Boolean = false) {
             val ordinal = action.ordinal
             if (seenActionStamp[ordinal] == stamp) return
             seenActionStamp[ordinal] = stamp
 
-            val priority = actionPriority(action)
+            val intent =
+                CornerDoctrineCatalog.evaluateHotAction(
+                    track = track,
+                    corner = detection.corner,
+                    phase = currentPhase,
+                    action = action,
+                    frame = frame,
+                    driverState = driverState,
+                    isEmergencyBrake = isEmergencyBrake,
+                )
+            val priority = intent.priority
             if (shouldSuppressForTelemetryTrust(action, fallbackStage)) {
                 order += 1
                 return
@@ -106,7 +118,7 @@ class KoruRealtimeEngine(
                     timeSeconds = frame.timeSeconds,
                     cognitiveLoad = driverState.cognitiveLoad,
                 )
-            if (shouldSuppressRepeatedHotAction(action, priority, nowMs, detection.corner?.id) || suppress) {
+            if (shouldSuppressRepeatedHotAction(action, priority, nowMs, detection.corner?.id) || suppress || intent.suppressed) {
                 order += 1
                 return
             }
@@ -118,6 +130,7 @@ class KoruRealtimeEngine(
                     (priority == bestPriority && boost == bestGoalBoost && order < bestOrder)
             if (isBetter) {
                 bestAction = action
+                bestIntent = intent
                 bestPriority = priority
                 bestGoalBoost = boost
                 bestOrder = order
@@ -125,15 +138,19 @@ class KoruRealtimeEngine(
             order += 1
         }
 
-        contextualBrakeAction(frame, detection.phase, detection.corner, nowMs)?.let(::considerHotAction)
-        DecisionMatrix.forEachAction(frame, ::considerHotAction)
+        contextualBrakeAction(frame, detection.phase, detection.corner, nowMs)?.let { action ->
+            considerHotAction(action, isEmergencyBrake = true)
+        }
+        DecisionMatrix.forEachAction(frame) { action -> considerHotAction(action) }
 
         bestAction
             ?.let { action ->
+                val intent = bestIntent
                 lastHotAction = action
                 val decision =
                     hotDecision(
                         action = action,
+                        intent = intent,
                         corner = detection.corner,
                         skillLevel = driverState.skillLevel,
                         cognitiveLoad = driverState.cognitiveLoad,
@@ -168,6 +185,10 @@ class KoruRealtimeEngine(
                             priority = 1,
                             cornerPhase = currentPhase,
                             timestampMs = nowMs,
+                            cornerId = candidate.corner.id,
+                            cornerName = candidate.corner.name,
+                            objective = CoachingObjective.LINE_VISION,
+                            causeId = "feedforward_corner_setup",
                         ),
                         nowMs,
                     )
@@ -197,19 +218,24 @@ class KoruRealtimeEngine(
                 latencyMs = latencyProbe.elapsedMs(),
                 confidence = next.confidence,
                 phraseId = next.phraseId,
+                cornerId = next.cornerId,
+                cornerName = next.cornerName,
+                objective = next.objective,
+                causeId = next.causeId,
             ),
         )
     }
 
     private fun hotDecision(
         action: CoachAction,
+        intent: CoachingIntentEvaluation?,
         corner: com.trustableai.koru.model.Corner?,
         skillLevel: com.trustableai.koru.model.SkillLevel,
         cognitiveLoad: Double,
         timeSeconds: Double,
         nowMs: Long,
     ): CoachingQueue.QueuedDecision {
-        val priority = actionPriority(action)
+        val priority = intent?.priority ?: actionPriority(action)
         val doctrineText =
             TrackExpertiseCatalog.hotActionText(
                 track = track,
@@ -223,11 +249,15 @@ class KoruRealtimeEngine(
         return CoachingQueue.QueuedDecision(
             action = action,
             path = CoachingPath.HOT.bridgeValue(),
-            text = SafetyPhrasePolicy.textFor(action) ?: doctrineText ?: phraseCatalog.render(action, skillLevel, activeCoachId),
+            text = SafetyPhrasePolicy.textFor(action, priority) ?: intent?.text ?: doctrineText ?: phraseCatalog.render(action, skillLevel, activeCoachId),
             priority = priority,
             cornerPhase = currentPhase,
             timestampMs = nowMs,
             phraseId = phraseCatalog.phraseIdFor(action, skillLevel, activeCoachId),
+            cornerId = corner?.id,
+            cornerName = corner?.name,
+            objective = intent?.objective,
+            causeId = intent?.causeId,
         )
     }
 
@@ -237,12 +267,7 @@ class KoruRealtimeEngine(
     }
 
     private fun actionPriority(action: CoachAction): Int {
-        return when (action) {
-            CoachAction.OVERSTEER_RECOVERY, CoachAction.BRAKE -> 0
-            CoachAction.EARLY_THROTTLE, CoachAction.LIFT_MID_CORNER, CoachAction.SPIKE_BRAKE -> 1
-            CoachAction.COGNITIVE_OVERLOAD -> 2
-            else -> 3
-        }
+        return CornerDoctrineCatalog.priorityFor(action, CornerDoctrineCatalog.objectiveFor(action, null, currentPhase))
     }
 
     private fun goalBoostForAction(action: CoachAction): Int {
@@ -282,10 +307,7 @@ class KoruRealtimeEngine(
         if (phase != CornerPhase.BRAKE_ZONE) return null
         if (frame.speedMph < MIN_CONTEXTUAL_BRAKE_SPEED_MPH) return null
         if (isSafetyBrakeOnCooldown(nowMs, corner?.id)) return null
-        val targetSpeed = corner?.targetSpeed ?: 60.0
-        val tooFastForEntry = frame.speedMph >= targetSpeed + 25.0 || frame.speedMph >= 85.0
-        val notActuallyBraking = frame.brake < 12.0 && frame.gLong > -0.25
-        return if (tooFastForEntry && notActuallyBraking) {
+        return if (CornerDoctrineCatalog.allowsEmergencyBrake(track, corner, phase, frame)) {
             CoachAction.BRAKE
         } else {
             null
@@ -329,9 +351,9 @@ private val throttleDependentActions = setOf(
 )
 
 object SafetyPhrasePolicy {
-    fun textFor(action: CoachAction): String? {
+    fun textFor(action: CoachAction, priority: Int): String? {
         return when (action) {
-            CoachAction.BRAKE -> "Brake now"
+            CoachAction.BRAKE -> if (priority == 0) "Brake now" else null
             CoachAction.OVERSTEER_RECOVERY -> "Both feet in"
             else -> null
         }

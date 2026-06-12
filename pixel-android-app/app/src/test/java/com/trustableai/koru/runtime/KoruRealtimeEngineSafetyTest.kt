@@ -141,6 +141,31 @@ class KoruRealtimeEngineSafetyTest {
         assertTrue(decisions.none { it.action == CoachAction.BRAKE && it.priority == 0 })
     }
 
+    @Test
+    fun `Turn 3 overspeed does not become generic brake coaching`() = runBlocking {
+        val engine = KoruRealtimeEngine(
+            track = TrackCatalog.sonomaRaceway,
+            phraseCatalog = FakePhraseRenderer,
+            reasonerProvider = { HangingReasoner },
+        )
+        val frame = TelemetryFrame(
+            timeSeconds = 12.0,
+            latitude = 38.16080,
+            longitude = -122.45720,
+            speedMph = 92.0,
+            throttle = 0.0,
+            brake = 0.0,
+            gLat = 0.0,
+            gLong = 0.0,
+            sourceMode = SessionMode.TELEMETRY,
+        )
+
+        val decisions = engine.processFrame(frame, nowMs = 10_000L)
+        engine.close()
+
+        assertTrue("Turn 3 should prefer patience/line objectives over brake spam", decisions.none { it.action == CoachAction.BRAKE })
+    }
+
     private object FakePhraseRenderer : PhraseRenderer {
         override fun phraseIdFor(action: CoachAction, skillLevel: SkillLevel, coachId: String): String {
             return "test/${action.name}"

@@ -251,7 +251,14 @@ class KoruTelemetryService : Service() {
             },
         )
 
-        sessionRecorder.start(config.sessionMode, sessionLabel, activeCoachId, config.sessionGoals)
+        sessionRecorder.start(
+            config.sessionMode,
+            sessionLabel,
+            activeCoachId,
+            config.sessionGoals,
+            vboxSyncEnabled = config.sessionMode == SessionMode.TELEMETRY &&
+                config.telemetrySource == TelemetrySourceKind.AIM_CAN_USB,
+        )
         emitRecordingStatus()
         if (audioEnabled) {
             audioDispatcher.playSessionClip(
@@ -594,6 +601,7 @@ class KoruTelemetryService : Service() {
                 lastFlushAtMs = artifact.lastFlushAt,
                 flushAgeMs = artifact.lastFlushAt?.let { System.currentTimeMillis() - it },
                 endedReason = endedReason,
+                vboxSync = artifact.vboxSync,
             ),
         )
         return artifact

@@ -20,6 +20,7 @@ const frames = session.frames;
   const decisions = session.decisions;
   const decisionCounts = countBy(decisions.map((decision) => decision.path));
   const actionCounts = countBy(decisions.map((decision) => decision.action || 'NONE'));
+  const objectiveCounts = countBy(decisions.map((decision) => decision.objective || 'none'));
   const cornerSummaries = summarizeCorners(frames, track).slice(0, 8);
   const lapPaceSummary = summarizeLapPace(frames, track);
   const goalsSummary = session.sessionGoals.length > 0
@@ -36,11 +37,14 @@ const frames = session.frames;
   const hardwareSummary = summarizeHardware(frames);
   const vehicleDiagnosticsSummary = summarizeVehicleDiagnostics(frames);
   const canDiagnosticsSummary = summarizeCanDiagnostics(frames);
+  const vboxSyncSummary = summarizeVboxSync(session);
   const decisionsExcerpt = decisions
     .slice(0, 12)
     .map((decision) => {
       const relativeTime = ((decision.timestamp - session.startedAt) / 1000).toFixed(1);
-      return `[${relativeTime}s] ${decision.path}/${decision.action ?? 'NONE'}: ${decision.text}`;
+      const objective = decision.objective ? ` objective=${decision.objective}` : '';
+      const cause = decision.causeId ? ` cause=${decision.causeId}` : '';
+      return `[${relativeTime}s] ${decision.path}/${decision.action ?? 'NONE'}${objective}${cause}: ${decision.text}`;
     })
     .join('\n');
 
@@ -67,6 +71,9 @@ Sidecars: ${[
     session.audioEventsPath ? 'audio-events.ndjson' : null,
     session.canDumpPath ? 'can-slcan.txt' : null,
   ].filter(Boolean).join(', ') || 'none'}
+
+VBOX sync:
+${vboxSyncSummary}
 
 Pre-race goals:
 ${goalsSummary}
@@ -104,6 +111,19 @@ Decision path counts:
 
 Most common coaching actions:
 ${topActions || 'No action-tagged decisions recorded.'}
+
+Coaching objective counts:
+${formatCountSummary(objectiveCounts, [
+    'safety_recovery',
+    'brake_entry',
+    'brake_release',
+    'line_vision',
+    'rotate_wait',
+    'maintenance_throttle',
+    'exit_throttle',
+    'smoothness',
+    'none',
+  ])}
 
 Corner summaries:
 ${cornerLines}
@@ -151,6 +171,29 @@ function summarizeFrames(frames: TelemetryFrame[]) {
     visionFrameCount,
     primaryTelemetrySource,
   };
+}
+
+function summarizeVboxSync(session: RecordedSessionArtifact): string {
+  const sync = session.vboxSync;
+  if (!sync?.enabled) {
+    return '- No VBOX parity metadata recorded.';
+  }
+  const lines = [
+    `- Source: ${sync.source}`,
+    `- Status: ${sync.status}`,
+    `- Trigger speed: ${sync.startSpeedMph.toFixed(2)} mph / ${sync.startSpeedKmh.toFixed(0)} km/h`,
+    `- Pre-roll: ${sync.preRollSeconds.toFixed(0)}s, stop-below window: ${sync.stopBelowSeconds.toFixed(0)}s`,
+  ];
+  if (typeof sync.triggeredAtMs === 'number') {
+    lines.push(`- Triggered at: ${sync.triggeredAtMs}`);
+  }
+  if (typeof sync.firstMotionFrameTimeSeconds === 'number') {
+    lines.push(`- First motion frame: ${sync.firstMotionFrameTimeSeconds.toFixed(2)}s`);
+  }
+  if (typeof sync.lastObservedSpeedMph === 'number') {
+    lines.push(`- Last observed speed: ${sync.lastObservedSpeedMph.toFixed(1)} mph`);
+  }
+  return lines.join('\n');
 }
 
 function summarizeCorners(frames: TelemetryFrame[], track: Track): CornerSliceSummary[] {

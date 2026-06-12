@@ -71,6 +71,7 @@ import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.TelemetrySourceHealth
 import com.trustableai.koru.model.Track
 import com.trustableai.koru.model.TrackHudMode
+import com.trustableai.koru.model.VboxSyncStatus
 import com.trustableai.koru.runtime.TrackCatalog
 import com.trustableai.koru.ui.theme.KoruDimens
 import com.trustableai.koru.ui.theme.KoruPalette
@@ -494,6 +495,21 @@ private fun FieldHealthPanel(state: SessionUiState) {
                 else -> KoruPalette.SignalNeutral
             },
             icon = Icons.Filled.CheckCircle,
+            modifier = Modifier.weight(1f),
+        )
+        TrackHealthTile(
+            label = "VBOX Sync",
+            value = recording.vboxSync?.status?.name ?: "off",
+            detail = recording.vboxSync?.let { sync ->
+                val speed = sync.lastObservedSpeedMph?.let { "%.1f".format(Locale.US, it) } ?: "--"
+                "AiM ${speed}/${"%.1f".format(Locale.US, sync.startSpeedMph)}mph"
+            } ?: "AIM_CAN_USB",
+            color = when (recording.vboxSync?.status) {
+                VboxSyncStatus.TRIGGERED, VboxSyncStatus.SAVED -> KoruPalette.SignalReady
+                VboxSyncStatus.ARMED, VboxSyncStatus.BELOW_STOP_THRESHOLD -> KoruPalette.SignalAdvisory
+                VboxSyncStatus.DISABLED, null -> KoruPalette.SignalNeutral
+            },
+            icon = Icons.Filled.Speed,
             modifier = Modifier.weight(1f),
         )
         TrackHealthTile(

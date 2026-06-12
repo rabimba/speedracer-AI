@@ -41,6 +41,18 @@ enum class CoachingPath {
     EDGE,
 }
 
+enum class CoachingObjective {
+    SAFETY_RECOVERY,
+    BRAKE_ENTRY,
+    BRAKE_RELEASE,
+    LINE_VISION,
+    ROTATE_WAIT,
+    MAINTENANCE_THROTTLE,
+    EXIT_THROTTLE,
+    SMOOTHNESS,
+    NO_CUE,
+}
+
 enum class RuntimeBackend {
     BROWSER,
     AICORE,
@@ -294,6 +306,8 @@ data class EdgeReasoningWindow(
     val skillLevel: SkillLevel,
     val cornerName: String?,
     val features: Map<String, Double>,
+    val cornerId: Int? = null,
+    val objective: CoachingObjective? = null,
     val causeHint: String? = null,
 )
 
@@ -317,6 +331,10 @@ data class CoachingDecision(
     val latencyMs: Long? = null,
     val confidence: Double? = null,
     val phraseId: String? = null,
+    val cornerId: Int? = null,
+    val cornerName: String? = null,
+    val objective: CoachingObjective? = null,
+    val causeId: String? = null,
     val id: String = "${path.name.lowercase()}-${action?.name ?: "cue"}-$timestampMs",
 )
 
@@ -380,6 +398,29 @@ data class RecordedSessionSummary(
     val durationSeconds: Double,
 )
 
+enum class VboxSyncStatus {
+    DISABLED,
+    ARMED,
+    TRIGGERED,
+    BELOW_STOP_THRESHOLD,
+    SAVED,
+}
+
+data class VboxSyncMetadata(
+    val enabled: Boolean = false,
+    val status: VboxSyncStatus = VboxSyncStatus.DISABLED,
+    val source: TelemetrySourceKind = TelemetrySourceKind.AIM_CAN_USB,
+    val startSpeedKmh: Double = 15.0,
+    val startSpeedMph: Double = 9.32,
+    val preRollSeconds: Double = 10.0,
+    val stopBelowSeconds: Double = 10.0,
+    val armedAtMs: Long? = null,
+    val triggeredAtMs: Long? = null,
+    val firstMotionFrameTimeSeconds: Double? = null,
+    val belowStopThresholdSinceMs: Long? = null,
+    val lastObservedSpeedMph: Double? = null,
+)
+
 data class RecordedSessionArtifact(
     val schemaVersion: Int = 2,
     val id: String,
@@ -402,6 +443,7 @@ data class RecordedSessionArtifact(
     val embeddedFrameCount: Int = frames.size,
     val totalFrameCount: Int = summary.frameCount,
     val lastFlushAt: Long? = null,
+    val vboxSync: VboxSyncMetadata? = null,
 )
 
 data class RecordingStatus(
@@ -418,6 +460,7 @@ data class RecordingStatus(
     val lastFlushAtMs: Long? = null,
     val flushAgeMs: Long? = null,
     val endedReason: String? = null,
+    val vboxSync: VboxSyncMetadata? = null,
 )
 
 data class ModelInstallStatus(
@@ -433,6 +476,8 @@ data class ModelInstallStatus(
 
 fun CoachingPath.bridgeValue(): String = name.lowercase()
 
+fun CoachingObjective.bridgeValue(): String = name.lowercase()
+
 fun RuntimeBackend.bridgeValue(): String = name.lowercase()
 
 fun RuntimeAccelerator.bridgeValue(): String = name.lowercase()
@@ -446,6 +491,8 @@ fun TelemetrySourceKind.bridgeValue(): String = name.lowercase()
 fun ObdTransportPreference.bridgeValue(): String = name.lowercase()
 
 fun AimCanBitrate.bridgeValue(): String = wireValue
+
+fun VboxSyncStatus.bridgeValue(): String = name.lowercase()
 
 fun SessionGoalFocus.bridgeValue(): String = name.lowercase()
 

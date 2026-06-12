@@ -2,6 +2,7 @@ import type {
   CornerPhase,
   SessionMode,
   TelemetryFrame,
+  TelemetrySourceKind,
 } from '@trustable/core-telemetry';
 
 // ── Telemetry (shared via @trustable/core-telemetry) ───────
@@ -76,6 +77,24 @@ export interface RecordedSessionArtifact {
   embeddedFrameCount?: number;
   totalFrameCount?: number;
   lastFlushAt?: number;
+  vboxSync?: VboxSyncMetadata;
+}
+
+export type VboxSyncStatus = 'disabled' | 'armed' | 'triggered' | 'below_stop_threshold' | 'saved';
+
+export interface VboxSyncMetadata {
+  enabled: boolean;
+  status: VboxSyncStatus;
+  source: TelemetrySourceKind;
+  startSpeedKmh: number;
+  startSpeedMph: number;
+  preRollSeconds: number;
+  stopBelowSeconds: number;
+  armedAtMs?: number;
+  triggeredAtMs?: number;
+  firstMotionFrameTimeSeconds?: number;
+  belowStopThresholdSinceMs?: number;
+  lastObservedSpeedMph?: number;
 }
 
 // ── Coaching ───────────────────────────────────────────────
@@ -96,6 +115,17 @@ export type CoachAction =
   | 'HESITATION' | 'OVERSTEER_RECOVERY'
   | 'EARLY_THROTTLE' | 'LIFT_MID_CORNER' | 'SPIKE_BRAKE' | 'COGNITIVE_OVERLOAD'
   | 'HUSTLE';
+
+export type CoachingObjective =
+  | 'safety_recovery'
+  | 'brake_entry'
+  | 'brake_release'
+  | 'line_vision'
+  | 'rotate_wait'
+  | 'maintenance_throttle'
+  | 'exit_throttle'
+  | 'smoothness'
+  | 'no_cue';
 
 // ── Session Goals (Phase 6.2) ────────────────────────────
 
@@ -176,6 +206,10 @@ export interface CoachingDecision {
   latencyMs?: number;
   confidence?: number;
   phraseId?: string;
+  cornerId?: number;
+  cornerName?: string;
+  objective?: CoachingObjective;
+  causeId?: string;
 }
 
 export type AudioDispatchStatus =

@@ -1,6 +1,7 @@
 package com.trustableai.koru.runtime.deterministic
 
 import com.trustableai.koru.model.CoachAction
+import com.trustableai.koru.model.CoachingObjective
 import com.trustableai.koru.model.Corner
 import com.trustableai.koru.model.CornerPhase
 import com.trustableai.koru.model.DriverState
@@ -10,6 +11,7 @@ import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.SkillLevel
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.Track
+import com.trustableai.koru.runtime.CornerDoctrineCatalog
 import com.trustableai.koru.runtime.TrackExpertiseCatalog
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -22,15 +24,25 @@ import kotlin.math.sqrt
 data class CornerDetection(
     val phase: CornerPhase,
     val corner: Corner? = null,
+    val distanceToEntryMeters: Double? = null,
+    val distanceToApexMeters: Double? = null,
+    val approaching: Boolean? = null,
+    val confidence: Double = 0.0,
 )
 
 class CornerPhaseDetector(track: Track?) {
     private var track: Track? = track
     private var cosLat = track?.centerLat?.let { cos(it * Math.PI / 180.0) } ?: cos(38.16 * Math.PI / 180.0)
+    private val previousDistancesToEntry = mutableMapOf<Int, Double>()
+    private var previousLat: Double? = null
+    private var previousLon: Double? = null
 
     fun setTrack(track: Track?) {
         this.track = track
         this.cosLat = track?.centerLat?.let { cos(it * Math.PI / 180.0) } ?: this.cosLat
+        previousDistancesToEntry.clear()
+        previousLat = null
+        previousLon = null
     }
 
     fun detect(frame: TelemetryFrame): CornerDetection {
@@ -43,6 +55,8 @@ class CornerPhaseDetector(track: Track?) {
 
     private fun detectFromGps(frame: TelemetryFrame, track: Track): CornerDetection? {
         if (!isValidGps(frame.latitude, frame.longitude)) return null
+        val movementHeading = movementHeading(frame)
+        var bestDetection: CornerDetection? = null
         for (corner in track.corners) {
             val refLat = corner.entryLat ?: corner.lat
             val refLon = corner.entryLon ?: corner.lon
@@ -53,14 +67,37 @@ class CornerPhaseDetector(track: Track?) {
 
             val distanceToEntry = haversineDistance(frame.latitude, frame.longitude, refLat, refLon)
             val distanceToApex = haversineDistance(frame.latitude, frame.longitude, corner.lat, corner.lon)
+            val previousDistance = previousDistancesToEntry[corner.id]
+            previousDistancesToEntry[corner.id] = distanceToEntry
             if (distanceToEntry < 200.0 || distanceToApex < 150.0) {
-                return CornerDetection(
-                    phase = classifyPhase(distanceToEntry, distanceToApex),
+                val approachingByDistance = previousDistance == null || distanceToEntry < previousDistance - APPROACH_EPSILON_METERS
+                val approachingByHeading = movementHeading?.let { heading ->
+                    val bearingToEntry = bearingDegrees(frame.latitude, frame.longitude, refLat, refLon)
+                    angularDeltaDegrees(heading, bearingToEntry) <= MAX_APPROACH_HEADING_DELTA_DEGREES
+                } ?: true
+                val approaching = approachingByDistance || approachingByHeading
+                val phase = classifyPhase(distanceToEntry, distanceToApex, approaching)
+                val confidence = when {
+                    distanceToApex < 30.0 || distanceToEntry < 50.0 -> 0.92
+                    distanceToEntry < 100.0 || distanceToApex < 100.0 -> 0.82
+                    else -> 0.68
+                }
+                val detection = CornerDetection(
+                    phase = phase,
                     corner = corner,
+                    distanceToEntryMeters = distanceToEntry,
+                    distanceToApexMeters = distanceToApex,
+                    approaching = approaching,
+                    confidence = confidence,
                 )
+                if (bestDetection == null || distanceToApex < (bestDetection.distanceToApexMeters ?: Double.MAX_VALUE)) {
+                    bestDetection = detection
+                }
             }
         }
-        return null
+        previousLat = frame.latitude
+        previousLon = frame.longitude
+        return bestDetection
     }
 
     private fun detectFromGForces(frame: TelemetryFrame): CornerDetection {
@@ -73,19 +110,35 @@ class CornerPhaseDetector(track: Track?) {
             frame.throttle > 60.0 && absGLat < 0.2 && frame.gLong > 0.1 -> CornerPhase.ACCELERATION
             else -> CornerPhase.STRAIGHT
         }
-        return CornerDetection(phase = phase)
+        return CornerDetection(phase = phase, confidence = 0.42)
     }
 
-    private fun classifyPhase(distanceToEntry: Double, distanceToApex: Double): CornerPhase {
+    private fun classifyPhase(distanceToEntry: Double, distanceToApex: Double, approaching: Boolean): CornerPhase {
         return when {
-            distanceToEntry < 100.0 && distanceToApex > 80.0 -> CornerPhase.BRAKE_ZONE
-            distanceToEntry < 50.0 && distanceToApex > 40.0 -> CornerPhase.TURN_IN
             distanceToApex < 30.0 -> CornerPhase.APEX
+            !approaching && distanceToApex < 130.0 -> CornerPhase.EXIT
+            distanceToEntry < 50.0 && distanceToApex > 40.0 -> CornerPhase.TURN_IN
             distanceToEntry < 30.0 && distanceToApex < 80.0 -> CornerPhase.MID_CORNER
+            distanceToEntry < 100.0 && distanceToApex > 80.0 -> CornerPhase.BRAKE_ZONE
             distanceToApex in 30.0..99.999 -> CornerPhase.EXIT
-            distanceToEntry < 200.0 && distanceToApex > 100.0 -> CornerPhase.BRAKE_ZONE
+            distanceToEntry < 200.0 && distanceToApex > 100.0 && approaching -> CornerPhase.BRAKE_ZONE
             else -> CornerPhase.STRAIGHT
         }
+    }
+
+    private fun movementHeading(frame: TelemetryFrame): Double? {
+        val startLat = previousLat
+        val startLon = previousLon
+        if (startLat == null || startLon == null) return null
+        if (!isValidGps(startLat, startLon)) return null
+        val movementMeters = haversineDistance(startLat, startLon, frame.latitude, frame.longitude)
+        if (movementMeters < 1.0) return null
+        return bearingDegrees(startLat, startLon, frame.latitude, frame.longitude)
+    }
+
+    companion object {
+        private const val APPROACH_EPSILON_METERS = 1.5
+        private const val MAX_APPROACH_HEADING_DELTA_DEGREES = 105.0
     }
 }
 
@@ -276,6 +329,10 @@ class CoachingQueue {
         val confidence: Double? = null,
         val phraseId: String? = null,
         val backend: RuntimeBackend? = null,
+        val cornerId: Int? = null,
+        val cornerName: String? = null,
+        val objective: CoachingObjective? = null,
+        val causeId: String? = null,
     )
 
     private fun expireStale(nowMs: Long) {
@@ -651,18 +708,23 @@ class EdgeTriggerEvaluator {
                 frame = frame,
             )
 
-            corner != null && phase == CornerPhase.BRAKE_ZONE && frame.speedMph > 70.0 -> buildWindow(
-                triggerId = "corner_tactic",
-                action = CoachAction.BRAKE,
-                priority = 1,
-                text = "Corner tactic window open. Trim speed before turn-in.",
-                phase = phase,
-                driverState = driverState,
-                skillLevel = driverState.skillLevel,
-                track = track,
-                corner = corner,
-                frame = frame,
-            )
+            corner != null && phase == CornerPhase.BRAKE_ZONE && frame.speedMph > 70.0 ->
+                CornerDoctrineCatalog.edgeTactic(track, corner, phase, frame, driverState)?.let { intent ->
+                    buildWindow(
+                        triggerId = intent.causeId ?: "corner_tactic",
+                        action = intent.action,
+                        priority = intent.priority,
+                        text = intent.text ?: "Eyes up. Set the corner objective.",
+                        phase = phase,
+                        driverState = driverState,
+                        skillLevel = driverState.skillLevel,
+                        track = track,
+                        corner = corner,
+                        frame = frame,
+                        objective = intent.objective,
+                        causeId = intent.causeId,
+                    )
+                }
 
             else -> null
         }
@@ -684,6 +746,8 @@ class EdgeTriggerEvaluator {
         track: Track?,
         corner: Corner?,
         frame: TelemetryFrame,
+        objective: CoachingObjective? = null,
+        causeId: String? = null,
     ): EdgeReasoningWindow {
         val vision = frame.vision
         val cause = CoachingCauseClassifier.classify(triggerId, action, frame, phase, driverState, corner)
@@ -723,7 +787,9 @@ class EdgeTriggerEvaluator {
             skillLevel = skillLevel,
             cornerName = corner?.name,
             features = features,
-            causeHint = cause?.id,
+            cornerId = corner?.id,
+            objective = objective,
+            causeHint = cause?.id ?: causeId,
         )
     }
 

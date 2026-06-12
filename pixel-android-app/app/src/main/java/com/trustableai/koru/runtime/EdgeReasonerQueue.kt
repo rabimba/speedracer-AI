@@ -65,6 +65,10 @@ class EdgeReasonerQueue(
                             confidence = result.confidence,
                             phraseId = result.phraseId,
                             backend = reasoner.backend,
+                            cornerId = window.cornerId,
+                            cornerName = window.cornerName,
+                            objective = window.objective,
+                            causeId = window.causeHint,
                     )
                     synchronized(lock) {
                         if (activeRequest?.requestId == requestId) {

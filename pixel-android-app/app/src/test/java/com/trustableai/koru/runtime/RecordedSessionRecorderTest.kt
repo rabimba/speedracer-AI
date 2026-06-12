@@ -12,6 +12,7 @@ import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.TelemetrySourceHealth
 import com.trustableai.koru.model.TelemetrySourceKind
+import com.trustableai.koru.model.VboxSyncStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -228,5 +229,60 @@ class RecordedSessionRecorderTest {
         assertEquals("SUPPRESSED", audioEvent.getString("status"))
         assertEquals("phase_gate", audioEvent.getString("fallbackReason"))
         assertEquals("DECISION", audioEvent.getString("scope"))
+    }
+
+    @Test
+    fun `VBOX parity arms and triggers from AiM CAN speed with bounded pre-roll`() {
+        val recorder = RecordedSessionRecorder(persistArtifacts = false)
+        recorder.start(
+            SessionMode.TELEMETRY,
+            "Sonoma Raceway",
+            "superaj",
+            vboxSyncEnabled = true,
+        )
+
+        recorder.recordFrame(
+            TelemetryFrame(
+                timeSeconds = 1.0,
+                latitude = 38.16272,
+                longitude = -122.455,
+                speedMph = 5.0,
+                throttle = 0.0,
+                brake = 0.0,
+                gLat = 0.0,
+                gLong = 0.0,
+                telemetrySource = TelemetrySourceKind.AIM_CAN_USB,
+            ),
+        )
+        val armed = recorder.status()
+        assertEquals(0, armed.frameCount)
+        assertEquals(VboxSyncStatus.ARMED, armed.vboxSync?.status)
+
+        recorder.recordFrame(
+            TelemetryFrame(
+                timeSeconds = 1.2,
+                latitude = 38.16273,
+                longitude = -122.455,
+                speedMph = 10.0,
+                throttle = 5.0,
+                brake = 0.0,
+                gLat = 0.0,
+                gLong = 0.1,
+                telemetrySource = TelemetrySourceKind.AIM_CAN_USB,
+            ),
+        )
+        val triggered = recorder.status()
+        assertEquals(2, triggered.frameCount)
+        assertEquals(VboxSyncStatus.TRIGGERED, triggered.vboxSync?.status)
+
+        val artifact = recorder.finish() ?: error("expected artifact")
+        val json = recorder.artifactJson(artifact)
+        val vboxSync = json.getJSONObject("vboxSync")
+        assertEquals(VboxSyncStatus.SAVED, artifact.vboxSync?.status)
+        assertEquals(2, artifact.totalFrameCount)
+        assertEquals("aim_can_usb", vboxSync.getString("source"))
+        assertEquals(9.32, vboxSync.getDouble("startSpeedMph"), 0.01)
+        assertEquals(10.0, vboxSync.getDouble("preRollSeconds"), 0.01)
+        assertEquals(1.2, vboxSync.getDouble("firstMotionFrameTimeSeconds"), 0.01)
     }
 }

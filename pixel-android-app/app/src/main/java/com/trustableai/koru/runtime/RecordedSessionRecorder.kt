@@ -10,7 +10,10 @@ import com.trustableai.koru.model.RecordingStatus
 import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
+import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.model.VehicleDiagnostics
+import com.trustableai.koru.model.VboxSyncMetadata
+import com.trustableai.koru.model.VboxSyncStatus
 import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
 import org.json.JSONObject
@@ -27,10 +30,25 @@ class RecordedSessionRecorder(
     private var activeSession: ActiveSession? = null
 
     @Synchronized
-    fun start(mode: SessionMode, trackName: String, coachId: String, sessionGoals: List<SessionGoal> = emptyList()) {
+    fun start(
+        mode: SessionMode,
+        trackName: String,
+        coachId: String,
+        sessionGoals: List<SessionGoal> = emptyList(),
+        vboxSyncEnabled: Boolean = false,
+    ) {
         discard()
         val id = "koru-${mode.bridgeValue()}-${System.currentTimeMillis()}"
         val startedAtMs = System.currentTimeMillis()
+        val vboxSync = if (vboxSyncEnabled) {
+            VboxSyncMetadata(
+                enabled = true,
+                status = VboxSyncStatus.ARMED,
+                armedAtMs = startedAtMs,
+            )
+        } else {
+            null
+        }
         val paths = createSessionPaths(id)
         val writers = paths?.let(::openWriters)
         val active = ActiveSession(
@@ -45,6 +63,7 @@ class RecordedSessionRecorder(
             audioEventsPreview = mutableListOf(),
             paths = paths,
             writers = writers,
+            vboxSync = vboxSync,
         )
         activeSession = active
         writeMeta(active)
@@ -58,6 +77,36 @@ class RecordedSessionRecorder(
     @Synchronized
     fun recordFrame(frame: TelemetryFrame) {
         val session = activeSession ?: return
+        val sync = session.vboxSync
+        if (sync?.enabled == true && sync.triggeredAtMs == null) {
+            session.vboxPreRollFrames += frame
+            trimVboxPreRoll(session, frame.timeSeconds)
+            session.vboxSync = sync.copy(
+                status = VboxSyncStatus.ARMED,
+                lastObservedSpeedMph = frame.speedMph,
+            )
+            if (shouldTriggerVboxSync(frame)) {
+                val triggeredAtMs = System.currentTimeMillis()
+                session.vboxSync = session.vboxSync?.copy(
+                    status = VboxSyncStatus.TRIGGERED,
+                    triggeredAtMs = triggeredAtMs,
+                    firstMotionFrameTimeSeconds = frame.timeSeconds,
+                    belowStopThresholdSinceMs = null,
+                    lastObservedSpeedMph = frame.speedMph,
+                )
+                val buffered = session.vboxPreRollFrames.toList()
+                session.vboxPreRollFrames.clear()
+                buffered.forEach { bufferedFrame -> writeFrame(session, bufferedFrame) }
+                flush(session, force = true)
+            }
+            return
+        }
+
+        updateVboxStopThreshold(session, frame)
+        writeFrame(session, frame)
+    }
+
+    private fun writeFrame(session: ActiveSession, frame: TelemetryFrame) {
         session.totalFrameCount += 1
         if (shouldEmbedFrame(session, frame)) {
             session.embeddedFrames += frame
@@ -128,6 +177,7 @@ class RecordedSessionRecorder(
             audioEventCount = session.audioEventCount,
             lastFlushAtMs = session.lastFlushAtMs,
             flushAgeMs = session.lastFlushAtMs?.let { nowMs - it },
+            vboxSync = session.vboxSync,
         )
     }
 
@@ -178,6 +228,7 @@ class RecordedSessionRecorder(
                 .put("coachId", session.coachId)
                 .put("startedAt", session.startedAtMs)
                 .put("sessionGoals", JSONArray(session.sessionGoals.map(::goalJson)))
+                .put("vboxSync", session.vboxSync?.let(::vboxSyncJson))
                 .toString(),
         )
     }
@@ -276,6 +327,7 @@ class RecordedSessionRecorder(
             embeddedFrameCount = session.embeddedFrames.size,
             totalFrameCount = session.totalFrameCount,
             lastFlushAt = session.lastFlushAtMs,
+            vboxSync = session.vboxSync?.copy(status = VboxSyncStatus.SAVED),
         )
     }
 
@@ -320,6 +372,7 @@ class RecordedSessionRecorder(
             .put("embeddedFrameCount", artifact.embeddedFrameCount)
             .put("totalFrameCount", artifact.totalFrameCount)
             .put("lastFlushAt", artifact.lastFlushAt)
+            .put("vboxSync", artifact.vboxSync?.let(::vboxSyncJson))
     }
 
     private fun goalJson(goal: SessionGoal): JSONObject {
@@ -473,7 +526,63 @@ class RecordedSessionRecorder(
             .put("latencyMs", decision.latencyMs)
             .put("confidence", decision.confidence)
             .put("phraseId", decision.phraseId)
+            .put("cornerId", decision.cornerId)
+            .put("cornerName", decision.cornerName)
+            .put("objective", decision.objective?.bridgeValue())
+            .put("causeId", decision.causeId)
             .put("id", decision.id)
+    }
+
+    private fun vboxSyncJson(sync: VboxSyncMetadata): JSONObject {
+        return JSONObject()
+            .put("enabled", sync.enabled)
+            .put("status", sync.status.bridgeValue())
+            .put("source", sync.source.bridgeValue())
+            .put("startSpeedKmh", sync.startSpeedKmh)
+            .put("startSpeedMph", sync.startSpeedMph)
+            .put("preRollSeconds", sync.preRollSeconds)
+            .put("stopBelowSeconds", sync.stopBelowSeconds)
+            .put("armedAtMs", sync.armedAtMs)
+            .put("triggeredAtMs", sync.triggeredAtMs)
+            .put("firstMotionFrameTimeSeconds", sync.firstMotionFrameTimeSeconds)
+            .put("belowStopThresholdSinceMs", sync.belowStopThresholdSinceMs)
+            .put("lastObservedSpeedMph", sync.lastObservedSpeedMph)
+    }
+
+    private fun shouldTriggerVboxSync(frame: TelemetryFrame): Boolean {
+        return frame.telemetrySource == TelemetrySourceKind.AIM_CAN_USB &&
+            frame.speedMph >= VBOX_START_SPEED_MPH
+    }
+
+    private fun updateVboxStopThreshold(session: ActiveSession, frame: TelemetryFrame) {
+        val sync = session.vboxSync ?: return
+        if (!sync.enabled || sync.triggeredAtMs == null) return
+        val now = System.currentTimeMillis()
+        val belowSince = when {
+            frame.speedMph < sync.startSpeedMph && sync.belowStopThresholdSinceMs == null -> now
+            frame.speedMph < sync.startSpeedMph -> sync.belowStopThresholdSinceMs
+            else -> null
+        }
+        val status = if (belowSince != null && now - belowSince >= (sync.stopBelowSeconds * 1000.0).toLong()) {
+            VboxSyncStatus.BELOW_STOP_THRESHOLD
+        } else {
+            VboxSyncStatus.TRIGGERED
+        }
+        session.vboxSync = sync.copy(
+            status = status,
+            belowStopThresholdSinceMs = belowSince,
+            lastObservedSpeedMph = frame.speedMph,
+        )
+    }
+
+    private fun trimVboxPreRoll(session: ActiveSession, latestTimeSeconds: Double) {
+        val preRollSeconds = session.vboxSync?.preRollSeconds ?: VBOX_PREROLL_SECONDS
+        val cutoff = latestTimeSeconds - preRollSeconds
+        while (session.vboxPreRollFrames.size > MAX_VBOX_PREROLL_FRAMES ||
+            (session.vboxPreRollFrames.isNotEmpty() && session.vboxPreRollFrames.first().timeSeconds < cutoff)
+        ) {
+            session.vboxPreRollFrames.removeAt(0)
+        }
     }
 
     private fun audioEventJson(event: AudioDispatchEvent): JSONObject {
@@ -509,6 +618,8 @@ class RecordedSessionRecorder(
         var lastFlushAtMs: Long = 0L,
         var lastEmbeddedFrameTimeSeconds: Double? = null,
         val lastRawCanById: MutableMap<String, String> = mutableMapOf(),
+        var vboxSync: VboxSyncMetadata? = null,
+        val vboxPreRollFrames: MutableList<TelemetryFrame> = mutableListOf(),
     )
 
     private data class ActiveWriters(
@@ -535,6 +646,9 @@ class RecordedSessionRecorder(
         private const val MAX_EMBEDDED_DECISIONS = 1_000
         private const val MAX_EMBEDDED_AUDIO_EVENTS = 1_000
         private const val EMBEDDED_FRAME_INTERVAL_SECONDS = 0.5
+        private const val VBOX_START_SPEED_MPH = 9.32
+        private const val VBOX_PREROLL_SECONDS = 10.0
+        private const val MAX_VBOX_PREROLL_FRAMES = 600
 
         fun recoverIncomplete(context: Context): List<RecordedSessionArtifact> {
             val roots = listOfNotNull(
