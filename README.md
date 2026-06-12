@@ -13,16 +13,6 @@ Catalyst tells you what you did wrong with numbers.
 This system tells you in real time how to adapt and fix it, adjusted to your skill level.
 ```
 
-## Submission Artifacts (2026-06)
-
-- **Start here — Google submission writeup:** [`SUBMISSION.md`](SUBMISSION.md) — achievements, technical details, measured results.
-
-- **Audit & honest status:** [`docs/audit-2026-06-08.md`](docs/audit-2026-06-08.md) — what runs, what's blocked, verified latency numbers.
-- **Blog series (5 parts, Blogger-ready HTML):** [`docs/blog/`](docs/blog/) — origin → coaching paradigm → Split-Brain latency → on-device Gemma + NPU → trust & validation.
-- **GPU vs CPU vs NPU benchmark:** [`submission-artifacts/benchmarks/`](submission-artifacts/benchmarks/) — renderer, device runner, methodology proxy, and the honest current report.
-- **Submission index:** [`submission-artifacts/README.md`](submission-artifacts/README.md).
-- **Push to GitHub:** see [`PUBLISH.md`](PUBLISH.md) for the exact commands (sandbox has no git auth).
-
 ## Table of Contents
 
 - [Current Status](#current-status)

@@ -28,13 +28,13 @@ pixel-android-app/models/**/*.task
 # Local validation recordings
 validation-recordings/
 
+# Local/private submission and blog publishing material
+submission-artifacts/
+docs/blog/
+SUBMISSION.md
+PUBLISH.md
+
 # Stray validator outputs when run with no --artifact (real reports live in reports/<ts>/)
 sonoma-training-e2e/report.json
 sonoma-training-e2e/report.md
 sonoma-training-e2e/junit.xml
-
-# Host-CPU benchmark proxy output (regenerated on demand)
-submission-artifacts/benchmarks/host-cpu-proxy-report.json
-
-# Per-lane intermediate benchmark reports (merged into accelerator-comparison-report.json)
-submission-artifacts/benchmarks/partials/
