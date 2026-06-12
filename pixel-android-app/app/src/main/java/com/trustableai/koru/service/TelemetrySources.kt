@@ -2,6 +2,7 @@ package com.trustableai.koru.service
 
 import android.content.Context
 import android.os.SystemClock
+import com.trustableai.koru.model.AimCanBitrate
 import com.trustableai.koru.model.CanVehicleDiagnostics
 import com.trustableai.koru.model.ObdTransportPreference
 import com.trustableai.koru.model.TelemetryFrame
@@ -702,6 +703,8 @@ object TelemetrySourceFactory {
         context: Context,
         requested: TelemetrySourceKind,
         obdTransportPreference: ObdTransportPreference = ObdTransportPreference.AUTO,
+        aimCanBitrate: AimCanBitrate = AimCanBitrate.S8_1MBPS,
+        aimCanFallbacksEnabled: Boolean = true,
     ): TelemetrySourceSelection {
         return when (requested) {
             TelemetrySourceKind.SYNTHETIC ->
@@ -771,19 +774,25 @@ object TelemetrySourceFactory {
                     requested = requested,
                     active = requested,
                     source = AimCanUsbSource(
-                        canClient = AimCanUsbClient(context),
-                        raceBoxClient = if (BluetoothRuntimePermissions.hasBluetoothPermissions(context)) {
+                        canClient = AimCanUsbClient(context, bitrate = aimCanBitrate),
+                        raceBoxClient = if (aimCanFallbacksEnabled && BluetoothRuntimePermissions.hasBluetoothPermissions(context)) {
                             RaceBoxBleClient(context)
-                        } else {
+                        } else if (aimCanFallbacksEnabled) {
                             UnavailableRaceBoxClient("Bluetooth permission missing; RaceBox fallback unavailable")
+                        } else {
+                            null
                         },
-                        phoneFallbackSource = if (PhoneImuGpsSource.hasFineLocationPermission(context)) {
+                        phoneFallbackSource = if (aimCanFallbacksEnabled && PhoneImuGpsSource.hasFineLocationPermission(context)) {
                             PhoneImuGpsSource(context)
                         } else {
                             null
                         },
                     ),
-                    detail = "Using AiM CAN USB via RH-02 PRO / CANable as the primary source with RaceBox and phone GPS/IMU real-data fallback.",
+                    detail = if (aimCanFallbacksEnabled) {
+                        "Using AiM CAN USB via RH-02 PRO / CANable at ${aimCanBitrate.label} as the primary GPS/CAN source with optional RaceBox and phone fallback."
+                    } else {
+                        "Checking AiM CAN USB via RH-02 PRO / CANable at ${aimCanBitrate.label}; only raw USB SLCAN frames are active."
+                    },
                     isFallback = false,
                 )
         }
@@ -933,16 +942,21 @@ private fun aimCanHealth(
     raceBox: RaceBoxSample?,
     raceBoxStatus: RaceBoxClientStatus?,
 ): TelemetrySourceHealth {
-    val observedFrameIds = (AimCanFrameIds.all + can?.channelUpdatedAtElapsedMs.orEmpty().keys).toSortedSet()
+    val statusRawSamples = canStatus.rawCanSamplesById
+    val observedFrameIds = (
+        AimCanFrameIds.all +
+            can?.channelUpdatedAtElapsedMs.orEmpty().keys +
+            statusRawSamples.keys
+        ).toSortedSet()
     val frameAges = can?.channelUpdatedAtElapsedMs.orEmpty()
         .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
         .mapValues { (_, updatedAt) -> nowElapsedMs - updatedAt }
     val frameStale = observedFrameIds.associate { frameId ->
         AimCanFrameIds.key(frameId) to (can?.isFresh(frameId, nowElapsedMs, aimCanStaleMs(frameId)) != true)
     }
-    val frameRates = can?.frameRatesHz.orEmpty()
+    val frameRates = (can?.frameRatesHz.orEmpty() + canStatus.frameRatesHz)
         .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
-    val rawSamples = can?.rawCanSamplesById.orEmpty()
+    val rawSamples = (can?.rawCanSamplesById.orEmpty() + statusRawSamples)
         .mapKeys { (frameId, _) -> AimCanFrameIds.key(frameId) }
     val raceBoxAge = raceBox?.let { nowElapsedMs - it.receivedAtElapsedMs }
     val raceBoxFresh = raceBoxAge != null && raceBoxAge <= RACEBOX_STALE_MS
@@ -971,10 +985,12 @@ private fun aimCanHealth(
         canFrameStale = frameStale,
         canFrameRatesHz = frameRates,
         canDecodeErrors = can?.decodeErrors ?: canStatus.decodeErrors,
+        canBitrate = canStatus.bitrate.label,
+        canWaitingForFrames = canStatus.waitingForFrames,
         usbDeviceName = canStatus.usbDeviceName,
-        rawCanSample = can?.rawCanSample,
+        rawCanSample = can?.rawCanSample ?: canStatus.rawCanSample,
         rawCanSamplesById = rawSamples,
-        signUnverified = can != null,
+        signUnverified = can != null && hasFreshAimCanVehicleChannels(can, nowElapsedMs),
     )
 }
 

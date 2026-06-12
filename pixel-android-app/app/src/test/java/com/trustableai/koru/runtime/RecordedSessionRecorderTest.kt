@@ -78,6 +78,9 @@ class RecordedSessionRecorderTest {
         val audioEvents = json.getJSONArray("audioEvents")
 
         assertEquals(2, json.getInt("schemaVersion"))
+        assertEquals("completed", json.getString("endedReason"))
+        assertEquals(1, json.getInt("totalFrameCount"))
+        assertEquals(1, json.getInt("embeddedFrameCount"))
         assertEquals("decision-p0", json.getJSONArray("decisions").getJSONObject(0).getString("id"))
         val sourceHealth = json.getJSONArray("frames").getJSONObject(0).getJSONObject("sourceHealth")
         assertEquals("phone_obd_fusion", sourceHealth.getString("fallbackStage"))
@@ -133,6 +136,8 @@ class RecordedSessionRecorderTest {
                     canFrameStale = mapOf("0x420" to false, "0x452" to false),
                     canFrameRatesHz = mapOf("0x420" to 10.0, "0x423" to 50.0),
                     canDecodeErrors = 1,
+                    canBitrate = "S8 1 Mbps",
+                    canWaitingForFrames = false,
                     usbDeviceName = "RH-02 PRO",
                     rawCanSample = "t4238B0FF78005200D7FF",
                     rawCanSamplesById = mapOf("0x422" to "t42287017621201000000"),
@@ -161,5 +166,67 @@ class RecordedSessionRecorderTest {
         assertEquals("t42287017621201000000", sourceHealth.getJSONObject("rawCanSamplesById").getString("0x422"))
         assertEquals(true, sourceHealth.getBoolean("signUnverified"))
         assertEquals(50.0, sourceHealth.getJSONObject("canFrameRatesHz").getDouble("0x423"), 0.01)
+        assertEquals("S8 1 Mbps", sourceHealth.getString("canBitrate"))
+        assertEquals(false, sourceHealth.getBoolean("canWaitingForFrames"))
+    }
+
+    @Test
+    fun `recorder keeps bounded preview for long field runs`() {
+        val recorder = RecordedSessionRecorder(persistArtifacts = false)
+        recorder.start(SessionMode.TELEMETRY, "Sonoma Raceway", "superaj")
+
+        repeat(30_000) { index ->
+            recorder.recordFrame(
+                TelemetryFrame(
+                    timeSeconds = index * 0.02,
+                    latitude = 38.16272,
+                    longitude = -122.455,
+                    speedMph = 60.0,
+                    throttle = 20.0,
+                    brake = 0.0,
+                    gLat = 0.1,
+                    gLong = 0.0,
+                    telemetrySource = TelemetrySourceKind.PHONE_IMU_GPS,
+                ),
+            )
+        }
+
+        val activeStatus = recorder.status()
+        assertEquals(true, activeStatus.active)
+        assertEquals(30_000, activeStatus.frameCount)
+
+        val artifact = recorder.finish() ?: error("expected artifact")
+        assertEquals(30_000, artifact.totalFrameCount)
+        assertEquals(30_000, artifact.summary.frameCount)
+        assertTrue("preview should stay bounded", artifact.frames.size <= 600)
+        assertTrue("preview should keep useful samples", artifact.frames.size > 100)
+    }
+
+    @Test
+    fun `suppressed audio events are serialized for field debugging`() {
+        val recorder = RecordedSessionRecorder(persistArtifacts = false)
+        recorder.start(SessionMode.TELEMETRY, "Sonoma Raceway", "superaj")
+
+        recorder.recordAudioEvent(
+            AudioDispatchEvent(
+                decisionId = "decision-1",
+                utteranceId = "hot-1",
+                action = CoachAction.WAIT,
+                priority = 2,
+                requestedAtMs = 200L,
+                dispatchLatencyMs = 0L,
+                status = AudioDispatchStatus.SUPPRESSED,
+                fallbackReason = "phase_gate",
+            ),
+        )
+
+        val artifact = recorder.finish() ?: error("expected artifact")
+        val audioEvent = recorder.artifactJson(artifact)
+            .getJSONArray("audioEvents")
+            .getJSONObject(0)
+
+        assertEquals("SUPPRESSED", audioEvent.getString("status"))
+        assertEquals("phase_gate", audioEvent.getString("fallbackReason"))
+        assertEquals("DECISION", audioEvent.getString("scope"))
     }
 }

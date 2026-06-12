@@ -6,6 +6,7 @@ import com.trustableai.koru.model.CanVehicleDiagnostics
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.RecordedSessionArtifact
 import com.trustableai.koru.model.RecordedSessionSummary
+import com.trustableai.koru.model.RecordingStatus
 import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetryFrame
@@ -13,7 +14,9 @@ import com.trustableai.koru.model.VehicleDiagnostics
 import com.trustableai.koru.model.bridgeValue
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedWriter
 import java.io.File
+import java.io.FileWriter
 import java.lang.StringBuilder
 import java.util.Locale
 
@@ -25,51 +28,233 @@ class RecordedSessionRecorder(
 
     @Synchronized
     fun start(mode: SessionMode, trackName: String, coachId: String, sessionGoals: List<SessionGoal> = emptyList()) {
-        activeSession = ActiveSession(
-            id = "koru-${mode.bridgeValue()}-${System.currentTimeMillis()}",
+        discard()
+        val id = "koru-${mode.bridgeValue()}-${System.currentTimeMillis()}"
+        val startedAtMs = System.currentTimeMillis()
+        val paths = createSessionPaths(id)
+        val writers = paths?.let(::openWriters)
+        val active = ActiveSession(
+            id = id,
             mode = mode,
             trackName = trackName,
             coachId = coachId,
             sessionGoals = sessionGoals.take(3),
-            startedAtMs = System.currentTimeMillis(),
-            frames = mutableListOf(),
-            decisions = mutableListOf(),
-            audioEvents = mutableListOf(),
+            startedAtMs = startedAtMs,
+            embeddedFrames = mutableListOf(),
+            decisionsPreview = mutableListOf(),
+            audioEventsPreview = mutableListOf(),
+            paths = paths,
+            writers = writers,
         )
+        activeSession = active
+        writeMeta(active)
+        writeCanDumpHeader(active)
+        flush(active, force = true)
     }
 
     @Synchronized
+    fun hasActiveSession(): Boolean = activeSession != null
+
+    @Synchronized
     fun recordFrame(frame: TelemetryFrame) {
-        activeSession?.frames?.add(frame)
+        val session = activeSession ?: return
+        session.totalFrameCount += 1
+        if (shouldEmbedFrame(session, frame)) {
+            session.embeddedFrames += frame
+            session.lastEmbeddedFrameTimeSeconds = frame.timeSeconds
+        }
+        session.writers?.frames?.let { writer ->
+            writer.append(frameJson(frame).toString())
+            writer.newLine()
+        }
+        writeCanDumpRows(session, frame)
+        flush(session)
     }
 
     @Synchronized
     fun recordDecision(decision: CoachingDecision) {
-        activeSession?.decisions?.add(decision)
+        val session = activeSession ?: return
+        session.decisionCount += 1
+        session.decisionsPreview += decision
+        trimPreview(session.decisionsPreview, MAX_EMBEDDED_DECISIONS)
+        session.writers?.decisions?.let { writer ->
+            writer.append(decisionJson(decision).toString())
+            writer.newLine()
+        }
+        flush(session)
     }
 
     @Synchronized
     fun recordAudioEvent(event: AudioDispatchEvent) {
-        activeSession?.audioEvents?.add(event)
+        val session = activeSession ?: return
+        session.audioEventCount += 1
+        session.audioEventsPreview += event
+        trimPreview(session.audioEventsPreview, MAX_EMBEDDED_AUDIO_EVENTS)
+        session.writers?.audioEvents?.let { writer ->
+            writer.append(audioEventJson(event).toString())
+            writer.newLine()
+        }
+        flush(session)
     }
 
     @Synchronized
-    fun finish(): RecordedSessionArtifact? {
+    fun finish(endedReason: String = "completed"): RecordedSessionArtifact? {
         val session = activeSession ?: return null
         activeSession = null
-
         val endedAtMs = System.currentTimeMillis()
+        flush(session, force = true)
+        closeWriters(session)
+        val artifact = buildArtifact(session, endedAtMs, endedReason)
+        persistManifest(artifact)
+        session.paths?.activeMarkerPath?.let { File(it).delete() }
+        return artifact
+    }
+
+    @Synchronized
+    fun status(nowMs: Long = System.currentTimeMillis()): RecordingStatus {
+        val session = activeSession
+            ?: return RecordingStatus(active = false)
+        val paths = session.paths
+        return RecordingStatus(
+            active = true,
+            sessionId = session.id,
+            artifactPath = paths?.artifactPath,
+            framesPath = paths?.framesPath,
+            decisionsPath = paths?.decisionsPath,
+            audioEventsPath = paths?.audioEventsPath,
+            canDumpPath = paths?.canDumpPath,
+            frameCount = session.totalFrameCount,
+            decisionCount = session.decisionCount,
+            audioEventCount = session.audioEventCount,
+            lastFlushAtMs = session.lastFlushAtMs,
+            flushAgeMs = session.lastFlushAtMs?.let { nowMs - it },
+        )
+    }
+
+    @Synchronized
+    fun discard() {
+        val session = activeSession ?: return
+        activeSession = null
+        runCatching { closeWriters(session) }
+    }
+
+    private fun createSessionPaths(sessionId: String): PersistedSessionPaths? {
+        if (!persistArtifacts) return null
+        val appContext = context ?: return null
+        val root = appContext.getExternalFilesDir("recorded_sessions")
+            ?: File(appContext.filesDir, "recorded_sessions")
+        val sessionDir = File(root, sessionId)
+        sessionDir.mkdirs()
+        return PersistedSessionPaths(
+            directory = sessionDir.absolutePath,
+            artifactPath = File(sessionDir, "session.json").absolutePath,
+            framesPath = File(sessionDir, "frames.ndjson").absolutePath,
+            decisionsPath = File(sessionDir, "decisions.ndjson").absolutePath,
+            audioEventsPath = File(sessionDir, "audio-events.ndjson").absolutePath,
+            canDumpPath = File(sessionDir, "can-slcan.txt").absolutePath,
+            metaPath = File(sessionDir, "session-meta.json").absolutePath,
+            activeMarkerPath = File(sessionDir, ".active").absolutePath,
+        )
+    }
+
+    private fun openWriters(paths: PersistedSessionPaths): ActiveWriters {
+        File(paths.activeMarkerPath).writeText("active")
+        return ActiveWriters(
+            frames = BufferedWriter(FileWriter(paths.framesPath, true)),
+            decisions = BufferedWriter(FileWriter(paths.decisionsPath, true)),
+            audioEvents = BufferedWriter(FileWriter(paths.audioEventsPath, true)),
+            canDump = BufferedWriter(FileWriter(paths.canDumpPath, true)),
+        )
+    }
+
+    private fun writeMeta(session: ActiveSession) {
+        val paths = session.paths ?: return
+        File(paths.metaPath).writeText(
+            JSONObject()
+                .put("id", session.id)
+                .put("schemaVersion", 2)
+                .put("mode", session.mode.bridgeValue())
+                .put("trackName", session.trackName)
+                .put("coachId", session.coachId)
+                .put("startedAt", session.startedAtMs)
+                .put("sessionGoals", JSONArray(session.sessionGoals.map(::goalJson)))
+                .toString(),
+        )
+    }
+
+    private fun writeCanDumpHeader(session: ActiveSession) {
+        val writer = session.writers?.canDump ?: return
+        writer.append("# Koru AiM CAN raw dump")
+        writer.newLine()
+        writer.append("# session=").append(session.id)
+            .append(" track=").append(session.trackName)
+        writer.newLine()
+        writer.append("# columns: timeSeconds canId rawSlcan brakeRaw brakePsi brakeZeroOffsetRaw brakeCalPsi pedalRaw pedalPercent brakeSwitchRaw")
+        writer.newLine()
+    }
+
+    private fun writeCanDumpRows(session: ActiveSession, frame: TelemetryFrame) {
+        val writer = session.writers?.canDump ?: return
+        val diagnostics = frame.canVehicleDiagnostics
+        val samples = frame.sourceHealth?.rawCanSamplesById.orEmpty() + diagnostics?.rawFrameSamples.orEmpty()
+        if (samples.isEmpty()) return
+        samples.toSortedMap().forEach { (canId, raw) ->
+            if (session.lastRawCanById[canId] == raw) return@forEach
+            session.lastRawCanById[canId] = raw
+            writer.append(String.format(Locale.US, "%.3f", frame.timeSeconds))
+                .append(' ').append(canId)
+                .append(' ').append(raw)
+                .append(' ').append(diagnostics?.brakePressureRaw?.toString().orEmpty())
+                .append(' ').append(diagnostics?.brakePressurePsi?.toString().orEmpty())
+                .append(' ').append(diagnostics?.brakePressureZeroOffsetRaw?.toString().orEmpty())
+                .append(' ').append(diagnostics?.brakePressureCalibratedPsi?.toString().orEmpty())
+                .append(' ').append(diagnostics?.pedalPositionRaw?.toString().orEmpty())
+                .append(' ').append(diagnostics?.pedalPositionPercent?.toString().orEmpty())
+                .append(' ').append(diagnostics?.brakeSwitchRaw?.toString().orEmpty())
+            writer.newLine()
+        }
+    }
+
+    private fun shouldEmbedFrame(session: ActiveSession, frame: TelemetryFrame): Boolean {
+        if (session.embeddedFrames.size >= MAX_EMBEDDED_FRAMES) return false
+        val last = session.lastEmbeddedFrameTimeSeconds ?: return true
+        return frame.timeSeconds - last >= EMBEDDED_FRAME_INTERVAL_SECONDS
+    }
+
+    private fun flush(session: ActiveSession, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - session.lastFlushAtMs < FLUSH_INTERVAL_MS) return
+        session.writers?.frames?.flush()
+        session.writers?.decisions?.flush()
+        session.writers?.audioEvents?.flush()
+        session.writers?.canDump?.flush()
+        session.lastFlushAtMs = now
+    }
+
+    private fun closeWriters(session: ActiveSession) {
+        session.writers?.frames?.close()
+        session.writers?.decisions?.close()
+        session.writers?.audioEvents?.close()
+        session.writers?.canDump?.close()
+        session.writers = null
+    }
+
+    private fun buildArtifact(
+        session: ActiveSession,
+        endedAtMs: Long,
+        endedReason: String,
+    ): RecordedSessionArtifact {
         val summary = RecordedSessionSummary(
             sessionId = session.id,
             mode = session.mode,
             trackName = session.trackName,
             coachId = session.coachId,
-            frameCount = session.frames.size,
-            decisionCount = session.decisions.size,
+            frameCount = session.totalFrameCount,
+            decisionCount = session.decisionCount,
             durationSeconds = ((endedAtMs - session.startedAtMs) / 1000.0),
         )
-        val paths = preferredExportPaths(session.id)
-        val artifact = RecordedSessionArtifact(
+        val paths = session.paths
+        return RecordedSessionArtifact(
             schemaVersion = 2,
             id = session.id,
             mode = session.mode,
@@ -79,57 +264,24 @@ class RecordedSessionRecorder(
             endedAtMs = endedAtMs,
             summary = summary,
             sessionGoals = session.sessionGoals.toList(),
-            frames = session.frames.toList(),
-            decisions = session.decisions.toList(),
-            audioEvents = session.audioEvents.toList(),
+            frames = session.embeddedFrames.toList(),
+            decisions = session.decisionsPreview.toList(),
+            audioEvents = session.audioEventsPreview.toList(),
             artifactPath = paths?.artifactPath,
             canDumpPath = paths?.canDumpPath,
+            endedReason = endedReason,
+            framesPath = paths?.framesPath,
+            decisionsPath = paths?.decisionsPath,
+            audioEventsPath = paths?.audioEventsPath,
+            embeddedFrameCount = session.embeddedFrames.size,
+            totalFrameCount = session.totalFrameCount,
+            lastFlushAt = session.lastFlushAtMs,
         )
-        persist(artifact)
-        return artifact
     }
 
-    @Synchronized
-    fun discard() {
-        activeSession = null
-    }
-
-    private fun persist(artifact: RecordedSessionArtifact): PersistedSessionPaths? {
-        if (!persistArtifacts) return null
-        val appContext = context ?: return null
-        val sessionDirs = listOfNotNull(
-            File(appContext.filesDir, "recorded_sessions"),
-            appContext.getExternalFilesDir("recorded_sessions"),
-        ).distinctBy { it.absolutePath }
-        var exportedPaths: PersistedSessionPaths? = null
-        sessionDirs.forEach { sessionDir ->
-            sessionDir.mkdirs()
-            val file = File(sessionDir, "${artifact.id}.json")
-            val canDumpFile = File(sessionDir, "${artifact.id}.can-slcan.txt")
-            val pathsForThisDir = PersistedSessionPaths(
-                artifactPath = file.absolutePath,
-                canDumpPath = canDumpFile.absolutePath,
-            )
-            val artifactForThisDir = artifact.copy(
-                artifactPath = pathsForThisDir.artifactPath,
-                canDumpPath = pathsForThisDir.canDumpPath,
-            )
-            file.writeText(artifactJson(artifactForThisDir).toString())
-            canDumpFile.writeText(rawCanDumpText(artifactForThisDir))
-            exportedPaths = pathsForThisDir
-        }
-        return exportedPaths
-    }
-
-    private fun preferredExportPaths(sessionId: String): PersistedSessionPaths? {
-        if (!persistArtifacts) return null
-        val appContext = context ?: return null
-        val sessionDir = appContext.getExternalFilesDir("recorded_sessions")
-            ?: File(appContext.filesDir, "recorded_sessions")
-        return PersistedSessionPaths(
-            artifactPath = File(sessionDir, "$sessionId.json").absolutePath,
-            canDumpPath = File(sessionDir, "$sessionId.can-slcan.txt").absolutePath,
-        )
+    private fun persistManifest(artifact: RecordedSessionArtifact) {
+        val path = artifact.artifactPath ?: return
+        File(path).writeText(artifactJson(artifact).toString())
     }
 
     internal fun artifactJson(artifact: RecordedSessionArtifact): JSONObject {
@@ -141,6 +293,7 @@ class RecordedSessionRecorder(
             .put("coachId", artifact.coachId)
             .put("startedAt", artifact.startedAtMs)
             .put("endedAt", artifact.endedAtMs)
+            .put("endedReason", artifact.endedReason)
             .put(
                 "summary",
                 JSONObject()
@@ -161,6 +314,12 @@ class RecordedSessionRecorder(
             .put("audioEvents", JSONArray(artifact.audioEvents.map(::audioEventJson)))
             .put("artifactPath", artifact.artifactPath)
             .put("canDumpPath", artifact.canDumpPath)
+            .put("framesPath", artifact.framesPath)
+            .put("decisionsPath", artifact.decisionsPath)
+            .put("audioEventsPath", artifact.audioEventsPath)
+            .put("embeddedFrameCount", artifact.embeddedFrameCount)
+            .put("totalFrameCount", artifact.totalFrameCount)
+            .put("lastFlushAt", artifact.lastFlushAt)
     }
 
     private fun goalJson(goal: SessionGoal): JSONObject {
@@ -226,6 +385,8 @@ class RecordedSessionRecorder(
                         .put("canFrameStale", JSONObject(health.canFrameStale))
                         .put("canFrameRatesHz", JSONObject(health.canFrameRatesHz))
                         .put("canDecodeErrors", health.canDecodeErrors)
+                        .put("canBitrate", health.canBitrate)
+                        .put("canWaitingForFrames", health.canWaitingForFrames)
                         .put("usbDeviceName", health.usbDeviceName)
                         .put("rawCanSample", health.rawCanSample)
                         .put("rawCanSamplesById", JSONObject(health.rawCanSamplesById))
@@ -300,34 +461,6 @@ class RecordedSessionRecorder(
             .put("rawFrameSamples", JSONObject(diagnostics.rawFrameSamples))
     }
 
-    private fun rawCanDumpText(artifact: RecordedSessionArtifact): String {
-        val builder = StringBuilder()
-        builder.append("# Koru AiM CAN raw dump\n")
-        builder.append("# session=").append(artifact.id)
-            .append(" track=").append(artifact.trackName)
-            .append(" frames=").append(artifact.frames.size)
-            .append('\n')
-        builder.append("# columns: timeSeconds canId rawSlcan brakeRaw brakePsi brakeZeroOffsetRaw brakeCalPsi pedalRaw pedalPercent brakeSwitchRaw\n")
-        artifact.frames.forEach { frame ->
-            val diagnostics = frame.canVehicleDiagnostics
-            val samples = frame.sourceHealth?.rawCanSamplesById.orEmpty() + diagnostics?.rawFrameSamples.orEmpty()
-            samples.toSortedMap().forEach { (canId, raw) ->
-                builder.append(String.format(Locale.US, "%.3f", frame.timeSeconds))
-                    .append(' ').append(canId)
-                    .append(' ').append(raw)
-                    .append(' ').append(diagnostics?.brakePressureRaw ?: "")
-                    .append(' ').append(diagnostics?.brakePressurePsi ?: "")
-                    .append(' ').append(diagnostics?.brakePressureZeroOffsetRaw ?: "")
-                    .append(' ').append(diagnostics?.brakePressureCalibratedPsi ?: "")
-                    .append(' ').append(diagnostics?.pedalPositionRaw ?: "")
-                    .append(' ').append(diagnostics?.pedalPositionPercent ?: "")
-                    .append(' ').append(diagnostics?.brakeSwitchRaw ?: "")
-                    .append('\n')
-            }
-        }
-        return builder.toString()
-    }
-
     private fun decisionJson(decision: CoachingDecision): JSONObject {
         return JSONObject()
             .put("path", decision.path.bridgeValue())
@@ -354,6 +487,8 @@ class RecordedSessionRecorder(
             .put("ttsStartLatencyMs", event.ttsStartLatencyMs)
             .put("status", event.status.name)
             .put("fallbackReason", event.fallbackReason)
+            .put("scope", event.scope.name)
+            .put("clipName", event.clipName)
     }
 
     private data class ActiveSession(
@@ -363,13 +498,125 @@ class RecordedSessionRecorder(
         val coachId: String,
         val sessionGoals: List<SessionGoal>,
         val startedAtMs: Long,
-        val frames: MutableList<TelemetryFrame>,
-        val decisions: MutableList<CoachingDecision>,
-        val audioEvents: MutableList<AudioDispatchEvent>,
+        val embeddedFrames: MutableList<TelemetryFrame>,
+        val decisionsPreview: MutableList<CoachingDecision>,
+        val audioEventsPreview: MutableList<AudioDispatchEvent>,
+        val paths: PersistedSessionPaths?,
+        var writers: ActiveWriters?,
+        var totalFrameCount: Int = 0,
+        var decisionCount: Int = 0,
+        var audioEventCount: Int = 0,
+        var lastFlushAtMs: Long = 0L,
+        var lastEmbeddedFrameTimeSeconds: Double? = null,
+        val lastRawCanById: MutableMap<String, String> = mutableMapOf(),
+    )
+
+    private data class ActiveWriters(
+        val frames: BufferedWriter,
+        val decisions: BufferedWriter,
+        val audioEvents: BufferedWriter,
+        val canDump: BufferedWriter,
     )
 
     private data class PersistedSessionPaths(
+        val directory: String,
         val artifactPath: String,
+        val framesPath: String,
+        val decisionsPath: String,
+        val audioEventsPath: String,
         val canDumpPath: String,
+        val metaPath: String,
+        val activeMarkerPath: String,
     )
+
+    companion object {
+        private const val FLUSH_INTERVAL_MS = 1_000L
+        private const val MAX_EMBEDDED_FRAMES = 600
+        private const val MAX_EMBEDDED_DECISIONS = 1_000
+        private const val MAX_EMBEDDED_AUDIO_EVENTS = 1_000
+        private const val EMBEDDED_FRAME_INTERVAL_SECONDS = 0.5
+
+        fun recoverIncomplete(context: Context): List<RecordedSessionArtifact> {
+            val roots = listOfNotNull(
+                File(context.filesDir, "recorded_sessions"),
+                context.getExternalFilesDir("recorded_sessions"),
+            ).distinctBy { it.absolutePath }
+            return roots.flatMap { root ->
+                root.listFiles()
+                    ?.filter { candidate -> candidate.isDirectory && File(candidate, ".active").exists() }
+                    ?.mapNotNull { directory -> recoverDirectory(context, directory) }
+                    .orEmpty()
+            }
+        }
+
+        private fun recoverDirectory(context: Context, directory: File): RecordedSessionArtifact? {
+            val metaFile = File(directory, "session-meta.json")
+            if (!metaFile.exists()) return null
+            val meta = runCatching { JSONObject(metaFile.readText()) }.getOrNull() ?: return null
+            val id = meta.optString("id", directory.name)
+            val mode = modeFromBridge(meta.optString("mode", SessionMode.TELEMETRY.bridgeValue()))
+            val trackName = meta.optString("trackName", "Recovered Session")
+            val coachId = meta.optString("coachId", "superaj")
+            val startedAtMs = meta.optLong("startedAt", directory.lastModified())
+            val endedAtMs = System.currentTimeMillis()
+            val framesPath = File(directory, "frames.ndjson").absolutePath
+            val decisionsPath = File(directory, "decisions.ndjson").absolutePath
+            val audioEventsPath = File(directory, "audio-events.ndjson").absolutePath
+            val canDumpPath = File(directory, "can-slcan.txt").absolutePath
+            val frameCount = lineCount(File(framesPath))
+            val decisionCount = lineCount(File(decisionsPath))
+            val summary = RecordedSessionSummary(
+                sessionId = id,
+                mode = mode,
+                trackName = trackName,
+                coachId = coachId,
+                frameCount = frameCount,
+                decisionCount = decisionCount,
+                durationSeconds = ((endedAtMs - startedAtMs) / 1000.0).coerceAtLeast(0.0),
+            )
+            val artifact = RecordedSessionArtifact(
+                schemaVersion = 2,
+                id = id,
+                mode = mode,
+                trackName = trackName,
+                coachId = coachId,
+                startedAtMs = startedAtMs,
+                endedAtMs = endedAtMs,
+                summary = summary,
+                frames = emptyList(),
+                decisions = emptyList(),
+                audioEvents = emptyList(),
+                artifactPath = File(directory, "session.json").absolutePath,
+                canDumpPath = canDumpPath,
+                endedReason = "process_recovered",
+                framesPath = framesPath,
+                decisionsPath = decisionsPath,
+                audioEventsPath = audioEventsPath,
+                embeddedFrameCount = 0,
+                totalFrameCount = frameCount,
+                lastFlushAt = directory.lastModified().takeIf { it > 0L },
+            )
+            val recorder = RecordedSessionRecorder(context)
+            File(artifact.artifactPath ?: return artifact).writeText(recorder.artifactJson(artifact).toString())
+            File(directory, ".active").delete()
+            return artifact
+        }
+
+        private fun modeFromBridge(value: String): SessionMode {
+            return SessionMode.entries.firstOrNull { mode -> mode.bridgeValue() == value } ?: SessionMode.TELEMETRY
+        }
+
+        private fun lineCount(file: File): Int {
+            if (!file.exists()) return 0
+            var count = 0
+            file.forEachLine { count += 1 }
+            return count
+        }
+
+        private fun <T> trimPreview(list: MutableList<T>, maxSize: Int) {
+            while (list.size > maxSize) {
+                list.removeAt(0)
+            }
+        }
+    }
 }

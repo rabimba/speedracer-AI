@@ -6,7 +6,9 @@ import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.CoachingPath
+import com.trustableai.koru.model.AudioDispatchEvent
 import com.trustableai.koru.model.RecordedSessionArtifact
+import com.trustableai.koru.model.RecordingStatus
 import com.trustableai.koru.model.TelemetryFrame
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,10 +20,13 @@ import kotlinx.coroutines.flow.asStateFlow
 object KoruSessionBus {
     private val telemetryFlow = MutableSharedFlow<TelemetryFrame>(extraBufferCapacity = 32)
     private val decisionFlow = MutableSharedFlow<CoachingDecision>(extraBufferCapacity = 16)
+    private val audioEventFlow = MutableSharedFlow<AudioDispatchEvent>(extraBufferCapacity = 16)
     private val savedSessionFlow = MutableSharedFlow<RecordedSessionArtifact>(extraBufferCapacity = 2)
     private val latestTelemetryFlow = MutableStateFlow<TelemetryFrame?>(null)
     private val decisionHistoryFlow = MutableStateFlow<List<CoachingDecision>>(emptyList())
+    private val latestAudioEventFlow = MutableStateFlow<AudioDispatchEvent?>(null)
     private val latestSavedSessionFlow = MutableStateFlow<RecordedSessionArtifact?>(null)
+    private val recordingStatusFlow = MutableStateFlow(RecordingStatus())
     private val statusFlow = MutableStateFlow(
         LiveBackendStatus(
             backend = RuntimeBackend.DETERMINISTIC,
@@ -35,10 +40,13 @@ object KoruSessionBus {
 
     val telemetry: SharedFlow<TelemetryFrame> = telemetryFlow.asSharedFlow()
     val decisions: SharedFlow<CoachingDecision> = decisionFlow.asSharedFlow()
+    val audioEvents: SharedFlow<AudioDispatchEvent> = audioEventFlow.asSharedFlow()
     val savedSessions: SharedFlow<RecordedSessionArtifact> = savedSessionFlow.asSharedFlow()
     val latestTelemetry: StateFlow<TelemetryFrame?> = latestTelemetryFlow.asStateFlow()
     val decisionHistory: StateFlow<List<CoachingDecision>> = decisionHistoryFlow.asStateFlow()
+    val latestAudioEvent: StateFlow<AudioDispatchEvent?> = latestAudioEventFlow.asStateFlow()
     val latestSavedSession: StateFlow<RecordedSessionArtifact?> = latestSavedSessionFlow.asStateFlow()
+    val recordingStatus: StateFlow<RecordingStatus> = recordingStatusFlow.asStateFlow()
     val status: StateFlow<LiveBackendStatus> = statusFlow.asStateFlow()
     val edgeInferenceMetrics: StateFlow<EdgeInferenceMetrics?> = edgeInferenceMetricsFlow.asStateFlow()
 
@@ -52,9 +60,18 @@ object KoruSessionBus {
         decisionFlow.tryEmit(decision)
     }
 
+    fun tryEmitAudioEvent(event: AudioDispatchEvent) {
+        latestAudioEventFlow.value = event
+        audioEventFlow.tryEmit(event)
+    }
+
     fun tryEmitSavedSession(session: RecordedSessionArtifact) {
         latestSavedSessionFlow.value = session
         savedSessionFlow.tryEmit(session)
+    }
+
+    fun tryEmitRecordingStatus(status: RecordingStatus) {
+        recordingStatusFlow.value = status
     }
 
     fun tryEmitStatus(status: LiveBackendStatus) {
@@ -69,6 +86,8 @@ object KoruSessionBus {
         latestTelemetryFlow.value = null
         decisionHistoryFlow.value = emptyList()
         latestSavedSessionFlow.value = null
+        latestAudioEventFlow.value = null
+        recordingStatusFlow.value = RecordingStatus()
         edgeInferenceMetricsFlow.value = null
     }
 

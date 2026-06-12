@@ -1,7 +1,5 @@
 package com.trustableai.koru.service
 
-import java.util.Locale
-
 object AimCanFrameIds {
     const val CORE = 0x420
     const val PRESSURE_RATES = 0x421
@@ -23,7 +21,13 @@ object AimCanFrameIds {
         GPS_POSITION,
     )
 
-    fun key(frameId: Int): String = "0x%03X".format(Locale.US, frameId)
+    private val standardIdKeys: Map<Int, String> = (0..0x7FF).associateWith { frameId ->
+        "0x" + frameId.toString(16).uppercase().padStart(3, '0')
+    }
+
+    fun key(frameId: Int): String {
+        return standardIdKeys[frameId] ?: "0x" + frameId.toString(16).uppercase().padStart(3, '0')
+    }
 }
 
 data class SlcanFrame(
@@ -43,29 +47,42 @@ class AimCanSlcanParser(
         private set
 
     fun append(bytes: ByteArray, receivedAtElapsedMs: Long): List<SlcanFrame> {
-        return append(String(bytes, Charsets.US_ASCII), receivedAtElapsedMs)
+        return append(bytes, bytes.size, receivedAtElapsedMs)
+    }
+
+    fun append(bytes: ByteArray, length: Int, receivedAtElapsedMs: Long): List<SlcanFrame> {
+        val frames = mutableListOf<SlcanFrame>()
+        for (index in 0 until length.coerceAtMost(bytes.size)) {
+            appendChar((bytes[index].toInt() and 0xFF).toChar(), receivedAtElapsedMs)?.let(frames::add)
+        }
+        return frames
     }
 
     fun append(ascii: String, receivedAtElapsedMs: Long): List<SlcanFrame> {
         val frames = mutableListOf<SlcanFrame>()
         ascii.forEach { char ->
-            when (char) {
-                '\r', '\n' -> {
-                    val line = buffer.toString()
-                    buffer.clear()
-                    parseLine(line, receivedAtElapsedMs)?.let(frames::add)
-                }
-
-                else -> {
-                    buffer.append(char)
-                    if (buffer.length > MAX_FRAME_CHARS) {
-                        buffer.clear()
-                        decodeErrors += 1
-                    }
-                }
-            }
+            appendChar(char, receivedAtElapsedMs)?.let(frames::add)
         }
         return frames
+    }
+
+    private fun appendChar(char: Char, receivedAtElapsedMs: Long): SlcanFrame? {
+        return when (char) {
+            '\r', '\n' -> {
+                val line = buffer.toString()
+                buffer.clear()
+                parseLine(line, receivedAtElapsedMs)
+            }
+
+            else -> {
+                buffer.append(char)
+                if (buffer.length > MAX_FRAME_CHARS) {
+                    buffer.clear()
+                    decodeErrors += 1
+                }
+                null
+            }
+        }
     }
 
     private fun parseLine(line: String, receivedAtElapsedMs: Long): SlcanFrame? {
@@ -87,11 +104,11 @@ class AimCanSlcanParser(
             decodeErrors += 1
             return null
         }
-        if (allowedIds != null && id !in allowedIds) return null
-        if (dlc != AIM_DLC_BYTES || raw.length != HEADER_CHARS + dlc * 2) {
+        if (raw.length != HEADER_CHARS + dlc * 2) {
             decodeErrors += 1
             return null
         }
+        if (allowedIds != null && id !in allowedIds) return null
 
         val data = ByteArray(dlc)
         for (index in 0 until dlc) {
@@ -115,7 +132,6 @@ class AimCanSlcanParser(
 
     private companion object {
         private const val HEADER_CHARS = 5
-        private const val AIM_DLC_BYTES = 8
         private const val MAX_FRAME_CHARS = 96
     }
 }
@@ -123,8 +139,8 @@ class AimCanSlcanParser(
 object AimCanDecoder {
     fun applyFrame(previous: AimCanSample?, frame: SlcanFrame, decodeErrors: Int = previous?.decodeErrors ?: 0): AimCanSample {
         val base = previous ?: AimCanSample(receivedAtElapsedMs = frame.receivedAtElapsedMs)
-        val updates = base.channelUpdatedAtElapsedMs + (frame.id to frame.receivedAtElapsedMs)
-        val rawSamples = base.rawCanSamplesById + (frame.id to frame.raw)
+        val updates = boundedCanMap(base.channelUpdatedAtElapsedMs, frame.id, frame.receivedAtElapsedMs)
+        val rawSamples = boundedCanMap(base.rawCanSamplesById, frame.id, frame.raw)
         val common = base.copy(
             receivedAtElapsedMs = frame.receivedAtElapsedMs,
             channelUpdatedAtElapsedMs = updates,
@@ -132,6 +148,9 @@ object AimCanDecoder {
             rawCanSamplesById = rawSamples,
             decodeErrors = decodeErrors,
         )
+        if (frame.id in AimCanFrameIds.all && frame.dlc != AIM_DLC_BYTES) {
+            return common
+        }
         return when (frame.id) {
             AimCanFrameIds.CORE -> common.copy(
                 rpm = frame.u16(0),
@@ -222,8 +241,23 @@ object AimCanDecoder {
 
     private fun fahrenheitToCelsius(valueF: Double): Double = (valueF - 32.0) * (5.0 / 9.0)
 
+    private fun <T> boundedCanMap(existing: Map<Int, T>, frameId: Int, value: T): Map<Int, T> {
+        val next = LinkedHashMap<Int, T>(existing.size + 1)
+        existing.forEach { (id, existingValue) ->
+            if (id != frameId) next[id] = existingValue
+        }
+        next[frameId] = value
+        while (next.size > MAX_TRACKED_CAN_IDS) {
+            val removable = next.keys.firstOrNull { id -> id !in AimCanFrameIds.all } ?: break
+            next.remove(removable)
+        }
+        return next
+    }
+
     private const val BRAKE_PRESSURE_PSI_SCALE = 0.1
     private const val BRAKE_PRESSURE_ZERO_OFFSET_RAW = 10
     private const val PEDAL_POSITION_PERCENT_SCALE = 0.01
     private const val GPS_DEG_7 = 0.0000001
+    private const val AIM_DLC_BYTES = 8
+    private const val MAX_TRACKED_CAN_IDS = 64
 }

@@ -22,7 +22,30 @@ export function normalizeRecordedSessionArtifact(value: unknown): RecordedSessio
     ...session,
     sessionGoals: Array.isArray(session.sessionGoals) ? session.sessionGoals : [],
     audioEvents: Array.isArray(session.audioEvents) ? session.audioEvents : [],
+    endedReason: session.endedReason ?? 'completed',
+    embeddedFrameCount: typeof session.embeddedFrameCount === 'number' ? session.embeddedFrameCount : session.frames.length,
+    totalFrameCount: typeof session.totalFrameCount === 'number' ? session.totalFrameCount : session.summary?.frameCount ?? session.frames.length,
   } as RecordedSessionArtifact;
+}
+
+function parseTelemetryNdjson(rawText: string): TelemetryFrame[] | null {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => !line.startsWith('#'));
+  if (lines.length === 0) return null;
+  const frames: TelemetryFrame[] = [];
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (!isTelemetryFrame(parsed)) return null;
+      frames.push(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return frames;
 }
 
 export function parseTelemetryCaptureInput(
@@ -50,9 +73,13 @@ export function parseTelemetryCaptureInput(
         return { frames: parsed, session: null };
       }
     } catch {
-      // Fall through to CSV parsing.
+      const ndjsonFrames = parseTelemetryNdjson(trimmed);
+      if (ndjsonFrames) return { frames: ndjsonFrames, session: null };
     }
   }
+
+  const ndjsonFrames = parseTelemetryNdjson(trimmed);
+  if (ndjsonFrames) return { frames: ndjsonFrames, session: null };
 
   return { frames: parseTelemetryCSV(rawText), session: null };
 }

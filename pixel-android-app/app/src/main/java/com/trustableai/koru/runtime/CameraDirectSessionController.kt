@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.trustableai.koru.audio.CoachAudioDispatcher
 import com.trustableai.koru.camera.VisionFeatureStore
+import com.trustableai.koru.model.AudioDispatchEvent
+import com.trustableai.koru.model.AudioDispatchScope
+import com.trustableai.koru.model.AudioDispatchStatus
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
@@ -65,7 +68,9 @@ class CameraDirectSessionController(context: Context) {
 
     private suspend fun startInternal(config: LiveSessionConfig) {
         stopLoop()
-        sessionRecorder.discard()
+        if (sessionRecorder.hasActiveSession()) {
+            completeRecordedSession("replaced")
+        }
         activeCoachId = config.coachId
         audioEnabled = config.audioEnabled
         audioDispatcher.setEnabled(audioEnabled)
@@ -104,6 +109,14 @@ class CameraDirectSessionController(context: Context) {
         engine = currentEngine
 
         sessionRecorder.start(SessionMode.CAMERA_DIRECT, track.name, activeCoachId, config.sessionGoals)
+        emitRecordingStatus()
+        if (audioEnabled) {
+            audioDispatcher.playSessionClip(
+                clipName = "coach_ready",
+                utteranceId = "camera-ready-${System.currentTimeMillis()}",
+                onAudioEvent = ::recordAudioEvent,
+            )
+        }
         val startedAtMs = System.currentTimeMillis()
         var lastVisionTimestampMs = -1L
         var readyEmitted = false
@@ -139,6 +152,7 @@ class CameraDirectSessionController(context: Context) {
                     vision = currentSnapshot,
                 )
                 sessionRecorder.recordFrame(frame)
+                emitRecordingStatus()
                 KoruSessionBus.tryEmitFrame(frame)
                 currentEngine.processFrame(frame).forEach { decision ->
                     Log.d(
@@ -146,24 +160,53 @@ class CameraDirectSessionController(context: Context) {
                         "Live decision path=${decision.path.bridgeValue()} backend=${decision.backend.bridgeValue()} text=${decision.text}",
                     )
                     sessionRecorder.recordDecision(decision)
+                    emitRecordingStatus()
                     KoruSessionBus.tryEmitDecision(decision)
-                    if (audioEnabled) {
-                        val gate = LiveAudioPolicy.shouldSpeak(frame, decision)
-                        if (gate.allowSpeak) {
-                            audioDispatcher.speak(
-                                decision.text,
-                                "${decision.path.bridgeValue()}-${decision.timestampMs}",
-                                decision.priority,
-                                decision.action,
-                                decision.id,
-                                sessionRecorder::recordAudioEvent,
-                            )
-                        } else {
-                            Log.d(
-                                tag,
-                                "Audio suppressed path=${decision.path.bridgeValue()} reason=${gate.reason}",
-                            )
-                        }
+                    val utteranceId = "${decision.path.bridgeValue()}-${decision.timestampMs}"
+                    if (!audioEnabled) {
+                        recordAudioEvent(
+                            AudioDispatchEvent(
+                                decisionId = decision.id,
+                                utteranceId = utteranceId,
+                                action = decision.action,
+                                priority = decision.priority,
+                                requestedAtMs = System.currentTimeMillis(),
+                                dispatchLatencyMs = 0L,
+                                status = AudioDispatchStatus.DISABLED,
+                                fallbackReason = "audio_disabled",
+                                scope = AudioDispatchScope.DECISION,
+                            ),
+                        )
+                        return@forEach
+                    }
+                    val gate = LiveAudioPolicy.shouldSpeak(frame, decision)
+                    if (gate.allowSpeak) {
+                        audioDispatcher.speak(
+                            decision.text,
+                            utteranceId,
+                            decision.priority,
+                            decision.action,
+                            decision.id,
+                            ::recordAudioEvent,
+                        )
+                    } else {
+                        Log.d(
+                            tag,
+                            "Audio suppressed path=${decision.path.bridgeValue()} reason=${gate.reason}",
+                        )
+                        recordAudioEvent(
+                            AudioDispatchEvent(
+                                decisionId = decision.id,
+                                utteranceId = utteranceId,
+                                action = decision.action,
+                                priority = decision.priority,
+                                requestedAtMs = System.currentTimeMillis(),
+                                dispatchLatencyMs = 0L,
+                                status = AudioDispatchStatus.SUPPRESSED,
+                                fallbackReason = gate.reason,
+                                scope = AudioDispatchScope.DECISION,
+                            ),
+                        )
                     }
                 }
             }
@@ -172,7 +215,7 @@ class CameraDirectSessionController(context: Context) {
 
     private suspend fun stopInternal() {
         stopLoop()
-        completeRecordedSession()
+        completeRecordedSession("completed")
         KoruSessionBus.tryEmitStatus(
             LiveBackendStatus(
                 backend = com.trustableai.koru.model.RuntimeBackend.DETERMINISTIC,
@@ -192,10 +235,37 @@ class CameraDirectSessionController(context: Context) {
         engine = null
     }
 
-    private fun completeRecordedSession(): RecordedSessionArtifact? {
-        val artifact = sessionRecorder.finish() ?: return null
+    private fun recordAudioEvent(event: AudioDispatchEvent) {
+        sessionRecorder.recordAudioEvent(event)
+        KoruSessionBus.tryEmitAudioEvent(event)
+        emitRecordingStatus()
+    }
+
+    private fun emitRecordingStatus() {
+        KoruSessionBus.tryEmitRecordingStatus(sessionRecorder.status())
+    }
+
+    private fun completeRecordedSession(endedReason: String): RecordedSessionArtifact? {
+        val artifact = sessionRecorder.finish(endedReason) ?: return null
         Log.d(tag, "Saved camera-direct session ${artifact.id} frames=${artifact.summary.frameCount}")
         KoruSessionBus.tryEmitSavedSession(artifact)
+        KoruSessionBus.tryEmitRecordingStatus(
+            sessionRecorder.status().copy(
+                active = false,
+                sessionId = artifact.id,
+                artifactPath = artifact.artifactPath,
+                framesPath = artifact.framesPath,
+                decisionsPath = artifact.decisionsPath,
+                audioEventsPath = artifact.audioEventsPath,
+                canDumpPath = artifact.canDumpPath,
+                frameCount = artifact.totalFrameCount,
+                decisionCount = artifact.summary.decisionCount,
+                audioEventCount = artifact.audioEvents.size,
+                lastFlushAtMs = artifact.lastFlushAt,
+                flushAgeMs = artifact.lastFlushAt?.let { System.currentTimeMillis() - it },
+                endedReason = endedReason,
+            ),
+        )
         return artifact
     }
 }

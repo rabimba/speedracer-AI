@@ -2,8 +2,10 @@ package com.trustableai.koru.ui
 
 import android.Manifest
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -11,7 +13,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.trustableai.koru.model.CoachAction
@@ -25,6 +28,7 @@ import com.trustableai.koru.model.RecordedSessionSummary
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.runtime.KoruSessionBus
+import com.trustableai.koru.service.KoruTelemetryService
 import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Rule
@@ -54,7 +58,10 @@ class KoruAppComposeTest {
 
     @Before
     fun resetSessionBus() {
+        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+        targetContext.startService(KoruTelemetryService.stopIntent(targetContext))
         KoruSessionBus.resetLiveState()
+        Thread.sleep(300)
     }
 
     @Test
@@ -62,8 +69,10 @@ class KoruAppComposeTest {
         waitForSetupScreen()
         composeRule.onNodeWithText("Paddock").assertIsDisplayed()
         composeRule.onNodeWithText("Diagnostics").assertIsDisplayed()
-        composeRule.onNodeWithTag("option-mode-telemetry-+-camera").assertIsDisplayed()
+        composeRule.onNodeWithTag("option-mode-telemetry-+-map").assertIsDisplayed()
+        composeRule.onNodeWithTag("option-mode-can-interface-check").assertIsDisplayed()
         composeRule.onNodeWithTag("option-source-phone-imu-+-gps").assertIsDisplayed()
+        composeRule.onNodeWithTag("option-can-bitrate-s8-1m").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("setup-start-session").performScrollTo().assertIsDisplayed()
 
         composeRule.onNodeWithTag("option-source-synthetic").performScrollTo().performClick()
@@ -71,6 +80,7 @@ class KoruAppComposeTest {
         composeRule.onNodeWithTag("option-mode-camera-feedback").performScrollTo().performClick()
 
         composeRule.onNodeWithTag("audio-toggle").performScrollTo().assertIsOn()
+        composeRule.onNodeWithTag("audio-check").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("audio-toggle").performClick()
         composeRule.onNodeWithTag("audio-toggle").assertIsOff()
     }
@@ -83,7 +93,10 @@ class KoruAppComposeTest {
         composeRule.onNodeWithTag("goal-vision").performScrollTo().performClick()
         composeRule.onNodeWithTag("goal-lines").performScrollTo().performClick()
 
-        composeRule.onNodeWithText("3/3 goals").assertIsDisplayed()
+        composeRule.onNodeWithTag("goal-braking").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithTag("goal-throttle").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithTag("goal-vision").performScrollTo().assertIsSelected()
+        composeRule.onNodeWithTag("goal-lines").performScrollTo().assertIsNotSelected()
     }
 
     @Test
@@ -99,14 +112,11 @@ class KoruAppComposeTest {
         composeRule.onNodeWithTag("hold-stop-session").assertIsDisplayed()
         assertTrue(composeRule.onAllNodesWithText("Diagnostics").fetchSemanticsNodes().isEmpty())
 
-        composeRule.onNodeWithTag("hold-stop-session").performTouchInput {
-            down(center)
-            advanceEventTime(1_600)
-            up()
-        }
+        composeRule.onNodeWithTag("hold-stop-session").performSemanticsAction(SemanticsActions.OnClick)
         composeRule.waitUntil(5_000L) {
-            composeRule.onAllNodesWithText("Start Session").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithText("Saved Session").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithText("Saved Session").assertIsDisplayed()
     }
 
     @Test
@@ -188,7 +198,7 @@ class KoruAppComposeTest {
             composeRule.onAllNodesWithText("Saved Session").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("Saved Session").assertIsDisplayed()
-        composeRule.onNodeWithText("10 frames, 1 decisions, schema v2").assertIsDisplayed()
+        composeRule.onNodeWithText("10 frames (0 preview), 1 decisions, ended completed").assertIsDisplayed()
     }
 
     @Test
@@ -200,14 +210,28 @@ class KoruAppComposeTest {
         composeRule.onNodeWithText("Backend Status").assertIsDisplayed()
         composeRule.onNodeWithText("Accelerator Comparison").assertIsDisplayed()
         composeRule.onNodeWithText("Camera Lane").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("edge-inference-metrics").assertIsDisplayed()
+        composeRule.onNodeWithTag("edge-inference-metrics").performScrollTo().assertIsDisplayed()
     }
 
     private fun waitForSetupScreen() {
         composeRule.waitUntil(5_000L) {
-            composeRule.onAllNodesWithText("Session Initialization").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("setup-screen").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithText("Setup").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithText("Session Initialization").assertIsDisplayed()
+        if (composeRule.onAllNodesWithTag("setup-screen").fetchSemanticsNodes().isEmpty()) {
+            composeRule.onNodeWithText("Setup").performClick()
+        }
+        composeRule.waitUntil(5_000L) {
+            composeRule.onAllNodesWithTag("setup-screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("setup-screen").assertIsDisplayed()
+    }
+
+    private fun shell(command: String): String {
+        val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        return fd.use {
+            FileInputStream(it.fileDescriptor).bufferedReader().use { reader -> reader.readText() }
+        }
     }
 
     private class InteractiveDeviceRule : TestRule {

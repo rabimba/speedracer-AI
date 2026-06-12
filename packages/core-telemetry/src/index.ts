@@ -2,6 +2,7 @@ export type {
   SessionMode,
   TelemetrySourceKind,
   ObdTransportPreference,
+  AimCanBitrate,
   TelemetryFrame,
   VehicleDiagnostics,
   CanVehicleDiagnostics,

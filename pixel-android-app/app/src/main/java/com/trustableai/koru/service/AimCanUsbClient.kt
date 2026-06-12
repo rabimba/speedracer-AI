@@ -10,6 +10,7 @@ import android.os.SystemClock
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
+import com.trustableai.koru.model.AimCanBitrate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +25,7 @@ import kotlin.math.max
 
 class AimCanUsbClient(
     context: Context,
+    private val bitrate: AimCanBitrate = AimCanBitrate.S8_1MBPS,
     private val elapsedRealtimeMs: () -> Long = { SystemClock.elapsedRealtime() },
 ) : AimCanDataClient {
     private val appContext = context.applicationContext
@@ -34,9 +36,15 @@ class AimCanUsbClient(
     private var activePort: UsbSerialPort? = null
     private var reconnectCount = 0
     private var frameRatesHz: Map<Int, Double> = emptyMap()
+    private var rawCanSample: String? = null
+    private var rawCanSamplesById: Map<Int, String> = emptyMap()
 
     @Volatile private var latest: AimCanSample? = null
-    @Volatile private var status = AimCanClientStatus(connected = false, detail = "AiM CAN USB idle")
+    @Volatile private var status = AimCanClientStatus(
+        connected = false,
+        detail = "AiM CAN USB idle",
+        bitrate = bitrate,
+    )
 
     override suspend fun start() {
         if (scope != null) return
@@ -49,7 +57,14 @@ class AimCanUsbClient(
         scope?.cancel()
         scope = null
         closePort()
-        status = AimCanClientStatus(connected = false, detail = "AiM CAN USB stopped")
+        status = AimCanClientStatus(
+            connected = false,
+            detail = "AiM CAN USB stopped",
+            bitrate = bitrate,
+            rawCanSample = rawCanSample,
+            rawCanSamplesById = rawCanSamplesById,
+            frameRatesHz = frameRatesHz,
+        )
     }
 
     override fun latestSample(): AimCanSample? = latest
@@ -61,18 +76,28 @@ class AimCanUsbClient(
             try {
                 status = AimCanClientStatus(
                     connected = false,
-                    detail = "Connecting to RH-02 PRO / CANable USB serial",
+                    detail = "Connecting to RH-02 PRO / CANable USB serial at ${bitrate.label}",
                     reconnectCount = reconnectCount,
                     decodeErrors = parser.decodeErrors,
+                    bitrate = bitrate,
+                    waitingForFrames = true,
+                    rawCanSample = rawCanSample,
+                    rawCanSamplesById = rawCanSamplesById,
+                    frameRatesHz = frameRatesHz,
                 )
                 val opened = openPort()
                 activePort = opened.port
                 status = AimCanClientStatus(
                     connected = true,
-                    detail = "AiM CAN USB connected; waiting for SLCAN frames",
+                    detail = "AiM CAN USB connected at ${bitrate.label}; waiting for SLCAN frames",
                     usbDeviceName = opened.deviceName,
                     reconnectCount = reconnectCount,
                     decodeErrors = parser.decodeErrors,
+                    bitrate = bitrate,
+                    waitingForFrames = rawCanSample == null,
+                    rawCanSample = rawCanSample,
+                    rawCanSamplesById = rawCanSamplesById,
+                    frameRatesHz = frameRatesHz,
                 )
                 initializeSlcan(opened.port)
                 readLoop(opened.port, opened.deviceName)
@@ -84,6 +109,11 @@ class AimCanUsbClient(
                     usbDeviceName = status.usbDeviceName,
                     reconnectCount = reconnectCount,
                     decodeErrors = parser.decodeErrors,
+                    bitrate = bitrate,
+                    waitingForFrames = rawCanSample == null,
+                    rawCanSample = rawCanSample,
+                    rawCanSamplesById = rawCanSamplesById,
+                    frameRatesHz = frameRatesHz,
                 )
                 closePort()
                 delay(RECONNECT_DELAY_MS)
@@ -138,7 +168,7 @@ class AimCanUsbClient(
 
     private fun initializeSlcan(port: UsbSerialPort) {
         runCatching {
-            port.write("\rC\rS8\rO\r".toByteArray(Charsets.US_ASCII), USB_WRITE_TIMEOUT_MS)
+            port.write("\rC\r${bitrate.slcanCommand}\rO\r".toByteArray(Charsets.US_ASCII), USB_WRITE_TIMEOUT_MS)
         }
     }
 
@@ -150,9 +180,11 @@ class AimCanUsbClient(
                 val read = port.read(buffer, USB_READ_TIMEOUT_MS)
                 if (read <= 0) continue
                 val now = elapsedRealtimeMs()
-                val frames = parser.append(buffer.copyOf(read), now)
+                val frames = parser.append(buffer, read, now)
                 frames.forEach { frame ->
                     updateFrameRate(frame.id, frame.receivedAtElapsedMs)
+                    rawCanSample = frame.raw
+                    rawCanSamplesById = boundedCanMap(rawCanSamplesById, frame.id, frame.raw)
                     sample = AimCanDecoder.applyFrame(
                         previous = sample?.copy(frameRatesHz = frameRatesHz),
                         frame = frame,
@@ -166,6 +198,11 @@ class AimCanUsbClient(
                     usbDeviceName = deviceName,
                     reconnectCount = reconnectCount,
                     decodeErrors = parser.decodeErrors,
+                    bitrate = bitrate,
+                    waitingForFrames = rawCanSample == null,
+                    rawCanSample = rawCanSample,
+                    rawCanSamplesById = rawCanSamplesById,
+                    frameRatesHz = frameRatesHz,
                 )
             }
         }
@@ -176,6 +213,7 @@ class AimCanUsbClient(
         samples += nowElapsedMs
         val cutoff = nowElapsedMs - FRAME_RATE_WINDOW_MS
         samples.removeAll { time -> time < cutoff }
+        trimRecentFrameTimes()
         frameRatesHz = recentFrameTimesMs.mapValues { (_, times) ->
             if (times.size < 2) {
                 0.0
@@ -184,6 +222,26 @@ class AimCanUsbClient(
                 (times.size - 1) / spanSeconds
             }
         }
+    }
+
+    private fun trimRecentFrameTimes() {
+        while (recentFrameTimesMs.size > MAX_TRACKED_CAN_IDS) {
+            val removable = recentFrameTimesMs.keys.firstOrNull { id -> id !in AimCanFrameIds.all } ?: break
+            recentFrameTimesMs.remove(removable)
+        }
+    }
+
+    private fun <T> boundedCanMap(existing: Map<Int, T>, frameId: Int, value: T): Map<Int, T> {
+        val next = LinkedHashMap<Int, T>(existing.size + 1)
+        existing.forEach { (id, existingValue) ->
+            if (id != frameId) next[id] = existingValue
+        }
+        next[frameId] = value
+        while (next.size > MAX_TRACKED_CAN_IDS) {
+            val removable = next.keys.firstOrNull { id -> id !in AimCanFrameIds.all } ?: break
+            next.remove(removable)
+        }
+        return next
     }
 
     private suspend fun closePort() {
@@ -244,6 +302,7 @@ class AimCanUsbClient(
         private const val USB_WRITE_TIMEOUT_MS = 500
         private const val RECONNECT_DELAY_MS = 2_000L
         private const val FRAME_RATE_WINDOW_MS = 2_000L
+        private const val MAX_TRACKED_CAN_IDS = 64
         private const val FTDI_VENDOR_ID = 0x0403
         private val CAN_DEVICE_HINTS = listOf(
             "canable",

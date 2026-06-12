@@ -5,6 +5,9 @@ import android.content.Context
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.trustableai.koru.audio.CoachAudioDispatcher
+import com.trustableai.koru.model.AimCanBitrate
+import com.trustableai.koru.model.AudioDispatchEvent
 import com.trustableai.koru.model.CoachAction
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.CoachingPath
@@ -13,6 +16,7 @@ import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.ObdTransportPreference
 import com.trustableai.koru.model.RecordedSessionArtifact
+import com.trustableai.koru.model.RecordingStatus
 import com.trustableai.koru.model.RuntimeBackend
 import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionGoalFocus
@@ -33,6 +37,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class CoachOption(
@@ -58,13 +64,21 @@ data class SessionUiState(
     ),
     val latestFrame: TelemetryFrame? = null,
     val decisions: List<CoachingDecision> = emptyList(),
+    val lastAudioEvent: AudioDispatchEvent? = null,
+    val recordingStatus: RecordingStatus = RecordingStatus(),
     val savedSession: RecordedSessionArtifact? = null,
+    val savedSessions: List<RecordedSessionArtifact> = emptyList(),
+    val replaySessionId: String? = null,
+    val replayFrameIndex: Int = 0,
+    val replayPlaying: Boolean = false,
     val activeCoachId: String = "superaj",
     val audioEnabled: Boolean = true,
     val trackName: String = TrackCatalog.defaultTrack.name,
     val sessionMode: SessionMode = SessionMode.TELEMETRY,
     val telemetrySource: TelemetrySourceKind = TelemetrySourceKind.AIM_CAN_USB,
     val obdTransportPreference: ObdTransportPreference = ObdTransportPreference.AUTO,
+    val aimCanBitrate: AimCanBitrate = AimCanBitrate.S8_1MBPS,
+    val cameraFusionEnabled: Boolean = false,
     val selectedGoalFocuses: Set<SessionGoalFocus> = emptySet(),
     val customGoalDescription: String = "",
     val cameraStatus: String = "Camera lane waiting for permission",
@@ -82,6 +96,8 @@ data class SessionUiState(
 class LiveSessionViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private val cameraDirectController = CameraDirectSessionController(appContext)
+    private val audioCheckDispatcher = CoachAudioDispatcher(appContext)
+    private var replayJob: Job? = null
     private val preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _uiState = MutableStateFlow(
         SessionUiState(
@@ -167,8 +183,28 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
         viewModelScope.launch {
+            KoruSessionBus.latestAudioEvent.collect { event ->
+                _uiState.update { it.copy(lastAudioEvent = event) }
+            }
+        }
+        viewModelScope.launch {
+            KoruSessionBus.recordingStatus.collect { status ->
+                _uiState.update { it.copy(recordingStatus = status) }
+            }
+        }
+        viewModelScope.launch {
             KoruSessionBus.latestSavedSession.collect { session ->
-                _uiState.update { it.copy(savedSession = session) }
+                if (session != null) {
+                    _uiState.update { state ->
+                        val sessions = (listOf(session) + state.savedSessions.filterNot { it.id == session.id }).take(20)
+                        state.copy(
+                            savedSession = session,
+                            savedSessions = sessions,
+                            replaySessionId = state.replaySessionId ?: session.id,
+                            replayFrameIndex = if (state.replaySessionId == null) 0 else state.replayFrameIndex,
+                        )
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -185,12 +221,16 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
             audioEnabled = state.audioEnabled,
             trackName = if (state.sessionMode == SessionMode.DEVICE_TEST) {
                 "Device GPS Test"
+            } else if (state.sessionMode == SessionMode.CAN_INTERFACE_CHECK) {
+                "CAN Interface Check"
             } else {
                 state.trackName
             },
             sessionMode = state.sessionMode,
             telemetrySource = state.telemetrySource,
             obdTransportPreference = state.obdTransportPreference,
+            aimCanBitrate = state.aimCanBitrate,
+            cameraFusionEnabled = state.cameraFusionEnabled,
             sessionGoals = sessionGoals(state),
             sourceUrl = null,
         )
@@ -201,7 +241,7 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
         _uiState.update { it.copy(activeSessionMode = config.sessionMode) }
         when (config.sessionMode) {
             SessionMode.CAMERA_DIRECT -> cameraDirectController.start(config)
-            SessionMode.DEVICE_TEST, SessionMode.TELEMETRY ->
+            SessionMode.CAN_INTERFACE_CHECK, SessionMode.DEVICE_TEST, SessionMode.TELEMETRY ->
                 ContextCompat.startForegroundService(appContext, KoruTelemetryService.startIntent(appContext, config.toJson()))
         }
     }
@@ -209,7 +249,7 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
     fun stopSession() {
         when (_uiState.value.activeSessionMode) {
             SessionMode.CAMERA_DIRECT -> cameraDirectController.stop()
-            SessionMode.DEVICE_TEST, SessionMode.TELEMETRY ->
+            SessionMode.CAN_INTERFACE_CHECK, SessionMode.DEVICE_TEST, SessionMode.TELEMETRY ->
                 appContext.startService(KoruTelemetryService.stopIntent(appContext))
             null -> Unit
         }
@@ -219,7 +259,7 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
     fun setActiveCoach(coachId: String) {
         _uiState.update { it.copy(activeCoachId = coachId) }
         cameraDirectController.setActiveCoach(coachId)
-        if (_uiState.value.activeSessionMode == SessionMode.TELEMETRY || _uiState.value.activeSessionMode == SessionMode.DEVICE_TEST) {
+        if (_uiState.value.activeSessionMode != null && _uiState.value.activeSessionMode != SessionMode.CAMERA_DIRECT) {
             appContext.startService(KoruTelemetryService.setCoachIntent(appContext, coachId))
         }
     }
@@ -227,8 +267,19 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
     fun setAudioEnabled(enabled: Boolean) {
         _uiState.update { it.copy(audioEnabled = enabled) }
         cameraDirectController.setAudioEnabled(enabled)
-        if (_uiState.value.activeSessionMode == SessionMode.TELEMETRY || _uiState.value.activeSessionMode == SessionMode.DEVICE_TEST) {
+        if (_uiState.value.activeSessionMode != null && _uiState.value.activeSessionMode != SessionMode.CAMERA_DIRECT) {
             appContext.startService(KoruTelemetryService.setAudioIntent(appContext, enabled))
+        }
+    }
+
+    fun playAudioCheck() {
+        audioCheckDispatcher.setEnabled(true)
+        audioCheckDispatcher.playSessionClip(
+            clipName = "coach_ready",
+            utteranceId = "audio-check-${System.currentTimeMillis()}",
+        ) { event ->
+            KoruSessionBus.tryEmitAudioEvent(event)
+            _uiState.update { it.copy(lastAudioEvent = event) }
         }
     }
 
@@ -245,6 +296,16 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
     fun setObdTransportPreference(preference: ObdTransportPreference) {
         if (_uiState.value.isSessionActive) return
         _uiState.update { it.copy(obdTransportPreference = preference) }
+    }
+
+    fun setAimCanBitrate(bitrate: AimCanBitrate) {
+        if (_uiState.value.isSessionActive) return
+        _uiState.update { it.copy(aimCanBitrate = bitrate) }
+    }
+
+    fun setCameraFusionEnabled(enabled: Boolean) {
+        if (_uiState.value.isSessionActive) return
+        _uiState.update { it.copy(cameraFusionEnabled = enabled) }
     }
 
     fun setTrackName(trackName: String) {
@@ -289,8 +350,68 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
         preferences.edit().putString(KEY_TRACK_HUD_MODE, mode.bridgeValue()).apply()
     }
 
+    fun selectReplaySession(sessionId: String) {
+        stopReplay()
+        _uiState.update {
+            it.copy(
+                replaySessionId = sessionId,
+                replayFrameIndex = 0,
+                replayPlaying = false,
+            )
+        }
+    }
+
+    fun setReplayFrameIndex(index: Int) {
+        val maxIndex = selectedReplaySession()?.frames?.lastIndex?.coerceAtLeast(0) ?: 0
+        _uiState.update { it.copy(replayFrameIndex = index.coerceIn(0, maxIndex)) }
+    }
+
+    fun toggleReplay() {
+        if (_uiState.value.replayPlaying) {
+            stopReplay()
+        } else {
+            startReplay()
+        }
+    }
+
+    private fun startReplay() {
+        val session = selectedReplaySession() ?: return
+        if (session.frames.isEmpty()) return
+        replayJob?.cancel()
+        _uiState.update { it.copy(replayPlaying = true) }
+        replayJob = viewModelScope.launch {
+            while (_uiState.value.replayPlaying) {
+                delay(REPLAY_TICK_MS)
+                _uiState.update { state ->
+                    val active = state.savedSessions.firstOrNull { it.id == state.replaySessionId }
+                        ?: state.savedSession
+                    val lastIndex = active?.frames?.lastIndex ?: 0
+                    if (state.replayFrameIndex >= lastIndex) {
+                        state.copy(replayFrameIndex = lastIndex, replayPlaying = false)
+                    } else {
+                        state.copy(replayFrameIndex = state.replayFrameIndex + 1)
+                    }
+                }
+                if (!_uiState.value.replayPlaying) break
+            }
+        }
+    }
+
+    private fun stopReplay() {
+        replayJob?.cancel()
+        replayJob = null
+        _uiState.update { it.copy(replayPlaying = false) }
+    }
+
+    private fun selectedReplaySession(): RecordedSessionArtifact? {
+        val state = _uiState.value
+        return state.savedSessions.firstOrNull { it.id == state.replaySessionId } ?: state.savedSession
+    }
+
     override fun onCleared() {
+        stopReplay()
         cameraDirectController.shutdown()
+        audioCheckDispatcher.shutdown()
         super.onCleared()
     }
 
@@ -317,5 +438,6 @@ class LiveSessionViewModel(application: Application) : AndroidViewModel(applicat
     private companion object {
         const val PREFS_NAME = "koru_session_prefs"
         const val KEY_TRACK_HUD_MODE = "track_hud_mode"
+        const val REPLAY_TICK_MS = 120L
     }
 }

@@ -2,6 +2,7 @@ package com.trustableai.koru.service
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AimCanProtocolTest {
@@ -103,6 +104,53 @@ class AimCanProtocolTest {
         assertEquals(0.0, decoded.pedalPositionPercent ?: -1.0, 0.01)
         assertEquals(0, decoded.brakeSwitchRaw)
         assertEquals(false, decoded.brakeSwitchApplied)
+    }
+
+    @Test
+    fun `SLCAN parser byte overload preserves non AiM DLC frames for smoke test visibility`() {
+        val parser = AimCanSlcanParser()
+        val bytes = "t55520102\r".toByteArray(Charsets.US_ASCII)
+
+        val frames = parser.append(bytes, bytes.size, receivedAtElapsedMs = 3_000L)
+
+        assertEquals(1, frames.size)
+        assertEquals(0x555, frames.single().id)
+        assertEquals(2, frames.single().dlc)
+        assertEquals("t55520102", frames.single().raw)
+    }
+
+    @Test
+    fun `decoder records raw mapped frame with unexpected DLC without reading past data`() {
+        val frame = AimCanSlcanParser().append("t42220102\r", receivedAtElapsedMs = 3_100L).single()
+
+        val decoded = AimCanDecoder.applyFrame(null, frame)
+
+        assertEquals("t42220102", decoded.rawCanSample)
+        assertEquals("t42220102", decoded.rawCanSamplesById[AimCanFrameIds.CONTROLS])
+        assertNull(decoded.brakePressureRaw)
+    }
+
+    @Test
+    fun `decoder caps raw CAN health maps while preserving mapped AiM ids`() {
+        var sample: AimCanSample? = null
+
+        repeat(100) { index ->
+            val frameId = 0x100 + index
+            val frame = SlcanFrame(
+                id = frameId,
+                dlc = 2,
+                data = byteArrayOf(index.toByte(), 0),
+                receivedAtElapsedMs = 4_000L + index,
+                raw = "t${frameId.toString(16).padStart(3, '0')}2AA00",
+            )
+            sample = AimCanDecoder.applyFrame(sample, frame)
+        }
+        val mapped = AimCanSlcanParser().append("t42220102\r", receivedAtElapsedMs = 4_200L).single()
+        val decoded = AimCanDecoder.applyFrame(sample, mapped)
+
+        assertTrue(decoded.rawCanSamplesById.size <= 64)
+        assertTrue(decoded.channelUpdatedAtElapsedMs.size <= 64)
+        assertEquals("t42220102", decoded.rawCanSamplesById[AimCanFrameIds.CONTROLS])
     }
 
     private fun i32le(value: Int): ByteArray {

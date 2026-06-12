@@ -23,10 +23,13 @@ export function validateRun({ scenarioPath, artifactPath, logcatPath, instrument
     fail('instrumentation', 'No successful instrumentation completion marker found');
   }
 
-  if (logcat.includes('Telemetry loop started source=phone_imu_gps cameraFusion=true')) {
-    pass('telemetry_service_log', 'phone_imu_gps telemetry loop with camera fusion started');
+  if (
+    logcat.includes('Telemetry loop started source=phone_imu_gps cameraFusion=true') ||
+    logcat.includes('Telemetry loop started source=phone_imu_gps cameraFusion=false')
+  ) {
+    pass('telemetry_service_log', 'phone_imu_gps telemetry loop started');
   } else {
-    fail('telemetry_service_log', 'Missing phone_imu_gps camera fusion startup log');
+    fail('telemetry_service_log', 'Missing phone_imu_gps telemetry startup log');
   }
 
   const fatalPattern = /(FATAL EXCEPTION| ANR |Application Not Responding|Process .* has died)/i;
@@ -53,8 +56,18 @@ export function validateRun({ scenarioPath, artifactPath, logcatPath, instrument
 
   const frames = Array.isArray(artifact.frames) ? artifact.frames : [];
   const minFrames = scenario?.expected?.minFrames ?? 1;
-  if (frames.length >= minFrames) pass('artifact_frame_count', `${frames.length} frames >= ${minFrames}`);
-  else fail('artifact_frame_count', `${frames.length} frames < ${minFrames}`);
+  const totalFrames = Number.isFinite(artifact.totalFrameCount)
+    ? artifact.totalFrameCount
+    : artifact.summary?.frameCount ?? frames.length;
+  if (totalFrames >= minFrames) pass('artifact_frame_count', `${frames.length} preview / ${totalFrames} total frames >= ${minFrames}`);
+  else fail('artifact_frame_count', `${frames.length} preview / ${totalFrames} total frames < ${minFrames}`);
+
+  const sidecarPaths = [artifact.framesPath, artifact.decisionsPath, artifact.audioEventsPath, artifact.canDumpPath].filter(Boolean);
+  if (artifact.schemaVersion === 2 && sidecarPaths.length >= 3) {
+    pass('artifact_sidecars', `sidecars present: ${sidecarPaths.join(', ')}`);
+  } else {
+    fail('artifact_sidecars', 'schema-v2 artifact is missing streamed sidecar paths');
+  }
 
   if (frames.some((frame) => String(frame.telemetrySource ?? '').includes('phone_imu_gps'))) {
     pass('artifact_source', 'at least one frame is from phone_imu_gps');
@@ -84,7 +97,10 @@ export function validateRun({ scenarioPath, artifactPath, logcatPath, instrument
 
   const decisionIds = new Set(decisions.map((decision) => decision.id).filter(Boolean));
   const audioEvents = Array.isArray(artifact.audioEvents) ? artifact.audioEvents : [];
-  const invalidAudioEvents = audioEvents.filter((event) => !event.decisionId || !decisionIds.has(event.decisionId));
+  const invalidAudioEvents = audioEvents.filter((event) => {
+    if (event.scope === 'SESSION') return false;
+    return !event.decisionId || !decisionIds.has(event.decisionId);
+  });
   if (audioEvents.length > 0 && invalidAudioEvents.length === 0) {
     pass('audio_event_links', `${audioEvents.length} audio events link to decision IDs`);
   } else if (audioEvents.length === 0) {
@@ -94,6 +110,11 @@ export function validateRun({ scenarioPath, artifactPath, logcatPath, instrument
   }
 
   const acceptableAudioStatuses = new Set(scenario?.expected?.requiredAudioStatuses ?? ['CLIP_STARTED', 'TTS_STARTED', 'TTS_QUEUED']);
+  if (audioEvents.some((event) => event.status === 'CLIP_STARTED')) {
+    pass('fixed_clip_audio', 'recorded at least one fixed CLIP_STARTED audio event');
+  } else {
+    fail('fixed_clip_audio', 'no fixed CLIP_STARTED audio event recorded');
+  }
   const p0DecisionIds = new Set(p0BrakeDecisions.map((decision) => decision.id).filter(Boolean));
   const p0Audio = audioEvents.filter((event) => p0DecisionIds.has(event.decisionId));
   if (p0Audio.some((event) => acceptableAudioStatuses.has(event.status))) {

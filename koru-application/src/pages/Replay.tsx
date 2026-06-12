@@ -258,6 +258,21 @@ export default function Replay({ apiKey }: ReplayProps) {
             onSpeedChange={setSpeed}
           />
 
+          {recordedSession && (
+            <div className="session-capture-summary">
+              <strong>{recordedSession.trackName}</strong>
+              <span>
+                {recordedSession.frames.length} preview / {recordedSession.totalFrameCount ?? recordedSession.summary.frameCount} total frames
+              </span>
+              <span>{recordedSession.endedReason ?? 'completed'}</span>
+              {[recordedSession.framesPath, recordedSession.decisionsPath, recordedSession.audioEventsPath, recordedSession.canDumpPath]
+                .filter(Boolean)
+                .map(path => (
+                  <code key={path}>{path}</code>
+                ))}
+            </div>
+          )}
+
           <div className="replay-grid">
             <div className="replay-left">
               <GaugeCluster frame={currentFrame} />

@@ -1,5 +1,6 @@
 package com.trustableai.koru.service
 
+import com.trustableai.koru.model.AimCanBitrate
 import com.trustableai.koru.model.TelemetrySourceHealth
 import com.trustableai.koru.model.VehicleDiagnostics
 import kotlin.math.abs
@@ -31,6 +32,11 @@ data class AimCanClientStatus(
     val usbDeviceName: String? = null,
     val reconnectCount: Int = 0,
     val decodeErrors: Int = 0,
+    val bitrate: AimCanBitrate = AimCanBitrate.S8_1MBPS,
+    val waitingForFrames: Boolean = false,
+    val rawCanSample: String? = null,
+    val rawCanSamplesById: Map<Int, String> = emptyMap(),
+    val frameRatesHz: Map<Int, Double> = emptyMap(),
 )
 
 data class RaceBoxSample(

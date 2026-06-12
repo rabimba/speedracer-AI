@@ -8,7 +8,7 @@
 <!-- ===== BEGIN BLOGGER PASTE ===== -->
 <div style="max-width:760px;margin:0 auto;font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;color:#1a1a1a;">
 
-  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#00a06a;font-family:Inter,Arial,sans-serif;font-weight:700;margin:0 0 6px;">Racecraft · Part 5 of 5</p>
+  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#00a06a;font-family:Inter,Arial,sans-serif;font-weight:700;margin:0 0 6px;">Racecraft · Part 5 of 5 · <a href="https://rkrants.blogspot.com/2026/06/racecraft-project-koru-prologue-origin.html" style="color:#00a06a;text-decoration:underline;">← Prologue</a></p>
   <h1 style="font-size:34px;line-height:1.2;margin:0 0 8px;">Earning Trust at Speed</h1>
   <p style="font-style:italic;color:#666;margin:0 0 28px;">The model now generates tokens on the phone — fastest on the NPU. But that was never what carried the trust. This is the part that does, and it's been validated on a real recorded lap.</p>
 
@@ -18,6 +18,8 @@
 
   <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">Trust is built on determinism</h2>
   <p>Here's the thesis the whole project rests on: <em>you cannot trust what you cannot audit.</em> A sampled language model is, by construction, not auditable in the sense that matters for safety — you can't read it and know why it said "brake." But the HOT path is hand-written rules. A senior engineer can read the <code>DECISION_MATRIX</code> and tell you exactly which condition fired a critical alert and why. That readability isn't a consolation prize for not using AI on the hot path — it's the entire point. The safety of the system lives in the lane a human can fully reason about.</p>
+
+  <p>The mental model I kept coming back to is the instructor who sat beside me on those beginner track days. He could say anything — but he could never touch the wheel, the brake, or the throttle. All he had was the right words at the right instant, and the discipline to stay silent when I needed to concentrate. That is exactly the contract Racecraft signs with the driver: advise, never act; and above all, never become the distraction. A coach that earns a mute button has already failed at the only job that matters.</p>
 
   <p>And determinism is testable. So the validation is layered: <code>vitest</code> unit tests on the core logic (DriverModel, TimingGate, CornerPhaseDetector); a "Sonoma CSV" integration test that runs the whole coaching service against a known-good telemetry file; and a full on-device end-to-end suite that drives the native app on real hardware.</p>
 
@@ -55,6 +57,8 @@
 
   <h2 style="font-family:Inter,Arial,sans-serif;font-size:26px;margin:36px 0 4px;">And ever since: the part that isn't about racing</h2>
   <p>Strip the racing vocabulary away and look at the shape of what's left: a real-time system that fuses sensor data, makes an instant deterministic safety decision, defers slow reasoning to a model that's allowed to be late, adapts its output to the user's skill, and stays honest about its own confidence. That pattern isn't about cars. It's a blueprint for <strong>any high-stakes, real-time guidance problem</strong> — a surgeon's assistant, an industrial operator's aid, a pilot's prompt — where being right but late is the same as being wrong, and where trust has to be <em>earned</em>, not asserted.</p>
+
+  <p>We got the first taste of that generality without even leaving the paddock. My team built the coach for <em>beginners</em>, with me as the test driver in the GR86 — but the same engine ended up coaching Ajeet's <em>intermediate</em> car just as well, no rewrite required. If one app can stretch from a nervous first-timer to a quick intermediate by changing only what it says and when, the leap to other domains entirely stops feeling like a leap.</p>
 
   <p>That's why the split-brain, the queue, and the timing gate were built to be domain-agnostic from the start. Racecraft is the proof of concept; the trustable real-time coaching framework underneath is the actual idea.</p>
 

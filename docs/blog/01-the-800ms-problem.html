@@ -12,13 +12,15 @@
 <!-- ===== BEGIN BLOGGER PASTE ===== -->
 <div style="max-width:760px;margin:0 auto;font-family:Georgia,'Times New Roman',serif;font-size:18px;line-height:1.7;color:#1a1a1a;">
 
-  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#00a06a;font-family:Inter,Arial,sans-serif;font-weight:700;margin:0 0 6px;">Racecraft · Part 1 of 5</p>
+  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#00a06a;font-family:Inter,Arial,sans-serif;font-weight:700;margin:0 0 6px;">Racecraft · Part 1 of 5 · <a href="https://rkrants.blogspot.com/2026/06/racecraft-project-koru-prologue-origin.html" style="color:#00a06a;text-decoration:underline;">← Prologue</a></p>
   <h1 style="font-size:34px;line-height:1.2;margin:0 0 8px;">The 800-Millisecond Problem</h1>
   <p style="font-style:italic;color:#666;margin:0 0 28px;">Why I stopped trusting every "AI race coach" I'd ever tried — and what it would take to build one I'd actually listen to at 130&nbsp;km/h.</p>
 
-  <p>The first time an app yelled "Brake!" at me on a track day, I'd already braked. Not by a hair — by a full corner. I was unwinding the wheel onto the exit of Sonoma's Turn 7 when my phone, with great confidence, told me to do the thing I had finished doing the better part of a second ago. I laughed. Then I muted it. And that mute button is the whole reason this project exists.</p>
+  <p>The first time an app yelled "Brake!" at me on a track day, I'd already braked — not by a hair, but by a full corner. I was unwinding the wheel and feeding in throttle on the <em>exit</em> of Sonoma's Turn 7, one of the fastest corners on the circuit, when the phone told me — with great confidence — to brake. It wasn't merely lagging by a beat; for that specific high-speed corner the cue was flat wrong, because braking mid-exit at that speed is how you put the car into a spin. <strong>And I couldn't even mute it.</strong> I was a beginner on a mandatory-instructor day, both hands on the wheel, eyes up. It was the instructor in my passenger seat — there to call flags and lines, allowed to say anything but never to touch a single control — who reached over and silenced the app, precisely because its feedback was both lagging and incorrect for that corner. That muted phone is the whole reason this project exists.</p>
 
-  <p>Here's the thing every engineer who has ever sat in a car with a coach knows in their gut: <strong>a coach you can't trust is worse than no coach at all.</strong> A human instructor in the right seat earns trust in the first two laps or they lose it forever. They say the right thing, at the right moment, in a voice that matches how rattled you are. Get the timing wrong and you don't just give bad advice — you teach the driver to ignore you. The mute button is permanent.</p>
+  <p>Reaching for it myself was never an option. At 130&nbsp;km/h on a shared track, every other driver is trusting me to do the predictable thing in the predictable place. A late, wrong cue isn't merely useless — it's a hand off the wheel and a half-second of attention I do not have. On a spreadsheet that's a bad notification; on a race track it's a safety problem. (It didn't help that the app was <em>our own</em> prototype — the one my team was building, with me strapped in as both the engineer and the crash-test dummy.)</p>
+
+  <p>Here's the thing every engineer who has sat in a car with a coach knows in their gut: <strong>a coach you can't trust is worse than no coach at all.</strong> That instructor beside me is the model for the whole project — a good one earns trust in the first two laps or loses it forever. They say the right thing, at the right moment, in a voice that matches how rattled you are, and crucially they <em>can't</em> grab the wheel; all they have is words, timed well. Get the timing wrong and you don't just give bad advice — you teach the driver to ignore you. The mute button is permanent.</p>
 
   <p>So when I set out to build <strong>Racecraft</strong> — an on-device, real-time driving coach — the success metric wasn't accuracy. It was trust. And trust, it turns out, is mostly a latency problem wearing a psychology costume.</p>
 
@@ -81,7 +83,9 @@
     <li><strong>Earning trust at speed</strong> — determinism, on-device validation, and what shipped vs. what's still scaffolding.</li>
   </ol>
 
-  <p>Next up: the part everyone skips. Before you can coach someone, you have to figure out <em>who they are</em> — fast, from nothing but the way they use the pedals.</p>
+  <p>Strip away the racing specifics and the lesson is blunt: <strong>in a high-stakes, real-time environment, latency isn't a performance metric — it's a trust metric.</strong> Be even a half-second late and you haven't just given bad advice; you've taught the user to stop listening. And mute, as I learned at 130&nbsp;km/h, is permanent.</p>
+
+  <p>So the rest of this series is one long answer to a single question: how do you make the advice that matters arrive in time, <em>every</em> time? The fix starts by re-engineering the one path that can never afford to wait — the <strong>hot path</strong> — so a "brake!" is decided and spoken in milliseconds, with no model, no network, and no excuses. That's where this series is headed.</p>
 
   <p style="font-family:Inter,Arial,sans-serif;font-size:14px;color:#888;border-top:1px solid #eee;padding-top:16px;margin-top:36px;">Racecraft is an on-device, real-time driving coach built around Gemma&nbsp;4. Code: <a href="https://github.com/rabimba/speedracer-AI" style="color:#00a06a;">github.com/rabimba/speedracer-AI</a>.</p>
 </div>

@@ -31,7 +31,7 @@ const scenario = {
 };
 
 writeFileSync(scenarioPath, JSON.stringify(scenario));
-writeFileSync(logcatPath, 'Telemetry loop started source=phone_imu_gps cameraFusion=true\n');
+writeFileSync(logcatPath, 'Telemetry loop started source=phone_imu_gps cameraFusion=false\n');
 writeFileSync(instrumentationPath, 'OK (1 test)\n');
 writeFileSync(metadataPath, JSON.stringify({ startedAtMs: 1000 }));
 

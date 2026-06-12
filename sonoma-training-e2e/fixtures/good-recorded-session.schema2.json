@@ -1,12 +1,22 @@
 {
   "schemaVersion": 2,
   "id": "fixture-good",
+  "mode": "telemetry",
   "trackName": "Sonoma Raceway",
+  "coachId": "superaj",
   "startedAt": 2000,
+  "endedAt": 5000,
+  "endedReason": "completed",
   "summary": {
+    "sessionId": "fixture-good",
+    "mode": "telemetry",
     "trackName": "Sonoma Raceway",
-    "frameCount": 1
+    "coachId": "superaj",
+    "frameCount": 1,
+    "decisionCount": 2,
+    "durationSeconds": 3
   },
+  "sessionGoals": [],
   "frames": [
     {
       "telemetrySource": "phone_imu_gps"
@@ -32,6 +42,16 @@
   ],
   "audioEvents": [
     {
+      "decisionId": "session-ready",
+      "utteranceId": "session-ready",
+      "priority": 0,
+      "requestedAt": 2005,
+      "dispatchLatencyMs": 5,
+      "status": "CLIP_STARTED",
+      "scope": "SESSION",
+      "clipName": "coach_ready"
+    },
+    {
       "decisionId": "hot-1",
       "utteranceId": "utt-1",
       "action": "BRAKE",
@@ -39,5 +59,13 @@
       "dispatchLatencyMs": 20,
       "status": "CLIP_STARTED"
     }
-  ]
+  ],
+  "artifactPath": "/tmp/fixture-good/session.json",
+  "framesPath": "/tmp/fixture-good/frames.ndjson",
+  "decisionsPath": "/tmp/fixture-good/decisions.ndjson",
+  "audioEventsPath": "/tmp/fixture-good/audio-events.ndjson",
+  "canDumpPath": "/tmp/fixture-good/can-slcan.txt",
+  "embeddedFrameCount": 1,
+  "totalFrameCount": 1,
+  "lastFlushAt": 5000
 }

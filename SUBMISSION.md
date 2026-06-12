@@ -8,6 +8,13 @@ Racecraft coaches a driver *as they drive* — choosing what to say, in whose vo
 guiding constraint is a single sentence: **"feedback 800 ms late is worse than
 silence."** Everything in the architecture follows from refusing to violate it.
 
+It was built and road-tested across three skill-tier teams at Thunderhill and Sonoma.
+This work is the **beginner-coaching** app; the author both led that team and was the
+test driver in a Toyota GR86 — and the same engine adapted cleanly to the intermediate
+car, the first evidence that the design is skill- and domain-agnostic. The design model
+throughout is the mandatory track instructor: allowed to *advise*, never to touch a
+control, and never to become a distraction.
+
 ---
 
 ## 1. What we achieved (headline, all measured on hardware)
@@ -151,7 +158,8 @@ docs/                     Architecture, audit, and the blog series
 ## 7. Artifacts index
 
 - **Audit & honest status:** [`docs/audit-2026-06-08.md`](docs/audit-2026-06-08.md)
-- **Blog series (5 parts, Blogger-ready HTML):** [`docs/blog/`](docs/blog/)
+- **Blog series (prologue + 5 parts, Blogger-ready HTML):** [`docs/blog/`](docs/blog/)
+  0. [Prologue — It Started With a Wine List (the origin story)](docs/blog/00-the-origin-story.html)
   1. [The 800-Millisecond Problem](docs/blog/01-the-800ms-problem.html)
   2. [Teaching the Coach to Read the Driver](docs/blog/02-reading-the-driver.html)
   3. [Splitting the Brain to Beat the Clock](docs/blog/03-splitting-the-brain.html)

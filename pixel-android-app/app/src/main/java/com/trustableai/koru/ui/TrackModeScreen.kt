@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Speed
@@ -50,10 +53,14 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +69,9 @@ import androidx.compose.ui.unit.sp
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.TelemetrySourceHealth
+import com.trustableai.koru.model.Track
 import com.trustableai.koru.model.TrackHudMode
+import com.trustableai.koru.runtime.TrackCatalog
 import com.trustableai.koru.ui.theme.KoruDimens
 import com.trustableai.koru.ui.theme.KoruPalette
 import com.trustableai.koru.ui.theme.koruCardBorder
@@ -231,6 +240,10 @@ internal fun TrackModeScreen(
                 }
             }
 
+            TrackMapOverlay(trackName = state.trackName, frame = state.latestFrame)
+
+            FieldHealthPanel(state)
+
             TrackModeGaugeStrip(frame = state.latestFrame)
 
             Row(
@@ -289,7 +302,13 @@ internal fun HoldStopButton(
         modifier = modifier
             .sizeIn(minHeight = KoruDimens.MinTouchTarget)
             .testTag("hold-stop-session")
-            .semantics { contentDescription = "Hold to stop session" }
+            .semantics {
+                contentDescription = "Hold to stop session"
+                onClick(label = "Stop session") {
+                    onStopRequested()
+                    true
+                }
+            }
             .pointerInput(onStopRequested) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -336,6 +355,224 @@ internal fun HoldStopButton(
 }
 
 @Composable
+internal fun TrackMapOverlay(trackName: String, frame: TelemetryFrame?) {
+    val track = remember(trackName) { TrackCatalog.fromName(trackName) }
+    val anchors = remember(trackName) { trackMapAnchors(track) }
+    val driver = frame?.takeIf { isValidGps(it.latitude, it.longitude) }
+    val nearest = remember(driver?.latitude, driver?.longitude, trackName) {
+        driver?.let { nearestTrackAnchor(it.latitude, it.longitude, anchors) }
+    }
+    val latRange = anchors.minOf { it.lat }..anchors.maxOf { it.lat }
+    val lonRange = anchors.minOf { it.lon }..anchors.maxOf { it.lon }
+    val latPad = ((latRange.endInclusive - latRange.start) * 0.16).coerceAtLeast(0.0002)
+    val lonPad = ((lonRange.endInclusive - lonRange.start) * 0.16).coerceAtLeast(0.0002)
+    val lineColor = MaterialTheme.colorScheme.primary
+    val mutedLineColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val driverColor = KoruPalette.SignalReady
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(132.dp)
+            .koruCardBorder(RoundedCornerShape(KoruDimens.ChipRadius))
+            .testTag("track-map-overlay"),
+        shape = RoundedCornerShape(KoruDimens.ChipRadius),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "SONOMA MAP",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = nearest?.let { "${it.label} ${it.distanceMeters.toInt()}m" } ?: "GPS waiting",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                fun project(lat: Double, lon: Double): Offset {
+                    val paddedMinLat = latRange.start - latPad
+                    val paddedMaxLat = latRange.endInclusive + latPad
+                    val paddedMinLon = lonRange.start - lonPad
+                    val paddedMaxLon = lonRange.endInclusive + lonPad
+                    val x = ((lon - paddedMinLon) / (paddedMaxLon - paddedMinLon)).coerceIn(0.0, 1.0)
+                    val y = (1.0 - ((lat - paddedMinLat) / (paddedMaxLat - paddedMinLat))).coerceIn(0.0, 1.0)
+                    return Offset((x * size.width).toFloat(), (y * size.height).toFloat())
+                }
+
+                val path = Path()
+                anchors.forEachIndexed { index, anchor ->
+                    val point = project(anchor.lat, anchor.lon)
+                    if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                }
+                if (anchors.isNotEmpty()) {
+                    val first = project(anchors.first().lat, anchors.first().lon)
+                    path.lineTo(first.x, first.y)
+                }
+                drawPath(
+                    path = path,
+                    color = lineColor.copy(alpha = 0.8f),
+                    style = Stroke(width = 5f),
+                )
+                anchors.forEach { anchor ->
+                    val point = project(anchor.lat, anchor.lon)
+                    drawCircle(
+                        color = mutedLineColor.copy(alpha = 0.62f),
+                        radius = 4.5f,
+                        center = point,
+                    )
+                }
+                driver?.let {
+                    val point = project(it.latitude, it.longitude)
+                    drawCircle(
+                        color = driverColor.copy(alpha = 0.28f),
+                        radius = 15f,
+                        center = point,
+                    )
+                    drawCircle(
+                        color = driverColor,
+                        radius = 7f,
+                        center = point,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FieldHealthPanel(state: SessionUiState) {
+    val health = state.latestFrame?.sourceHealth
+    val recording = state.recordingStatus
+    val audioEvent = state.lastAudioEvent
+    val lastDecision = state.decisions.lastOrNull()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("field-health-panel"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TrackHealthTile(
+            label = "Audio",
+            value = audioEvent?.status?.name ?: if (state.audioEnabled) "READY" else "MUTED",
+            detail = audioEvent?.clipName ?: audioEvent?.fallbackReason ?: if (state.audioEnabled) "enabled" else "disabled",
+            color = when {
+                !state.audioEnabled -> KoruPalette.SignalAdvisory
+                audioEvent?.status?.name == "CLIP_STARTED" || audioEvent?.status?.name == "TTS_STARTED" -> KoruPalette.SignalReady
+                audioEvent?.status?.name == "SUPPRESSED" || audioEvent?.status?.name == "BUSY" -> KoruPalette.SignalAdvisory
+                audioEvent == null -> KoruPalette.SignalNeutral
+                else -> KoruPalette.Error
+            },
+            icon = Icons.Filled.GraphicEq,
+            modifier = Modifier.weight(1f),
+        )
+        TrackHealthTile(
+            label = "Record",
+            value = if (recording.active) "${recording.frameCount}" else recording.endedReason ?: "idle",
+            detail = recording.flushAgeMs?.let { "${it}ms flush" } ?: recording.artifactPath?.substringAfterLast('/') ?: "no file",
+            color = when {
+                recording.active && (recording.flushAgeMs ?: 0L) <= 2_500L -> KoruPalette.SignalReady
+                recording.active -> KoruPalette.SignalAdvisory
+                recording.endedReason != null -> KoruPalette.SignalReady
+                else -> KoruPalette.SignalNeutral
+            },
+            icon = Icons.Filled.CheckCircle,
+            modifier = Modifier.weight(1f),
+        )
+        TrackHealthTile(
+            label = "CAN/GPS",
+            value = sensorTrustLabel(health),
+            detail = listOfNotNull(
+                health?.canFrameRatesHz?.size?.let { "$it ids" },
+                health?.canBitrate,
+                health?.motionSource,
+            ).joinToString(" ").ifBlank { "waiting" },
+            color = when {
+                health?.canConnected == true || health?.motionConnected == true -> KoruPalette.SignalReady
+                health?.canWaitingForFrames == true || health?.status?.contains("waiting", ignoreCase = true) == true -> KoruPalette.SignalAdvisory
+                health == null -> KoruPalette.SignalNeutral
+                else -> KoruPalette.Error
+            },
+            icon = Icons.Filled.Sensors,
+            modifier = Modifier.weight(1f),
+        )
+        TrackHealthTile(
+            label = "Coach",
+            value = lastDecision?.action?.name ?: "standby",
+            detail = audioEvent?.fallbackReason ?: lastDecision?.path?.name ?: "waiting",
+            color = if (lastDecision != null) KoruPalette.SignalReady else KoruPalette.SignalNeutral,
+            icon = trackPriorityIcon(lastDecision?.priority),
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun TrackHealthTile(
+    label: String,
+    value: String,
+    detail: String,
+    color: Color,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .sizeIn(minHeight = 66.dp)
+            .koruCardBorder(RoundedCornerShape(KoruDimens.ChipRadius)),
+        shape = RoundedCornerShape(KoruDimens.ChipRadius),
+        color = color.copy(alpha = 0.1f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = color)
+                Text(
+                    text = label.uppercase(Locale.US),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 internal fun TrackModeGaugeStrip(frame: TelemetryFrame?) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -358,13 +595,13 @@ internal fun TrackModeGaugeStrip(frame: TelemetryFrame?) {
         )
         TrackMetricTile(
             label = "Brake",
-            value = frame?.brake?.let { "%.0f".format(Locale.US, it * 100.0) } ?: "--",
+            value = frame?.brake?.let { "%.0f".format(Locale.US, it) } ?: "--",
             unit = "%",
             modifier = Modifier.weight(1f),
         )
         TrackMetricTile(
             label = "Throttle",
-            value = frame?.throttle?.let { "%.0f".format(Locale.US, it * 100.0) } ?: "--",
+            value = frame?.throttle?.let { "%.0f".format(Locale.US, it) } ?: "--",
             unit = "%",
             modifier = Modifier.weight(1f),
         )
@@ -525,6 +762,53 @@ internal fun TrackSignalLight(
             )
         }
     }
+}
+
+private data class TrackMapAnchor(
+    val label: String,
+    val lat: Double,
+    val lon: Double,
+)
+
+private data class NearestTrackAnchor(
+    val label: String,
+    val distanceMeters: Double,
+)
+
+private fun trackMapAnchors(track: Track): List<TrackMapAnchor> {
+    val anchors = track.corners.flatMap { corner ->
+        listOf(
+            TrackMapAnchor("${corner.name} entry", corner.entryLat ?: corner.lat, corner.entryLon ?: corner.lon),
+            TrackMapAnchor(corner.name, corner.lat, corner.lon),
+        )
+    }
+    return anchors.distinctBy { "${"%.6f".format(Locale.US, it.lat)},${"%.6f".format(Locale.US, it.lon)}" }
+}
+
+private fun nearestTrackAnchor(lat: Double, lon: Double, anchors: List<TrackMapAnchor>): NearestTrackAnchor? {
+    return anchors.minByOrNull { anchor ->
+        roughDistanceMeters(lat, lon, anchor.lat, anchor.lon)
+    }?.let { anchor ->
+        NearestTrackAnchor(
+            label = anchor.label,
+            distanceMeters = roughDistanceMeters(lat, lon, anchor.lat, anchor.lon),
+        )
+    }
+}
+
+private fun roughDistanceMeters(latA: Double, lonA: Double, latB: Double, lonB: Double): Double {
+    val cosLat = kotlin.math.cos(Math.toRadians((latA + latB) / 2.0))
+    val dLat = (latA - latB) * 111_320.0
+    val dLon = (lonA - lonB) * 111_320.0 * cosLat
+    return kotlin.math.sqrt(dLat * dLat + dLon * dLon)
+}
+
+private fun isValidGps(lat: Double, lon: Double): Boolean {
+    return !lat.isNaN() &&
+        !lon.isNaN() &&
+        !(lat == 0.0 && lon == 0.0) &&
+        kotlin.math.abs(lat) <= 90.0 &&
+        kotlin.math.abs(lon) <= 180.0
 }
 
 @Composable

@@ -26,9 +26,10 @@ class CoachAudioDispatcherTest {
             onAudioEvent = events::add,
         )
 
-        assertEquals(listOf("p0_brake_now"), clipPlayer.playedClips)
+        assertEquals(listOf("brake_now"), clipPlayer.playedClips)
         assertFalse(speechEngine.speakCalled)
         assertEquals(AudioDispatchStatus.CLIP_STARTED, events.single().status)
+        assertEquals("brake_now", events.single().clipName)
         assertEquals("decision-1", events.single().decisionId)
         assertTrue(events.single().dispatchLatencyMs < 100L)
     }
@@ -50,11 +51,11 @@ class CoachAudioDispatcherTest {
         )
         speechEngine.fireStart("hot-2")
 
-        assertEquals(listOf("p0_both_feet_in"), clipPlayer.playedClips)
+        assertEquals(listOf("both_feet_in"), clipPlayer.playedClips)
         assertTrue(speechEngine.speakCalled)
         assertEquals(TextToSpeech.QUEUE_FLUSH, speechEngine.lastQueueMode)
         assertEquals(AudioDispatchStatus.TTS_QUEUED, events.first().status)
-        assertEquals("clip_unavailable:p0_both_feet_in", events.first().fallbackReason)
+        assertEquals("clip_unavailable:both_feet_in", events.first().fallbackReason)
         assertEquals(AudioDispatchStatus.TTS_STARTED, events.last().status)
         assertEquals("decision-2", events.last().decisionId)
         assertTrue((events.last().ttsStartLatencyMs ?: Long.MAX_VALUE) < 100L)
@@ -87,7 +88,7 @@ class CoachAudioDispatcherTest {
         assertEquals(1, clipPlayer.playedClips.size)
         assertEquals(AudioDispatchStatus.CLIP_STARTED, events.first().status)
         assertEquals(AudioDispatchStatus.BUSY, events.last().status)
-        assertEquals("p0_repeat_while_playing", events.last().fallbackReason)
+        assertEquals("repeat_while_playing", events.last().fallbackReason)
     }
 
     @Test
@@ -117,6 +118,22 @@ class CoachAudioDispatcherTest {
         assertFalse(speechEngine.speakCalled)
         assertEquals(AudioDispatchStatus.BUSY, events.last().status)
         assertEquals("playback_active", events.last().fallbackReason)
+    }
+
+    @Test
+    fun `session audio check plays coach ready fixed clip`() {
+        val clipPlayer = FakeClipPlayer(playable = true)
+        val speechEngine = FakeSpeechEngine(initialized = false)
+        val dispatcher = CoachAudioDispatcher(clipPlayer, speechEngine)
+        val events = mutableListOf<AudioDispatchEvent>()
+
+        dispatcher.playSessionClip("coach_ready", utteranceId = "session-ready", onAudioEvent = events::add)
+
+        assertEquals(listOf("coach_ready"), clipPlayer.playedClips)
+        assertEquals(AudioDispatchStatus.CLIP_STARTED, events.single().status)
+        assertEquals("SESSION", events.single().scope.name)
+        assertEquals("coach_ready", events.single().clipName)
+        assertFalse(speechEngine.speakCalled)
     }
 
     private class FakeClipPlayer(

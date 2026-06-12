@@ -23,10 +23,10 @@ import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
 import com.trustableai.koru.model.RuntimeBackend
-import com.trustableai.koru.model.SessionMode
 import com.trustableai.koru.model.TelemetrySourceKind
 import com.trustableai.koru.runtime.KoruSessionBus
 import com.trustableai.koru.runtime.LiveSessionConfig
+import com.trustableai.koru.runtime.SessionPermissionPolicy
 import com.trustableai.koru.service.BluetoothRuntimePermissions
 import java.util.Locale
 import java.util.concurrent.ExecutorService
@@ -38,12 +38,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private var cameraPreview: PreviewView? = null
     private var cameraBoundPreview: PreviewView? = null
+    private var cameraPermissionRequestInFlight = false
     private var pendingLocationConfig: LiveSessionConfig? = null
     private var pendingBluetoothConfig: LiveSessionConfig? = null
     @Volatile private var lastCameraStatusUpdateMs = 0L
 
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            cameraPermissionRequestInFlight = false
             if (granted) {
                 viewModel.setCameraStatus(getString(R.string.camera_lane_ready))
                 bindCameraLaneIfReady()
@@ -96,7 +98,7 @@ class MainActivity : ComponentActivity() {
                 startLiveSessionWithPermissions(config, allowBluetoothPrompt = false)
             } else if (!granted) {
                 if (config != null &&
-                    config.telemetrySource in setOf(TelemetrySourceKind.RACEBOX_OBD_FUSION, TelemetrySourceKind.AIM_CAN_USB)
+                    config.telemetrySource == TelemetrySourceKind.RACEBOX_OBD_FUSION
                 ) {
                     KoruSessionBus.tryEmitStatus(
                         LiveBackendStatus(
@@ -132,11 +134,10 @@ class MainActivity : ComponentActivity() {
                 onStartRequested = { startLiveSessionWithPermissions() },
                 onBindCameraPreview = { previewView ->
                     cameraPreview = previewView
-                    bindCameraLaneIfReady()
+                    ensureCameraPermission()
                 },
             )
         }
-        ensureCameraPermission()
     }
 
     override fun onDestroy() {
@@ -149,7 +150,7 @@ class MainActivity : ComponentActivity() {
         config: LiveSessionConfig = viewModel.currentConfig(),
         allowBluetoothPrompt: Boolean = true,
     ) {
-        if (allowBluetoothPrompt && requiresBluetooth(config) && !BluetoothRuntimePermissions.hasBluetoothPermissions(this)) {
+        if (allowBluetoothPrompt && SessionPermissionPolicy.requiresBluetooth(config) && !BluetoothRuntimePermissions.hasBluetoothPermissions(this)) {
             pendingBluetoothConfig = config
             KoruSessionBus.tryEmitStatus(
                 LiveBackendStatus(
@@ -163,7 +164,7 @@ class MainActivity : ComponentActivity() {
             bluetoothPermissionLauncher.launch(requiredBluetoothPermissions())
             return
         }
-        if (requiresFineLocation(config) && !hasFineLocationPermission()) {
+        if (SessionPermissionPolicy.requiresFineLocation(config) && !hasFineLocationPermission()) {
             pendingLocationConfig = config
             KoruSessionBus.tryEmitStatus(
                 LiveBackendStatus(
@@ -178,26 +179,6 @@ class MainActivity : ComponentActivity() {
             return
         }
         viewModel.startSession(config)
-    }
-
-    private fun requiresFineLocation(config: LiveSessionConfig): Boolean {
-        return config.sessionMode == SessionMode.DEVICE_TEST ||
-            (config.sessionMode == SessionMode.TELEMETRY &&
-                config.telemetrySource in setOf(
-                    TelemetrySourceKind.PHONE_IMU_GPS,
-                    TelemetrySourceKind.RACEBOX_OBD_FUSION,
-                    TelemetrySourceKind.AIM_CAN_USB,
-                ))
-    }
-
-    private fun requiresBluetooth(config: LiveSessionConfig): Boolean {
-        return config.sessionMode == SessionMode.TELEMETRY &&
-            config.telemetrySource in setOf(
-                TelemetrySourceKind.RACEBOX_BLE,
-                TelemetrySourceKind.OBD_BLUETOOTH,
-                TelemetrySourceKind.RACEBOX_OBD_FUSION,
-                TelemetrySourceKind.AIM_CAN_USB,
-            )
     }
 
     private fun requiredBluetoothPermissions(): Array<String> {
@@ -227,11 +208,15 @@ class MainActivity : ComponentActivity() {
             }
 
             shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) -> {
+                if (cameraPermissionRequestInFlight) return
+                cameraPermissionRequestInFlight = true
                 viewModel.setCameraStatus(getString(R.string.camera_lane_waiting))
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
 
             else -> {
+                if (cameraPermissionRequestInFlight) return
+                cameraPermissionRequestInFlight = true
                 viewModel.setCameraStatus(getString(R.string.camera_lane_waiting))
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }

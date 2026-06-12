@@ -3,6 +3,7 @@ package com.trustableai.koru.service
 import com.trustableai.koru.model.TelemetryFrame
 import com.trustableai.koru.model.TelemetrySourceHealth
 import com.trustableai.koru.model.TelemetrySourceKind
+import com.trustableai.koru.model.AimCanBitrate
 import com.trustableai.koru.runtime.TrackCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -112,6 +113,36 @@ class AimCanUsbSourceTest {
         assertEquals(false, frame.sourceHealth?.motionConnected)
     }
 
+    @Test
+    fun `raw CAN status is surfaced before mapped AiM frames are decoded`() {
+        val now = 45_000L
+        val source = AimCanUsbSource(
+            canClient = FakeAimCanClient(
+                sample = null,
+                status = AimCanClientStatus(
+                    connected = true,
+                    detail = "CANable connected; waiting for mapped frames",
+                    usbDeviceName = "CANable2",
+                    bitrate = AimCanBitrate.S6_500KBPS,
+                    waitingForFrames = false,
+                    rawCanSample = "t55520102",
+                    rawCanSamplesById = mapOf(0x555 to "t55520102"),
+                    frameRatesHz = mapOf(0x555 to 19.5),
+                ),
+            ),
+            elapsedRealtimeMs = { now },
+        )
+
+        val frame = source.nextFrame(1, TrackCatalog.sonomaRaceway, elapsedSeconds = 1.0)
+
+        assertEquals("no_live_data", frame.sourceHealth?.fallbackStage)
+        assertEquals(true, frame.sourceHealth?.canConnected)
+        assertEquals("S6 500 kbps", frame.sourceHealth?.canBitrate)
+        assertEquals("t55520102", frame.sourceHealth?.rawCanSample)
+        assertEquals("t55520102", frame.sourceHealth?.rawCanSamplesById?.get("0x555"))
+        assertEquals(19.5, frame.sourceHealth?.canFrameRatesHz?.get("0x555") ?: -1.0, 0.01)
+    }
+
     private fun fullCanSample(now: Long): AimCanSample {
         return AimCanSample(
             receivedAtElapsedMs = now - 40,
@@ -196,6 +227,7 @@ class AimCanUsbSourceTest {
 
     private class FakeAimCanClient(
         private val sample: AimCanSample?,
+        private val status: AimCanClientStatus? = null,
     ) : AimCanDataClient {
         override suspend fun start() = Unit
 
@@ -203,7 +235,7 @@ class AimCanUsbSourceTest {
 
         override fun latestSample(): AimCanSample? = sample
 
-        override fun status(): AimCanClientStatus = AimCanClientStatus(
+        override fun status(): AimCanClientStatus = status ?: AimCanClientStatus(
             connected = sample != null,
             detail = if (sample == null) "fake CAN unavailable" else "fake CAN live",
             usbDeviceName = "RH-02 PRO",

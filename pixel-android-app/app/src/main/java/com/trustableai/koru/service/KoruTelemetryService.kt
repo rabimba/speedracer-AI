@@ -15,6 +15,9 @@ import androidx.core.app.ServiceCompat
 import com.trustableai.koru.R
 import com.trustableai.koru.audio.CoachAudioDispatcher
 import com.trustableai.koru.camera.VisionFeatureStore
+import com.trustableai.koru.model.AudioDispatchEvent
+import com.trustableai.koru.model.AudioDispatchScope
+import com.trustableai.koru.model.AudioDispatchStatus
 import com.trustableai.koru.model.CoachingPath
 import com.trustableai.koru.model.LiveBackendState
 import com.trustableai.koru.model.LiveBackendStatus
@@ -32,8 +35,10 @@ import com.trustableai.koru.runtime.LiveAudioPolicy
 import com.trustableai.koru.runtime.ModelAssetManager
 import com.trustableai.koru.runtime.PhraseCatalog
 import com.trustableai.koru.runtime.RecordedSessionRecorder
+import com.trustableai.koru.runtime.SessionPermissionPolicy
 import com.trustableai.koru.runtime.TrackCatalog
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -72,6 +77,10 @@ class KoruTelemetryService : Service() {
         runtimeManager = EdgeRuntimeManager(this, modelAssetManager, phraseCatalog, activeCoachId)
         sessionRecorder = RecordedSessionRecorder(this)
         engine = createRealtimeEngine(TrackCatalog.defaultTrack, emptyList())
+        RecordedSessionRecorder.recoverIncomplete(this).forEach { artifact ->
+            Log.w(tag, "Recovered incomplete recorded session ${artifact.id}")
+            KoruSessionBus.tryEmitSavedSession(artifact)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -115,14 +124,17 @@ class KoruTelemetryService : Service() {
 
     private suspend fun startSession(config: LiveSessionConfig) {
         stopActiveLoop()
-        sessionRecorder.discard()
+        if (sessionRecorder.hasActiveSession()) {
+            completeRecordedSession("replaced")
+        }
         ensureForeground(
             content = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Running direct camera feedback on device"
+                SessionMode.CAN_INTERFACE_CHECK -> "Running CAN interface check"
                 SessionMode.DEVICE_TEST -> "Running device camera plus GPS test on device"
                 SessionMode.TELEMETRY -> getString(R.string.notification_content)
             },
-            requiresLocationType = requiresLocationForegroundType(config) &&
+            requiresLocationType = SessionPermissionPolicy.requiresLocationForegroundType(config) &&
                 PhoneImuGpsSource.hasFineLocationPermission(applicationContext),
         )
 
@@ -132,11 +144,21 @@ class KoruTelemetryService : Service() {
         phraseCatalog.ensureLoaded()
         runtimeManager.updateCoach(activeCoachId)
         val track = if (config.sessionMode == SessionMode.DEVICE_TEST) null else TrackCatalog.fromName(config.trackName)
-        val sessionLabel = if (config.sessionMode == SessionMode.DEVICE_TEST) "Device GPS Test" else (track?.name ?: config.trackName)
+        val sessionLabel = when (config.sessionMode) {
+            SessionMode.DEVICE_TEST -> "Device GPS Test"
+            SessionMode.CAN_INTERFACE_CHECK -> "CAN Interface Check"
+            else -> track?.name ?: config.trackName
+        }
         engine = createRealtimeEngine(track, config.sessionGoals)
         engine.setActiveCoach(activeCoachId)
         val telemetrySelection = when (config.sessionMode) {
             SessionMode.CAMERA_DIRECT -> null
+            SessionMode.CAN_INTERFACE_CHECK -> TelemetrySourceFactory.select(
+                applicationContext,
+                TelemetrySourceKind.AIM_CAN_USB,
+                aimCanBitrate = config.aimCanBitrate,
+                aimCanFallbacksEnabled = false,
+            )
             SessionMode.DEVICE_TEST -> TelemetrySourceFactory.select(
                 applicationContext,
                 com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS,
@@ -145,6 +167,7 @@ class KoruTelemetryService : Service() {
                 applicationContext,
                 config.telemetrySource,
                 config.obdTransportPreference,
+                config.aimCanBitrate,
             )
         }
         activeTelemetrySource = telemetrySelection?.source ?: SyntheticTrackSource()
@@ -160,21 +183,34 @@ class KoruTelemetryService : Service() {
             state = LiveBackendState.STARTING,
             detail = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Starting direct camera reasoning session on device"
+                SessionMode.CAN_INTERFACE_CHECK -> telemetrySelection?.detail
+                    ?: "Starting CAN interface check"
                 SessionMode.DEVICE_TEST -> telemetrySelection?.detail
                     ?: "Starting device GPS plus camera test path on device"
                 SessionMode.TELEMETRY -> telemetrySelection?.detail
-                    ?: "Starting telemetry service with live camera fusion enabled"
+                    ?: "Starting telemetry service with GPS/CAN map coaching enabled"
             },
             usesOnDeviceModel = false,
             supportedPaths = when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> listOf(CoachingPath.EDGE)
+                SessionMode.CAN_INTERFACE_CHECK -> emptyList()
                 SessionMode.DEVICE_TEST -> listOf(CoachingPath.HOT, CoachingPath.EDGE)
                 SessionMode.TELEMETRY -> listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE)
             },
         )
         KoruSessionBus.tryEmitStatus(startingStatus)
 
-        val selectedBackend = runtimeManager.warmupPreferredBackend()
+        val selectedBackend = if (config.sessionMode == SessionMode.CAN_INTERFACE_CHECK) {
+            LiveBackendStatus(
+                backend = RuntimeBackend.DETERMINISTIC,
+                state = LiveBackendState.READY,
+                detail = "CAN interface check active. Waiting for raw SLCAN frames at ${config.aimCanBitrate.label}.",
+                usesOnDeviceModel = false,
+                supportedPaths = emptyList(),
+            )
+        } else {
+            runtimeManager.warmupPreferredBackend()
+        }
         KoruSessionBus.tryEmitStatus(
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> selectedBackend.copy(
@@ -182,6 +218,7 @@ class KoruTelemetryService : Service() {
                         detail = "Edge runtime warmed. Waiting for camera lane frames",
                         supportedPaths = listOf(CoachingPath.EDGE),
                     )
+                SessionMode.CAN_INTERFACE_CHECK -> selectedBackend
                 SessionMode.DEVICE_TEST -> {
                     val sourceDetail = telemetrySelection?.detail
                         ?: "Using phone GPS and IMU with live camera fusion."
@@ -199,7 +236,7 @@ class KoruTelemetryService : Service() {
                 }
                 SessionMode.TELEMETRY -> {
                     val sourceDetail = telemetrySelection?.detail
-                        ?: "Telemetry source not selected. Using fused camera vision with telemetry frames."
+                        ?: "Telemetry source not selected. Using GPS/CAN map coaching."
                     selectedBackend.copy(
                         state = when {
                             telemetrySelection?.isFallback == true &&
@@ -208,48 +245,86 @@ class KoruTelemetryService : Service() {
                                 selectedBackend.state == LiveBackendState.STARTING -> LiveBackendState.DEGRADED
                             else -> selectedBackend.state
                         },
-                        detail = "${selectedBackend.detail} $sourceDetail",
+                        detail = "${selectedBackend.detail} $sourceDetail Camera fusion=${config.cameraFusionEnabled}.",
                     )
                 }
             },
         )
 
         sessionRecorder.start(config.sessionMode, sessionLabel, activeCoachId, config.sessionGoals)
+        emitRecordingStatus()
+        if (audioEnabled) {
+            audioDispatcher.playSessionClip(
+                clipName = "coach_ready",
+                utteranceId = "session-ready-${System.currentTimeMillis()}",
+                onAudioEvent = ::recordAudioEvent,
+            )
+        }
         updateNotification(
             when (config.sessionMode) {
                 SessionMode.CAMERA_DIRECT -> "Direct camera feedback active (${selectedBackend.backend.bridgeValue()})"
+                SessionMode.CAN_INTERFACE_CHECK -> "CAN interface check active (${config.aimCanBitrate.label})"
                 SessionMode.DEVICE_TEST -> "Device GPS + camera test active (${selectedBackend.backend.bridgeValue()})"
                 SessionMode.TELEMETRY -> {
                     val activeSourceLabel = telemetrySelection?.active?.bridgeValue() ?: "synthetic"
-                    "Telemetry ${activeSourceLabel} + camera fusion active (${selectedBackend.backend.bridgeValue()})"
+                    "Telemetry ${activeSourceLabel} + Sonoma map active (${selectedBackend.backend.bridgeValue()})"
                 }
             },
         )
         sessionJob = serviceScope.launch {
-            when (config.sessionMode) {
-                SessionMode.CAMERA_DIRECT -> runCameraDirectLoop(selectedBackend)
-                SessionMode.DEVICE_TEST -> runTelemetryLoop(
-                    track,
-                    telemetrySelection ?: TelemetrySourceFactory.select(
-                        applicationContext,
-                        com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS,
+            try {
+                when (config.sessionMode) {
+                    SessionMode.CAMERA_DIRECT -> runCameraDirectLoop(selectedBackend)
+                    SessionMode.CAN_INTERFACE_CHECK -> runCanInterfaceCheckLoop(
+                        track,
+                        telemetrySelection ?: TelemetrySourceFactory.select(
+                            applicationContext,
+                            TelemetrySourceKind.AIM_CAN_USB,
+                            aimCanBitrate = config.aimCanBitrate,
+                            aimCanFallbacksEnabled = false,
+                        ),
+                    )
+                    SessionMode.DEVICE_TEST -> runTelemetryLoop(
+                        track,
+                        telemetrySelection ?: TelemetrySourceFactory.select(
+                            applicationContext,
+                            com.trustableai.koru.model.TelemetrySourceKind.PHONE_IMU_GPS,
+                        ),
+                        cameraFusionEnabled = true,
+                    )
+                    SessionMode.TELEMETRY -> runTelemetryLoop(
+                        track,
+                        telemetrySelection ?: TelemetrySourceFactory.select(
+                            applicationContext,
+                            config.telemetrySource,
+                            config.obdTransportPreference,
+                            config.aimCanBitrate,
+                        ),
+                        cameraFusionEnabled = config.cameraFusionEnabled,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.e(tag, "Telemetry loop failed; saving partial session", error)
+                completeRecordedSession("error:${error.javaClass.simpleName}")
+                KoruSessionBus.tryEmitStatus(
+                    LiveBackendStatus(
+                        backend = RuntimeBackend.DETERMINISTIC,
+                        state = LiveBackendState.ERROR,
+                        detail = "Telemetry loop failed: ${error.message ?: error.javaClass.simpleName}",
+                        usesOnDeviceModel = false,
+                        supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
                     ),
                 )
-                SessionMode.TELEMETRY -> runTelemetryLoop(
-                    track,
-                    telemetrySelection ?: TelemetrySourceFactory.select(
-                        applicationContext,
-                        config.telemetrySource,
-                        config.obdTransportPreference,
-                    ),
-                )
+                throw error
             }
         }
     }
 
     private suspend fun stopSession() {
         stopActiveLoop()
-        completeRecordedSession()
+        completeRecordedSession("completed")
         KoruSessionBus.tryEmitStatus(
             LiveBackendStatus(
                 backend = RuntimeBackend.DETERMINISTIC,
@@ -259,7 +334,7 @@ class KoruTelemetryService : Service() {
                 supportedPaths = listOf(CoachingPath.HOT, CoachingPath.FEEDFORWARD, CoachingPath.EDGE),
             ),
         )
-        if (foregroundStarted) {
+            if (foregroundStarted) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             foregroundStarted = false
         }
@@ -276,10 +351,11 @@ class KoruTelemetryService : Service() {
     private suspend fun runTelemetryLoop(
         track: com.trustableai.koru.model.Track?,
         telemetrySelection: TelemetrySourceSelection,
+        cameraFusionEnabled: Boolean,
     ) {
         activeTelemetrySource = telemetrySelection.source
         activeTelemetrySource.start()
-        Log.d(tag, "Telemetry loop started source=${telemetrySelection.active.bridgeValue()} cameraFusion=true")
+        Log.d(tag, "Telemetry loop started source=${telemetrySelection.active.bridgeValue()} cameraFusion=$cameraFusionEnabled")
         var step = 0
         val activeTrack = track ?: TrackCatalog.defaultTrack
         val startedAtNanos = SystemClock.elapsedRealtimeNanos()
@@ -293,10 +369,46 @@ class KoruTelemetryService : Service() {
             }
             val elapsedSeconds = (nowNanos - startedAtNanos) / 1_000_000_000.0
             val rawFrame = activeTelemetrySource.nextFrame(step, activeTrack, elapsedSeconds)
-            val frame = fusionEngine.fuse(rawFrame, VisionFeatureStore.latest.value)
+            val vision = if (cameraFusionEnabled) VisionFeatureStore.latest.value else null
+            val frame = fusionEngine.fuse(rawFrame, vision)
             maybeEmitHardwareStatus(frame, telemetrySelection, nowNanos / 1_000_000L, lastHealthStatusAtMs)
                 ?.let { lastHealthStatusAtMs = it }
             emitFrameAndDecisions(frame)
+            step += 1
+            val frameIntervalNanos = activeTelemetrySource.frameIntervalNanos
+            nextTickNanos += frameIntervalNanos
+            val afterFrameNanos = SystemClock.elapsedRealtimeNanos()
+            if (afterFrameNanos - nextTickNanos > frameIntervalNanos * 2L) {
+                nextTickNanos = afterFrameNanos + frameIntervalNanos
+            }
+        }
+    }
+
+    private suspend fun runCanInterfaceCheckLoop(
+        track: com.trustableai.koru.model.Track?,
+        telemetrySelection: TelemetrySourceSelection,
+    ) {
+        activeTelemetrySource = telemetrySelection.source
+        activeTelemetrySource.start()
+        Log.d(tag, "CAN interface check started source=${telemetrySelection.active.bridgeValue()}")
+        val activeTrack = track ?: TrackCatalog.defaultTrack
+        val startedAtNanos = SystemClock.elapsedRealtimeNanos()
+        var nextTickNanos = startedAtNanos
+        var lastHealthStatusAtMs = 0L
+        var step = 0
+        while (currentCoroutineContext().isActive) {
+            val nowNanos = SystemClock.elapsedRealtimeNanos()
+            if (nowNanos < nextTickNanos) {
+                delay(((nextTickNanos - nowNanos) / 1_000_000L).coerceAtLeast(1L))
+                continue
+            }
+            val elapsedSeconds = (nowNanos - startedAtNanos) / 1_000_000_000.0
+            val frame = activeTelemetrySource.nextFrame(step, activeTrack, elapsedSeconds)
+            maybeEmitHardwareStatus(frame, telemetrySelection, nowNanos / 1_000_000L, lastHealthStatusAtMs)
+                ?.let { lastHealthStatusAtMs = it }
+            sessionRecorder.recordFrame(frame)
+            emitRecordingStatus()
+            KoruSessionBus.tryEmitFrame(frame)
             step += 1
             val frameIntervalNanos = activeTelemetrySource.frameIntervalNanos
             nextTickNanos += frameIntervalNanos
@@ -395,6 +507,7 @@ class KoruTelemetryService : Service() {
 
     private suspend fun emitFrameAndDecisions(frame: TelemetryFrame) {
         sessionRecorder.recordFrame(frame)
+        emitRecordingStatus()
         KoruSessionBus.tryEmitFrame(frame)
         engine.processFrame(frame).forEach { decision ->
             Log.d(
@@ -402,31 +515,87 @@ class KoruTelemetryService : Service() {
                 "Live decision source=${frame.telemetrySource?.bridgeValue() ?: "none"} path=${decision.path.bridgeValue()} backend=${decision.backend.bridgeValue()} text=${decision.text}",
             )
             sessionRecorder.recordDecision(decision)
+            emitRecordingStatus()
             KoruSessionBus.tryEmitDecision(decision)
-            if (audioEnabled) {
-                val gate = LiveAudioPolicy.shouldSpeak(frame, decision)
-                if (gate.allowSpeak) {
-                    audioDispatcher.speak(
-                        decision.text,
-                        "${decision.path.bridgeValue()}-${decision.timestampMs}",
-                        decision.priority,
-                        decision.action,
-                        decision.id,
-                        sessionRecorder::recordAudioEvent,
-                    )
-                } else {
-                    Log.d(
-                        tag,
-                        "Audio suppressed source=${frame.telemetrySource?.bridgeValue() ?: "none"} path=${decision.path.bridgeValue()} reason=${gate.reason}",
-                    )
-                }
+            val utteranceId = "${decision.path.bridgeValue()}-${decision.timestampMs}"
+            if (!audioEnabled) {
+                recordAudioEvent(
+                    AudioDispatchEvent(
+                        decisionId = decision.id,
+                        utteranceId = utteranceId,
+                        action = decision.action,
+                        priority = decision.priority,
+                        requestedAtMs = System.currentTimeMillis(),
+                        dispatchLatencyMs = 0L,
+                        status = AudioDispatchStatus.DISABLED,
+                        fallbackReason = "audio_disabled",
+                        scope = AudioDispatchScope.DECISION,
+                    ),
+                )
+                return@forEach
+            }
+            val gate = LiveAudioPolicy.shouldSpeak(frame, decision)
+            if (gate.allowSpeak) {
+                audioDispatcher.speak(
+                    decision.text,
+                    utteranceId,
+                    decision.priority,
+                    decision.action,
+                    decision.id,
+                    ::recordAudioEvent,
+                )
+            } else {
+                Log.d(
+                    tag,
+                    "Audio suppressed source=${frame.telemetrySource?.bridgeValue() ?: "none"} path=${decision.path.bridgeValue()} reason=${gate.reason}",
+                )
+                recordAudioEvent(
+                    AudioDispatchEvent(
+                        decisionId = decision.id,
+                        utteranceId = utteranceId,
+                        action = decision.action,
+                        priority = decision.priority,
+                        requestedAtMs = System.currentTimeMillis(),
+                        dispatchLatencyMs = 0L,
+                        status = AudioDispatchStatus.SUPPRESSED,
+                        fallbackReason = gate.reason,
+                        scope = AudioDispatchScope.DECISION,
+                    ),
+                )
             }
         }
     }
 
-    private fun completeRecordedSession(): RecordedSessionArtifact? {
-        val artifact = sessionRecorder.finish() ?: return null
+    private fun recordAudioEvent(event: AudioDispatchEvent) {
+        sessionRecorder.recordAudioEvent(event)
+        KoruSessionBus.tryEmitAudioEvent(event)
+        emitRecordingStatus()
+    }
+
+    private fun emitRecordingStatus() {
+        KoruSessionBus.tryEmitRecordingStatus(sessionRecorder.status())
+    }
+
+    private fun completeRecordedSession(endedReason: String): RecordedSessionArtifact? {
+        val artifact = sessionRecorder.finish(endedReason) ?: return null
         KoruSessionBus.tryEmitSavedSession(artifact)
+        KoruSessionBus.tryEmitRecordingStatus(
+            sessionRecorder.status().copy(
+                active = false,
+                sessionId = artifact.id,
+                artifactPath = artifact.artifactPath,
+                framesPath = artifact.framesPath,
+                decisionsPath = artifact.decisionsPath,
+                audioEventsPath = artifact.audioEventsPath,
+                canDumpPath = artifact.canDumpPath,
+                frameCount = artifact.totalFrameCount,
+                decisionCount = artifact.summary.decisionCount,
+                audioEventCount = artifact.audioEvents.size,
+                lastFlushAtMs = artifact.lastFlushAt,
+                flushAgeMs = artifact.lastFlushAt?.let { System.currentTimeMillis() - it },
+                endedReason = endedReason,
+            ),
+        )
         return artifact
     }
 
@@ -482,16 +651,6 @@ class KoruTelemetryService : Service() {
     private fun foregroundServiceTypes(requiresLocationType: Boolean): Int {
         return ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
             (if (requiresLocationType) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
-    }
-
-    private fun requiresLocationForegroundType(config: LiveSessionConfig): Boolean {
-        return config.sessionMode == SessionMode.DEVICE_TEST ||
-            (config.sessionMode == SessionMode.TELEMETRY &&
-                config.telemetrySource in setOf(
-                    TelemetrySourceKind.PHONE_IMU_GPS,
-                    TelemetrySourceKind.RACEBOX_OBD_FUSION,
-                    TelemetrySourceKind.AIM_CAN_USB,
-                ))
     }
 
     companion object {

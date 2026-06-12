@@ -1291,6 +1291,39 @@ html, body, #root {
   cursor: pointer;
 }
 
+.session-capture-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.session-capture-summary strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.session-capture-summary span,
+.session-capture-summary code {
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.session-capture-summary code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #2dd4bf;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

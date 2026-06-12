@@ -69,6 +69,13 @@ export interface RecordedSessionArtifact {
   audioEvents?: AudioDispatchEvent[];
   artifactPath?: string;
   canDumpPath?: string;
+  endedReason?: string;
+  framesPath?: string;
+  decisionsPath?: string;
+  audioEventsPath?: string;
+  embeddedFrameCount?: number;
+  totalFrameCount?: number;
+  lastFlushAt?: number;
 }
 
 // ── Coaching ───────────────────────────────────────────────
@@ -176,7 +183,11 @@ export type AudioDispatchStatus =
   | 'TTS_QUEUED'
   | 'TTS_STARTED'
   | 'TTS_UNAVAILABLE'
-  | 'DISABLED';
+  | 'DISABLED'
+  | 'BUSY'
+  | 'SUPPRESSED';
+
+export type AudioDispatchScope = 'SESSION' | 'DECISION';
 
 export interface AudioDispatchEvent {
   decisionId: string;
@@ -188,6 +199,8 @@ export interface AudioDispatchEvent {
   ttsStartLatencyMs?: number;
   status: AudioDispatchStatus;
   fallbackReason?: string;
+  scope?: AudioDispatchScope;
+  clipName?: string;
 }
 
 // ── Driver Model ──────────────────────────────────────────

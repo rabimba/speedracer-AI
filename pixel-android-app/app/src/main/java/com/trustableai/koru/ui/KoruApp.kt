@@ -52,6 +52,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -78,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.trustableai.koru.model.AimCanBitrate
 import com.trustableai.koru.model.CanVehicleDiagnostics
 import com.trustableai.koru.model.CoachingDecision
 import com.trustableai.koru.model.EdgeInferenceMetrics
@@ -107,6 +109,7 @@ private enum class KoruDestination(
 ) {
     PREVIEW("Preview", Icons.Filled.DirectionsCar, "Session preview"),
     SETUP("Setup", Icons.Filled.Settings, "Session setup"),
+    REPLAY("Replay", Icons.Filled.PlayArrow, "Saved session replay"),
     PADDOCK("Paddock", Icons.Filled.Analytics, "Paddock review"),
     DIAGNOSTICS("Diagnostics", Icons.Filled.Build, "Diagnostics"),
 }
@@ -248,6 +251,10 @@ fun KoruApp(
                             onStartRequested()
                         },
                     )
+                    KoruDestination.REPLAY -> ReplayScreen(
+                        state = state,
+                        viewModel = viewModel,
+                    )
                     KoruDestination.PADDOCK -> PaddockScreen(state)
                     KoruDestination.DIAGNOSTICS -> DiagnosticsScreen(
                         state = state,
@@ -301,6 +308,9 @@ private fun visibleDestinations(state: SessionUiState): List<KoruDestination> {
             add(KoruDestination.PREVIEW)
         }
         add(KoruDestination.SETUP)
+        if (state.savedSessions.isNotEmpty() || state.savedSession != null) {
+            add(KoruDestination.REPLAY)
+        }
         add(KoruDestination.PADDOCK)
         add(KoruDestination.DIAGNOSTICS)
     }
@@ -352,7 +362,8 @@ private fun SetupScreen(
             OptionRow(
                 label = "Mode",
                 options = listOf(
-                    SessionMode.TELEMETRY to "Telemetry + Camera",
+                    SessionMode.TELEMETRY to "Telemetry + Map",
+                    SessionMode.CAN_INTERFACE_CHECK to "CAN Interface Check",
                     SessionMode.DEVICE_TEST to "Device Test",
                     SessionMode.CAMERA_DIRECT to "Camera Feedback",
                 ),
@@ -388,6 +399,21 @@ private fun SetupScreen(
                         onSelected = viewModel::setObdTransportPreference,
                     )
                 }
+                if (state.telemetrySource == TelemetrySourceKind.AIM_CAN_USB) {
+                    AimCanBitrateRow(state, viewModel)
+                }
+                OptionRow(
+                    label = "Vision",
+                    options = listOf(
+                        false to "Map Only",
+                        true to "Camera Fusion",
+                    ),
+                    selected = state.cameraFusionEnabled,
+                    enabled = state.canEditSetup,
+                    onSelected = viewModel::setCameraFusionEnabled,
+                )
+            } else if (state.sessionMode == SessionMode.CAN_INTERFACE_CHECK) {
+                AimCanBitrateRow(state, viewModel)
             }
         }
         SetupStep(number = 2, title = "Track and focus") {
@@ -448,6 +474,158 @@ private fun PaddockScreen(state: SessionUiState) {
 }
 
 @Composable
+private fun ReplayScreen(state: SessionUiState, viewModel: LiveSessionViewModel) {
+    val sessions = state.savedSessions.ifEmpty {
+        state.savedSession?.let { listOf(it) } ?: emptyList()
+    }
+    val selected = sessions.firstOrNull { it.id == state.replaySessionId } ?: sessions.firstOrNull()
+    val maxIndex = selected?.frames?.lastIndex?.coerceAtLeast(0) ?: 0
+    val replayIndex = state.replayFrameIndex.coerceIn(0, maxIndex)
+    val frame = selected?.frames?.getOrNull(replayIndex)
+    ScreenColumn("replay-screen") {
+        ScreenHeader(
+            eyebrow = "Replay",
+            title = "Saved Sessions",
+            meta = selected?.endedReason ?: "none",
+        )
+        if (sessions.isEmpty()) {
+            WorkSurface(
+                title = "Saved Sessions",
+                meta = "empty",
+                tag = "replay-empty",
+            ) {
+                Text(
+                    text = "Start and stop a telemetry session to create a replayable field artifact.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return@ScreenColumn
+        }
+        WorkSurface(
+            title = "Session Picker",
+            meta = "${sessions.size}",
+            tag = "replay-session-picker",
+        ) {
+            ChipFlow {
+                sessions.forEach { session ->
+                    FilterChip(
+                        selected = session.id == selected?.id,
+                        onClick = { viewModel.selectReplaySession(session.id) },
+                        label = {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = session.trackName,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "${session.totalFrameCount} frames ${session.endedReason}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(KoruDimens.ChipRadius),
+                        modifier = Modifier.sizeIn(minHeight = 48.dp),
+                    )
+                }
+            }
+        }
+        selected?.let { session ->
+            WorkSurface(
+                title = "Timeline",
+                meta = "${replayIndex + 1}/${session.frames.size.coerceAtLeast(1)}",
+                tag = "replay-timeline",
+            ) {
+                TrackMapOverlay(trackName = session.trackName, frame = frame)
+                TrackModeGaugeStrip(frame = frame)
+                Slider(
+                    value = replayIndex.toFloat(),
+                    onValueChange = { value -> viewModel.setReplayFrameIndex(value.toInt()) },
+                    valueRange = 0f..maxIndex.coerceAtLeast(1).toFloat(),
+                    steps = if (maxIndex > 1) maxIndex - 1 else 0,
+                    enabled = maxIndex > 0,
+                    modifier = Modifier.testTag("replay-scrubber"),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = viewModel::toggleReplay,
+                        enabled = session.frames.isNotEmpty(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .sizeIn(minHeight = KoruDimens.MinTouchTarget)
+                            .testTag("replay-play-pause"),
+                        shape = RoundedCornerShape(KoruDimens.ChipRadius),
+                    ) {
+                        Icon(if (state.replayPlaying) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (state.replayPlaying) "Pause" else "Play")
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.setReplayFrameIndex(0) },
+                        enabled = session.frames.isNotEmpty(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .sizeIn(minHeight = KoruDimens.MinTouchTarget),
+                        shape = RoundedCornerShape(KoruDimens.ChipRadius),
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Reset")
+                    }
+                }
+                Text(
+                    text = frame?.let {
+                        "t=${"%.1f".format(Locale.US, it.timeSeconds)}s speed=${"%.0f".format(Locale.US, it.speedMph)}mph brake=${"%.0f".format(Locale.US, it.brake)} throttle=${"%.0f".format(Locale.US, it.throttle)} rpm=${it.rpm ?: "--"}"
+                    } ?: "This manifest has sidecars but no embedded preview frames. Pull frames.ndjson for full replay analysis.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            WorkSurface(
+                title = "Replay Evidence",
+                meta = "sidecars",
+                tag = "replay-evidence",
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    MetricTile("Embedded", "${session.embeddedFrameCount}", Modifier.weight(1f))
+                    MetricTile("Total", "${session.totalFrameCount}", Modifier.weight(1f))
+                    MetricTile("Audio", "${session.audioEvents.size}", Modifier.weight(1f))
+                }
+                Text(
+                    text = listOfNotNull(
+                        session.artifactPath?.let { "session.json: $it" },
+                        session.framesPath?.let { "frames.ndjson: $it" },
+                        session.decisionsPath?.let { "decisions.ndjson: $it" },
+                        session.audioEventsPath?.let { "audio-events.ndjson: $it" },
+                        session.canDumpPath?.let { "can-slcan.txt: $it" },
+                    ).joinToString("\n"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (session.audioEvents.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        session.audioEvents.takeLast(5).reversed().forEach { event ->
+                            Text(
+                                text = "${event.scope.name} ${event.status.name} ${event.clipName ?: event.action?.name ?: event.fallbackReason.orEmpty()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DiagnosticsScreen(
     state: SessionUiState,
     onBindCameraPreview: (PreviewView) -> Unit,
@@ -461,10 +639,14 @@ private fun DiagnosticsScreen(
         BackendDetailPanel(state)
         AcceleratorReadinessPanel(state.backendStatus)
         AimCanTestPanel(state)
-        CameraPanel(
-            cameraStatus = state.cameraStatus,
-            onBindCameraPreview = onBindCameraPreview,
-        )
+        if (state.cameraFusionEnabled || state.sessionMode == SessionMode.CAMERA_DIRECT) {
+            CameraPanel(
+                cameraStatus = state.cameraStatus,
+                onBindCameraPreview = onBindCameraPreview,
+            )
+        } else {
+            CameraDisabledPanel()
+        }
         EdgeInferenceMetricsPanel(
             metrics = state.edgeInferenceMetrics,
             backendStatus = state.backendStatus,
@@ -910,37 +1092,71 @@ private fun CoachSelector(state: SessionUiState, viewModel: LiveSessionViewModel
 
 @Composable
 private fun AudioControlRow(state: SessionUiState, viewModel: LiveSessionViewModel) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .koruCardBorder(RoundedCornerShape(KoruDimens.ChipRadius))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(KoruDimens.ChipRadius))
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (state.audioEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Audio", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                Text(
-                    if (state.audioEnabled) "Cues will play in Track Mode" else "Cues are muted",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (state.audioEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.width(12.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Audio", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                    Text(
+                        state.lastAudioEvent?.let { "Last: ${it.status.name.lowercase(Locale.US)} ${it.clipName ?: it.fallbackReason.orEmpty()}" }
+                            ?: if (state.audioEnabled) "Cues will play in Track Mode" else "Cues are muted",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
+            Switch(
+                checked = state.audioEnabled,
+                onCheckedChange = viewModel::setAudioEnabled,
+                modifier = Modifier.testTag("audio-toggle"),
+            )
         }
-        Switch(
-            checked = state.audioEnabled,
-            onCheckedChange = viewModel::setAudioEnabled,
-            modifier = Modifier.testTag("audio-toggle"),
-        )
+        OutlinedButton(
+            onClick = viewModel::playAudioCheck,
+            modifier = Modifier
+                .fillMaxWidth()
+                .sizeIn(minHeight = KoruDimens.MinTouchTarget)
+                .testTag("audio-check"),
+            shape = RoundedCornerShape(KoruDimens.ChipRadius),
+        ) {
+            Icon(Icons.Filled.GraphicEq, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Audio Check")
+        }
     }
+}
+
+@Composable
+private fun AimCanBitrateRow(state: SessionUiState, viewModel: LiveSessionViewModel) {
+    OptionRow(
+        label = "CAN bitrate",
+        options = listOf(
+            AimCanBitrate.S8_1MBPS to "S8 1M",
+            AimCanBitrate.S6_500KBPS to "S6 500k",
+        ),
+        selected = state.aimCanBitrate,
+        enabled = state.canEditSetup,
+        onSelected = viewModel::setAimCanBitrate,
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -980,6 +1196,21 @@ private fun CameraPanel(
         )
         Text(
             text = cameraStatus,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun CameraDisabledPanel() {
+    WorkSurface(
+        title = "Camera Lane",
+        meta = "off",
+        tag = "camera-panel-disabled",
+    ) {
+        Text(
+            text = "Camera fusion is off for this setup. Telemetry coaching is using GPS/CAN and the selected track map.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1161,18 +1392,26 @@ private fun AimCanTestPanel(state: SessionUiState) {
     val health = frame?.sourceHealth
     val diagnostics = frame?.canVehicleDiagnostics
     val shouldShow = state.telemetrySource == TelemetrySourceKind.AIM_CAN_USB ||
+        state.sessionMode == SessionMode.CAN_INTERFACE_CHECK ||
         frame?.telemetrySource == TelemetrySourceKind.AIM_CAN_USB
     if (!shouldShow) return
+    val connected = health?.canConnected == true
+    val waitingForFrames = health?.canWaitingForFrames == true || (connected && health.rawCanSample == null)
 
     WorkSurface(
-        title = "AiM CAN USB Test",
+        title = if (state.sessionMode == SessionMode.CAN_INTERFACE_CHECK) "CAN Interface Check" else "AiM CAN USB Test",
         meta = health?.fallbackStage ?: "idle",
         tag = "aim-can-test-panel",
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricTile("USB", if (health?.canConnected == true) "live" else "waiting", Modifier.weight(1f))
-            MetricTile("Motion", health?.motionSource ?: "--", Modifier.weight(1f))
+            MetricTile("USB", if (connected) "connected" else "waiting", Modifier.weight(1f))
+            MetricTile("Frames", if (waitingForFrames) "waiting" else if (health?.rawCanSample != null) "live" else "--", Modifier.weight(1f))
             MetricTile("Errors", "${health?.canDecodeErrors ?: 0}", Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            MetricTile("Bitrate", health?.canBitrate ?: state.aimCanBitrate.label, Modifier.weight(1f))
+            MetricTile("Motion", health?.motionSource ?: "--", Modifier.weight(1f))
+            MetricTile("IDs", "${health?.rawCanSamplesById?.size ?: 0}", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             MetricTile("RPM", frame?.rpm?.toString() ?: "--", Modifier.weight(1f))
@@ -1198,6 +1437,8 @@ private fun AimCanTestPanel(state: SessionUiState) {
         Text(
             text = listOfNotNull(
                 health?.usbDeviceName?.let { "USB: $it" },
+                health?.canBitrate?.let { "Bitrate: $it" },
+                "Connected: ${connected}; waiting for frames: ${waitingForFrames}",
                 health?.rawCanSample?.let { "Raw: $it" },
                 diagnostics?.let { controlsRawText(it) },
                 rawSamplesText(health),
@@ -1253,20 +1494,19 @@ private fun SavedSessionPanel(state: SessionUiState) {
             tag = "saved-session",
         ) {
             Text(
-                "${session.summary.frameCount} frames, ${session.summary.decisionCount} decisions, schema v${session.schemaVersion}",
+                "${session.totalFrameCount} frames (${session.embeddedFrameCount} preview), ${session.summary.decisionCount} decisions, ended ${session.endedReason}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            session.canDumpPath?.let { path ->
+            listOfNotNull(
+                session.artifactPath?.let { path -> "Session JSON: $path" },
+                session.framesPath?.let { path -> "Frames: $path" },
+                session.decisionsPath?.let { path -> "Decisions: $path" },
+                session.audioEventsPath?.let { path -> "Audio events: $path" },
+                session.canDumpPath?.let { path -> "CAN dump: $path" },
+            ).forEach { line ->
                 Text(
-                    "CAN dump: $path",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            session.artifactPath?.let { path ->
-                Text(
-                    "Session JSON: $path",
+                    line,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1397,6 +1637,9 @@ private fun <T> OptionRow(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             options.forEach { (value, text) ->
+                val optionTag = "option-${
+                    label.lowercase(Locale.US).replace(" ", "-")
+                }-${text.lowercase(Locale.US).replace(" ", "-")}"
                 FilterChip(
                     selected = value == selected,
                     onClick = { onSelected(value) },
@@ -1411,7 +1654,7 @@ private fun <T> OptionRow(
                     },
                     modifier = Modifier
                         .sizeIn(minHeight = 48.dp)
-                        .testTag("option-${label.lowercase(Locale.US)}-${text.lowercase(Locale.US).replace(" ", "-")}"),
+                        .testTag(optionTag),
                 )
             }
         }

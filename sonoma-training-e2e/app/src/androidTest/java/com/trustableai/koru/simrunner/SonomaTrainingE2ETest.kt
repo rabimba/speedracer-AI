@@ -42,7 +42,7 @@ class SonomaTrainingE2ETest {
         startMockLocationPlayback()
         launchTargetApp()
 
-        clickText("Telemetry + Camera")
+        clickText("Telemetry + Map")
         clickText("Phone IMU + GPS")
         clickText("Sonoma")
         clickText("Braking")

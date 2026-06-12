@@ -1,4 +1,4 @@
-export type SessionMode = 'telemetry' | 'device_test' | 'camera_direct';
+export type SessionMode = 'telemetry' | 'device_test' | 'camera_direct' | 'can_interface_check';
 export type TelemetrySourceKind =
   | 'synthetic'
   | 'phone_imu_gps'
@@ -7,6 +7,7 @@ export type TelemetrySourceKind =
   | 'racebox_obd_fusion'
   | 'aim_can_usb';
 export type ObdTransportPreference = 'auto' | 'bluetooth' | 'usb';
+export type AimCanBitrate = 's8' | 's6';
 
 export interface TelemetryFrame {
   time: number;          // seconds from session start
@@ -113,6 +114,8 @@ export interface TelemetrySourceHealth {
   canFrameStale?: Record<string, boolean>;
   canFrameRatesHz?: Record<string, number>;
   canDecodeErrors?: number;
+  canBitrate?: string;
+  canWaitingForFrames?: boolean;
   usbDeviceName?: string;
   rawCanSample?: string;
   rawCanSamplesById?: Record<string, string>;

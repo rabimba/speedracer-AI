@@ -16,7 +16,7 @@ export function buildRecordedSessionAnalysisContext(
   session: RecordedSessionArtifact,
   track: Track,
 ): string {
-  const frames = session.frames;
+const frames = session.frames;
   const decisions = session.decisions;
   const decisionCounts = countBy(decisions.map((decision) => decision.path));
   const actionCounts = countBy(decisions.map((decision) => decision.action || 'NONE'));
@@ -58,8 +58,15 @@ Track: ${session.trackName}
 Mode: ${session.mode}
 Coach: ${session.coachId}
 Duration: ${session.summary.durationSeconds.toFixed(1)}s
-Frames: ${frames.length}
+Frames: ${frames.length} embedded preview / ${session.totalFrameCount ?? session.summary.frameCount ?? frames.length} total
 Decisions: ${decisions.length}
+Ended reason: ${session.endedReason ?? 'completed'}
+Sidecars: ${[
+    session.framesPath ? 'frames.ndjson' : null,
+    session.decisionsPath ? 'decisions.ndjson' : null,
+    session.audioEventsPath ? 'audio-events.ndjson' : null,
+    session.canDumpPath ? 'can-slcan.txt' : null,
+  ].filter(Boolean).join(', ') || 'none'}
 
 Pre-race goals:
 ${goalsSummary}

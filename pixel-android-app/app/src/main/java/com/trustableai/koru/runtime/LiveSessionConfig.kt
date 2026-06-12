@@ -1,6 +1,7 @@
 package com.trustableai.koru.runtime
 
 import com.trustableai.koru.model.CoachAction
+import com.trustableai.koru.model.AimCanBitrate
 import com.trustableai.koru.model.ObdTransportPreference
 import com.trustableai.koru.model.SessionGoal
 import com.trustableai.koru.model.SessionGoalFocus
@@ -18,6 +19,8 @@ data class LiveSessionConfig(
     val sessionMode: SessionMode,
     val telemetrySource: TelemetrySourceKind,
     val obdTransportPreference: ObdTransportPreference = ObdTransportPreference.AUTO,
+    val aimCanBitrate: AimCanBitrate = AimCanBitrate.S8_1MBPS,
+    val cameraFusionEnabled: Boolean = false,
     val sessionGoals: List<SessionGoal>,
     val sourceUrl: String?,
 ) {
@@ -29,6 +32,8 @@ data class LiveSessionConfig(
             .put("sessionMode", sessionMode.bridgeValue())
             .put("telemetrySource", telemetrySource.bridgeValue())
             .put("obdTransportPreference", obdTransportPreference.bridgeValue())
+            .put("aimCanBitrate", aimCanBitrate.bridgeValue())
+            .put("cameraFusionEnabled", cameraFusionEnabled)
             .put("sessionGoals", JSONArray(sessionGoals.map(::sessionGoalJson)))
             .put("sourceUrl", sourceUrl)
             .toString()
@@ -44,6 +49,7 @@ data class LiveSessionConfig(
                 sessionMode = when (root.optString("sessionMode", "telemetry")) {
                     "device_test" -> SessionMode.DEVICE_TEST
                     "camera_direct" -> SessionMode.CAMERA_DIRECT
+                    "can_interface_check" -> SessionMode.CAN_INTERFACE_CHECK
                     else -> SessionMode.TELEMETRY
                 },
                 telemetrySource = when (root.optString("telemetrySource", "aim_can_usb")) {
@@ -60,6 +66,11 @@ data class LiveSessionConfig(
                     "usb" -> ObdTransportPreference.USB
                     else -> ObdTransportPreference.AUTO
                 },
+                aimCanBitrate = when (root.optString("aimCanBitrate", "s8")) {
+                    "s6", "S6", "500k", "500kbps" -> AimCanBitrate.S6_500KBPS
+                    else -> AimCanBitrate.S8_1MBPS
+                },
+                cameraFusionEnabled = root.optBoolean("cameraFusionEnabled", false),
                 sessionGoals = parseSessionGoals(root.optJSONArray("sessionGoals")),
                 sourceUrl = root.optString("sourceUrl").ifBlank { null },
             )

@@ -89,6 +89,7 @@ enum class SessionMode {
     TELEMETRY,
     DEVICE_TEST,
     CAMERA_DIRECT,
+    CAN_INTERFACE_CHECK,
 }
 
 enum class TelemetrySourceKind {
@@ -104,6 +105,15 @@ enum class ObdTransportPreference {
     AUTO,
     BLUETOOTH,
     USB,
+}
+
+enum class AimCanBitrate(
+    val wireValue: String,
+    val slcanCommand: String,
+    val label: String,
+) {
+    S8_1MBPS("s8", "S8", "S8 1 Mbps"),
+    S6_500KBPS("s6", "S6", "S6 500 kbps"),
 }
 
 data class SensorFramePayload(
@@ -220,6 +230,8 @@ data class TelemetrySourceHealth(
     val canFrameStale: Map<String, Boolean> = emptyMap(),
     val canFrameRatesHz: Map<String, Double> = emptyMap(),
     val canDecodeErrors: Int = 0,
+    val canBitrate: String? = null,
+    val canWaitingForFrames: Boolean = false,
     val usbDeviceName: String? = null,
     val rawCanSample: String? = null,
     val rawCanSamplesById: Map<String, String> = emptyMap(),
@@ -315,6 +327,12 @@ enum class AudioDispatchStatus {
     TTS_UNAVAILABLE,
     DISABLED,
     BUSY,
+    SUPPRESSED,
+}
+
+enum class AudioDispatchScope {
+    SESSION,
+    DECISION,
 }
 
 data class AudioDispatchEvent(
@@ -327,6 +345,8 @@ data class AudioDispatchEvent(
     val ttsStartLatencyMs: Long? = null,
     val status: AudioDispatchStatus,
     val fallbackReason: String? = null,
+    val scope: AudioDispatchScope = AudioDispatchScope.DECISION,
+    val clipName: String? = null,
 )
 
 data class LiveBackendStatus(
@@ -375,6 +395,29 @@ data class RecordedSessionArtifact(
     val audioEvents: List<AudioDispatchEvent> = emptyList(),
     val artifactPath: String? = null,
     val canDumpPath: String? = null,
+    val endedReason: String = "completed",
+    val framesPath: String? = null,
+    val decisionsPath: String? = null,
+    val audioEventsPath: String? = null,
+    val embeddedFrameCount: Int = frames.size,
+    val totalFrameCount: Int = summary.frameCount,
+    val lastFlushAt: Long? = null,
+)
+
+data class RecordingStatus(
+    val active: Boolean = false,
+    val sessionId: String? = null,
+    val artifactPath: String? = null,
+    val framesPath: String? = null,
+    val decisionsPath: String? = null,
+    val audioEventsPath: String? = null,
+    val canDumpPath: String? = null,
+    val frameCount: Int = 0,
+    val decisionCount: Int = 0,
+    val audioEventCount: Int = 0,
+    val lastFlushAtMs: Long? = null,
+    val flushAgeMs: Long? = null,
+    val endedReason: String? = null,
 )
 
 data class ModelInstallStatus(
@@ -401,6 +444,8 @@ fun SessionMode.bridgeValue(): String = name.lowercase()
 fun TelemetrySourceKind.bridgeValue(): String = name.lowercase()
 
 fun ObdTransportPreference.bridgeValue(): String = name.lowercase()
+
+fun AimCanBitrate.bridgeValue(): String = wireValue
 
 fun SessionGoalFocus.bridgeValue(): String = name.lowercase()
 
