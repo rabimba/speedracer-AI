@@ -108,9 +108,9 @@ describe('CoachingService Phase 6', () => {
     });
   });
 
-  // ── Beginner Humanization — Ross Bentley Trigger Phrases ──
+  // ── Beginner Humanization — Trigger Phrases ──
 
-  describe('Ross Bentley trigger phrases in beginner humanization', () => {
+  describe('trigger phrases in beginner humanization', () => {
     it('should use beginner-specific phrases for BRAKE action', () => {
       // Make the driver a beginner (high coasting)
       for (let t = 0; t < 12; t += 0.1) {
@@ -128,13 +128,13 @@ describe('CoachingService Phase 6', () => {
       // Should have a decision with beginner brake text
       const brakeDec = decisions.find(d => d.action === 'THRESHOLD' || d.action === 'SPIKE_BRAKE');
       if (brakeDec) {
-        // Beginner phrases include Ross terms
+        // Beginner phrases include short coaching terms
         expect(typeof brakeDec.text).toBe('string');
         expect(brakeDec.text.length).toBeGreaterThan(0);
       }
     });
 
-    it('should produce HUSTLE text with Ross Bentley vocabulary', () => {
+    it('should produce HUSTLE text with concise coaching vocabulary', () => {
       // Establish as beginner
       for (let t = 0; t < 12; t += 0.1) {
         service.processFrame(createFrame({
@@ -152,9 +152,9 @@ describe('CoachingService Phase 6', () => {
 
       const hustle = decisions.find(d => d.action === 'HUSTLE');
       if (hustle) {
-        // Should contain Ross-style language
-        const hasRossPhrase = hustle.text.includes('Hustle') || hustle.text.includes('Squirt');
-        expect(hasRossPhrase).toBe(true);
+        // Should contain concise coaching language
+        const hasCoachingPhrase = hustle.text.includes('Hustle') || hustle.text.includes('Squirt');
+        expect(hasCoachingPhrase).toBe(true);
       }
     });
   });

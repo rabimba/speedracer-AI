@@ -107,7 +107,7 @@ export class CoachingService {
    * or auto-generated from driver profile + track knowledge.
    *
    * Goals bias the hot path: prioritizedActions in goals get boosted.
-   * Max 3 goals per session (Ross Bentley: "1-3 specific physical changes").
+   * Max 3 goals per session to keep the driver from overloading.
    *
    * TODO: UX team (Rabimba) builds pre-race chat that calls this method.
    * TODO: Auto-generation from DriverProfile when persistence layer is ready (AGY Pipeline).
@@ -313,7 +313,7 @@ export class CoachingService {
   }
 
   /**
-   * Detect lazy throttle application on exits (Ross Bentley "hustle zones").
+   * Detect lazy throttle application on exits.
    * Drivers get lazy mid-session — brain says "why go to 100% for 2 seconds?"
    * But that last 10-15% throttle matters for exit speed onto straights.
    * Fires every 8 seconds when on straight/acceleration with throttle 50-92%.
@@ -371,8 +371,8 @@ export class CoachingService {
     if (doctrineText) return doctrineText;
 
     // Skill-adapted phrases for key actions (override persona for clarity)
-    // Beginner phrases: T-Rod feel-based + Ross Bentley trigger phrases
-    // Ross Bentley coaching pedagogy: short, actionable, feel-based for beginners
+    // Beginner phrases: feel-based trigger phrases
+    // Coaching pedagogy: short, actionable, feel-based for beginners
     // "Do this, do this now" — direct commands, no jargon (00:28:56)
     if (skillLevel === 'BEGINNER') {
       switch (action) {

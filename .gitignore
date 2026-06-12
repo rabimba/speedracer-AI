@@ -30,9 +30,11 @@ validation-recordings/
 
 # Local/private submission and blog publishing material
 submission-artifacts/
-docs/blog/
+docs/
 SUBMISSION.md
 PUBLISH.md
+*.pdf
+design-assets/*.html
 
 # Stray validator outputs when run with no --artifact (real reports live in reports/<ts>/)
 sonoma-training-e2e/report.json

@@ -16,7 +16,7 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 ## Table of Contents
 
 - [Current Status](#current-status)
-- [End-to-End Architecture](docs/end-to-end-architecture.md)
+- [Project Overview](PROJECT_OVERVIEW.md)
 - [Roadmap](#roadmap)
   - [Data Reasoning](#data-reasoning)
   - [Edge / Telemetry](#edge--telemetry)
@@ -31,8 +31,6 @@ This system tells you in real time how to adapt and fix it, adjusted to your ski
 - [streaming-telemetry-server](#streaming-telemetry-server)
 - [koru-application](#koru-application)
 - [Tech Stack](#tech-stack)
-- [Data Reasoning Documentation](docs/data-reasoning.md)
-- [Consolidation Report](docs/consolidation-report.md)
 
 ---
 
@@ -45,7 +43,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 - Native Android host app with a Jetpack Compose + Material 3 live field-test UI.
 - Sonoma Raceway is now the primary deployed track in both the web registry and native Android catalog.
 - Sonoma-specific coaching guidance is wired in from the sector map plus coaching notes, including corner dossiers for Turns 2, 3, 3A, 6, 7, 9-10, 11, and 12.
-- The T-Rod and Ross Bentley knowledge layer now influences runtime selection as doctrine, not just prompt text: it can suppress premature advice, bias hot-path wording, and shape feedforward/edge guidance per corner.
+- The track-specific coaching doctrine now influences runtime selection, not just prompt text: it can suppress premature advice, bias hot-path wording, and shape feedforward/edge guidance per corner.
 - CameraX-based live camera lane with lightweight on-device vision feature extraction.
 - Three Android live-session modes:
   - `Telemetry + Camera Fusion`
@@ -81,7 +79,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 - [x] **Timing state machine** — OPEN → DELIVERING → COOLDOWN → BLACKOUT. Enforces silence during mid-corner/apex. P0 safety messages bypass all states. Configurable per skill level.
 - [x] **Priority queue** — P0 (safety: BRAKE, OVERSTEER_RECOVERY) preempts all. P1 tactical, P2 strategic, P3 encouragement. Max 5 items, 3s stale expiry.
 - [x] **Driver model** — Classifies skill from input smoothness + coasting ratio. Time-based 10s rolling window (robust to 8Hz-25Hz data rates). 5s hysteresis before level change. Adapts cooldown, blackout, and cold path prompts per skill level.
-- [x] **Coaching knowledge enrichment** — Ross Bentley mental models (friction circle, weight transfer, trail braking, vision, maintenance throttle). 4 new coaching rules (EARLY_THROTTLE, LIFT_MID_CORNER, SPIKE_BRAKE, COGNITIVE_OVERLOAD). Skill-adapted humanization (beginner: feel-based, advanced: data-driven). Session progression (phases 1-3 suppress advanced techniques early). Skill-aware cold path prompts.
+- [x] **Coaching knowledge enrichment** — Track-driving mental models such as friction circle, weight transfer, trail braking, vision, and maintenance throttle. 4 new coaching rules (EARLY_THROTTLE, LIFT_MID_CORNER, SPIKE_BRAKE, COGNITIVE_OVERLOAD). Skill-adapted humanization (beginner: feel-based, advanced: data-driven). Session progression (phases 1-3 suppress advanced techniques early). Skill-aware cold path prompts.
 - [x] **Sonoma track deployment layer** — Sonoma Raceway sector timing, corner map, and coach-specific domain guidance are now wired into the production track registry and feedforward/coaching paths across web and Android.
 - [x] **Test infrastructure** — Vitest with 42 tests: unit tests for geoUtils, CornerPhaseDetector, TimingGate, CoachingQueue, DriverModel, DecisionMatrix. Sonoma CSV integration test with synthetic fixture.
 
@@ -121,7 +119,7 @@ The repo now supports both the original browser flow and a native Android on-dev
 
 - [ ] **Cold path offline fallback** — Pre-compute a coaching lookup table for known tracks (keyed by corner + common mistakes) as offline replacement for Gemini cold path. Evaluate on-device Gemma 4 on Pixel 10 as an upgrade over Gemini Nano.
 - [ ] **Track auto-detection** — Detect corners on unknown tracks from heading change rate alone, without pre-loaded track data. Enables track-agnostic coaching for any track day.
-- [x] **Corner-specific Sonoma coaching** — T-Rod session notes, Ross Bentley pedagogy, and Sonoma sector/corner guidance now shape feedforward and edge coaching for the Sonoma deployment target.
+- [x] **Corner-specific Sonoma coaching** — Sonoma sector/corner guidance now shapes feedforward and edge coaching for the deployment target.
 - [ ] **Broader known-track coaching catalog** — Extend the same domain-expertise layer to additional tracks beyond Sonoma, and decide how much telemetry-only coaching is safe on unknown layouts.
 - [ ] **Two-way conversational dialog** — Enable real-time back-and-forth between the driver and the AI coach. This is the pinnacle for advanced drivers, where coaching becomes a discussion about minute nuances, setup adjustments, and driving strategy rather than one-way instructions.
 - [ ] **Productionize the native Android app** — Replace phone-only inferred telemetry with RaceBox/OBD/CAN-grade feeds, add richer vision semantics, and harden the on-device runtime for field use.

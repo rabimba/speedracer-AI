@@ -52,7 +52,7 @@ describe('track expertise doctrine', () => {
     ).toContain('late apex finished');
   });
 
-  it('injects both T-Rod and Ross doctrine into the prompt context', () => {
+  it('injects track doctrine into the prompt context', () => {
     const prompt = getTrackPromptContext(SONOMA_RACEWAY, turn3, 'BEGINNER', 2);
     expect(prompt).toContain('T-Rod advice');
     expect(prompt).toContain('Coach one change at a time');

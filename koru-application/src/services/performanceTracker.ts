@@ -6,7 +6,7 @@ import type { TelemetryFrame, CornerPhase, CoachingDecision } from '../types';
  * Tracks per-corner metrics within a single session (no persistence layer needed).
  * Compares lap-over-lap performance and emits P3 encouragement when driver improves.
  *
- * Focus: BEGINNER drivers. Ross Bentley: "Drivers want to see improvements."
+ * Focus: BEGINNER drivers. Visible improvement keeps coaching actionable.
  *
  * Cross-session tracking requires the persistence layer (AGY Pipeline).
  * This service handles in-memory, single-session tracking only.
