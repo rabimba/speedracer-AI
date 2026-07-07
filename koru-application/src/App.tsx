@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, HashRouter, Navigate, Outlet, Routes, Route } from 'react-router-dom';
+import { HashRouter, Navigate, Outlet, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
@@ -42,10 +42,7 @@ function AppLayout(props: {
 }
 
 export default function App() {
-  const Router = typeof window !== 'undefined'
-    && (window.location.protocol === 'file:' || Boolean(window.AndroidBridge))
-    ? HashRouter
-    : BrowserRouter;
+  const Router = HashRouter;
 
   const [apiKey, setApiKey] = useState<string | null>(
     () => readApiKey()
