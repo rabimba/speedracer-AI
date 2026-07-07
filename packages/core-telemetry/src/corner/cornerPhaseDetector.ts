@@ -39,6 +39,9 @@ export class CornerPhaseDetector {
 
   private detectFromGps(frame: TelemetryFrame, track: Track): CornerDetection | null {
     if (!isValidGps(frame.latitude, frame.longitude)) return null;
+    let bestDetection: CornerDetection | null = null;
+    let bestAnchorDistance = Number.POSITIVE_INFINITY;
+
     for (const corner of track.corners) {
       // Use entry point if available, otherwise use apex
       const refLat = corner.entryLat ?? corner.lat;
@@ -56,28 +59,33 @@ export class CornerPhaseDetector {
       // Within 200m of a corner — determine phase
       if (distToEntry < 200 || distToApex < 150) {
         const phase = this.classifyPhaseByDistance(distToEntry, distToApex);
-        return {
+        const detection = {
           phase,
           cornerId: corner.id,
           cornerName: corner.name,
         };
+        const anchorDistance = Math.min(distToEntry, distToApex);
+        if (anchorDistance < bestAnchorDistance) {
+          bestAnchorDistance = anchorDistance;
+          bestDetection = detection;
+        }
       }
     }
-    return null;
+    return bestDetection;
   }
 
   private classifyPhaseByDistance(
     distToEntry: number,
     distToApex: number,
   ): CornerPhase {
-    // Approaching entry — brake zone
-    if (distToEntry < 100 && distToApex > 80) return 'BRAKE_ZONE';
-    // Close to entry — turn-in
-    if (distToEntry < 50 && distToApex > 40) return 'TURN_IN';
     // Near apex
     if (distToApex < 30) return 'APEX';
+    // Close to entry — turn-in
+    if (distToEntry < 50 && distToApex > 40) return 'TURN_IN';
     // Between entry and apex
     if (distToEntry < 30 && distToApex < 80) return 'MID_CORNER';
+    // Approaching entry — brake zone
+    if (distToEntry < 100 && distToApex > 80) return 'BRAKE_ZONE';
     // Past apex, moving away
     if (distToApex < 100 && distToApex > 30) return 'EXIT';
     // Far approach

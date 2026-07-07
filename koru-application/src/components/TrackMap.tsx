@@ -21,16 +21,24 @@ export default function TrackMap({ track, currentFrame }: TrackMapProps) {
   // Build polyline string
   const polyline = track.mapPoints.map(p => `${p.x - minX},${p.y - minY}`).join(' ');
 
-  // Car position (simplified: map lat/lon to track points if available)
-  // For now, use the closest map point based on frame index
   let carX = 0, carY = 0, showCar = false;
   if (currentFrame && track.mapPoints.length > 0) {
-    // Simple approach: cycle through map points based on time
-    const idx = Math.floor(currentFrame.time * 2) % track.mapPoints.length;
-    const pt = track.mapPoints[idx];
-    carX = pt.x - minX;
-    carY = pt.y - minY;
-    showCar = true;
+    const isMeterProjected = track.center && minX < 0 && maxX > 0 && minY < 0 && maxY > 0;
+    const hasGps = Number.isFinite(currentFrame.latitude) && Number.isFinite(currentFrame.longitude)
+      && !(currentFrame.latitude === 0 && currentFrame.longitude === 0);
+
+    if (isMeterProjected && hasGps && track.center) {
+      const cosLat = Math.cos(track.center.lat * Math.PI / 180);
+      carX = (currentFrame.longitude - track.center.lng) * 111320 * cosLat - minX;
+      carY = -(currentFrame.latitude - track.center.lat) * 111320 - minY;
+      showCar = carX >= 0 && carX <= width && carY >= 0 && carY <= height;
+    } else {
+      const idx = Math.floor(currentFrame.time * 2) % track.mapPoints.length;
+      const pt = track.mapPoints[idx];
+      carX = pt.x - minX;
+      carY = pt.y - minY;
+      showCar = true;
+    }
   }
 
   return (

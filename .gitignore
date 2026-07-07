@@ -2,6 +2,12 @@
 
 node_modules/
 .turbo/
+# Local env / secrets (never track)
+.env
+.env.*
+*.local
+# Android local SDK path (must not be in VCS)
+pixel-android-app/local.properties
 apps/*/dist/
 apps/*/.turbo/
 packages/*/dist/

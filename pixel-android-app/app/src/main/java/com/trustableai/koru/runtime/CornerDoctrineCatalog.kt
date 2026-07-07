@@ -56,12 +56,11 @@ object CornerDoctrineCatalog {
 
         val objective = objectiveFor(action, corner, phase)
         val basePriority = priorityFor(action, objective, isEmergencyBrake)
-        if (!isSonoma(track)) {
-            return CoachingIntentEvaluation(action = action, objective = objective, priority = basePriority)
-        }
-
         if (action == CoachAction.BRAKE && !allowsEmergencyBrake(track, corner, phase, frame, isEmergencyBrake)) {
             return suppressed(action, objective)
+        }
+        if (!isSonoma(track)) {
+            return CoachingIntentEvaluation(action = action, objective = objective, priority = basePriority)
         }
 
         val text = sonomaText(corner, phase, action, objective, driverState.skillLevel)
@@ -87,6 +86,9 @@ object CornerDoctrineCatalog {
         driverState: DriverState,
     ): CoachingIntentEvaluation? {
         if (corner == null || phase != CornerPhase.BRAKE_ZONE || frame.speedMph <= 70.0) return null
+        if (isThunderhill(track)) {
+            return thunderhillEdgeTactic(corner)
+        }
         if (!isSonoma(track)) {
             return CoachingIntentEvaluation(
                 action = CoachAction.WAIT,
@@ -154,6 +156,53 @@ object CornerDoctrineCatalog {
                 causeId = "sonoma_line_setup",
             )
             else -> null
+        }
+    }
+
+    private fun thunderhillEdgeTactic(corner: Corner): CoachingIntentEvaluation {
+        return when (corner.id) {
+            1 -> CoachingIntentEvaluation(
+                action = CoachAction.WAIT,
+                objective = CoachingObjective.BRAKE_RELEASE,
+                priority = 2,
+                text = "Turn 1: finish the brake straight, then release and look long.",
+                causeId = "thunderhill_t1_release",
+            )
+            6, 7, 8 -> CoachingIntentEvaluation(
+                action = CoachAction.MAINTAIN,
+                objective = CoachingObjective.MAINTENANCE_THROTTLE,
+                priority = 2,
+                text = "Turn 5: smooth over the crest. Keep the platform settled.",
+                causeId = "thunderhill_t5_cyclone_platform",
+            )
+            9, 10 -> CoachingIntentEvaluation(
+                action = CoachAction.PUSH,
+                objective = CoachingObjective.LINE_VISION,
+                priority = 2,
+                text = "Thunderhill flow section: eyes through the next bend, no extra brake.",
+                causeId = "thunderhill_flow_rhythm",
+            )
+            12, 13 -> CoachingIntentEvaluation(
+                action = CoachAction.THROTTLE,
+                objective = CoachingObjective.EXIT_THROTTLE,
+                priority = 2,
+                text = "Turns 9-10: finish rotation, then build throttle cleanly.",
+                causeId = "thunderhill_t9_t10_exit",
+            )
+            14, 15 -> CoachingIntentEvaluation(
+                action = CoachAction.COMMIT,
+                objective = CoachingObjective.EXIT_THROTTLE,
+                priority = 2,
+                text = "Final section: free the hands and carry speed to the straight.",
+                causeId = "thunderhill_final_commit",
+            )
+            else -> CoachingIntentEvaluation(
+                action = CoachAction.WAIT,
+                objective = CoachingObjective.LINE_VISION,
+                priority = 2,
+                text = "Thunderhill: look through the entry. Trim speed only while straight.",
+                causeId = "thunderhill_line_setup",
+            )
         }
     }
 
@@ -339,4 +388,6 @@ object CornerDoctrineCatalog {
     }
 
     private fun isSonoma(track: Track?): Boolean = track?.name == TrackCatalog.sonomaRaceway.name
+
+    private fun isThunderhill(track: Track?): Boolean = track?.name == TrackCatalog.thunderhillEast.name
 }

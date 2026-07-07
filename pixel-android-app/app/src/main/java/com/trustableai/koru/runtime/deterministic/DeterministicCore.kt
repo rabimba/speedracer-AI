@@ -57,6 +57,7 @@ class CornerPhaseDetector(track: Track?) {
         if (!isValidGps(frame.latitude, frame.longitude)) return null
         val movementHeading = movementHeading(frame)
         var bestDetection: CornerDetection? = null
+        var bestAnchorDistance = Double.MAX_VALUE
         for (corner in track.corners) {
             val refLat = corner.entryLat ?: corner.lat
             val refLon = corner.entryLon ?: corner.lon
@@ -90,7 +91,9 @@ class CornerPhaseDetector(track: Track?) {
                     approaching = approaching,
                     confidence = confidence,
                 )
-                if (bestDetection == null || distanceToApex < (bestDetection.distanceToApexMeters ?: Double.MAX_VALUE)) {
+                val anchorDistance = min(distanceToEntry, distanceToApex)
+                if (anchorDistance < bestAnchorDistance) {
+                    bestAnchorDistance = anchorDistance
                     bestDetection = detection
                 }
             }
