@@ -20,6 +20,7 @@ import { DriverModel } from './driverModel';
 import { PerformanceTracker } from './performanceTracker';
 import { ReadinessEvaluator } from './readinessEvaluator';
 import { LocalDriverProfileStore } from './driverProfileStore';
+import { resolvePhraseText } from './sharedPhraseCatalog';
 
 /** Map actions to priority levels (module-level Map avoids per-call array allocations) */
 const ACTION_PRIORITY: Map<string, 0 | 1 | 2 | 3> = new Map([
@@ -489,6 +490,41 @@ export class CoachingService {
     }
   }
 
+  private hotObjectiveFor(action: CoachAction): CoachingObjective {
+    switch (action) {
+      case 'OVERSTEER_RECOVERY':
+        return 'safety_recovery';
+      case 'BRAKE':
+      case 'THRESHOLD':
+      case 'TRAIL_BRAKE':
+        return 'brake_entry';
+      case 'WAIT':
+      case 'TURN_IN':
+      case 'ROTATE':
+        return 'rotate_wait';
+      case 'THROTTLE':
+      case 'COMMIT':
+      case 'FULL_THROTTLE':
+      case 'HUSTLE':
+        return 'exit_throttle';
+      case 'COAST':
+      case 'LIFT_MID_CORNER':
+        return 'maintenance_throttle';
+      case 'PUSH':
+        return 'line_vision';
+      case 'EARLY_THROTTLE':
+        return 'exit_throttle';
+      case 'SPIKE_BRAKE':
+        return 'brake_release';
+      case 'COGNITIVE_OVERLOAD':
+        return 'smoothness';
+      case 'HESITATION':
+        return 'exit_throttle';
+      default:
+        return 'no_cue';
+    }
+  }
+
   private deltaCauseIdFor(analysis: DeltaAnalysis): string {
     const corner = analysis.corner?.name ? `${analysis.corner.name}_` : '';
     const sign = (n: number) => (n > 0 ? 'plus' : n < 0 ? 'minus' : 'flat');
@@ -546,6 +582,11 @@ export class CoachingService {
       priority,
       cornerPhase: this.currentPhase,
       timestamp: Date.now(),
+      cornerId: this.lastCorner?.id,
+      cornerName: this.lastCorner?.name,
+      objective: this.hotObjectiveFor(selected.action),
+      causeId: `hot_${selected.action}_${this.currentPhase}`,
+      confidence: 1.0,
     };
 
     if (priority === 0) {
@@ -869,7 +910,17 @@ export class CoachingService {
       case 'HUSTLE': return 'Hustle! Get on that throttle — full commit!';
     }
 
-    return action;
+    // Catalog fallback — use the shared phrase catalog for any action
+    // not covered by the inline switches above. This closes the gap where
+    // THRESHOLD, STABILIZE, MAINTAIN, WAIT, TURN_IN, ROTATE, APEX would
+    // fall through and return the raw enum string.
+    const catalogText = resolvePhraseText({
+      action,
+      skillLevel,
+      coachId: this.coachId,
+      fallbackText: '',
+    });
+    return catalogText || action;
   }
 
   // ── COLD PATH: Gemini Cloud detailed analysis (grounded, Pillar 2) ──
@@ -1066,13 +1117,45 @@ If you are unsure, set confidence below 0.6 and the system will use the determin
     return 'corner execution gap vs reference line';
   }
 
-  // ── FEEDFORWARD: geofence-based corner advice ──────────
+  // ── FEEDFORWARD: velocity-scaled geofence corner advice ──
+
+  private static readonly FEEDFORWARD_DEFAULT_LEAD_S = 4.0;
+  private static readonly FEEDFORWARD_MIN_LOOKAHEAD_M = 120;
+  private static readonly FEEDFORWARD_MAX_LOOKAHEAD_M = 320;
+  private static readonly FEEDFORWARD_MIN_DELIVERY_M = 20;
+
+  private feedforwardLookaheadM(speedMph: number, corner: Corner): number {
+    const leadS = this.feedforwardLeadS(corner);
+    const speedMs = Math.max(speedMph, 0) * 0.44704;
+    return Math.min(
+      Math.max(speedMs * leadS, CoachingService.FEEDFORWARD_MIN_LOOKAHEAD_M),
+      CoachingService.FEEDFORWARD_MAX_LOOKAHEAD_M,
+    );
+  }
+
+  private feedforwardLeadS(corner: Corner): number {
+    // High-speed brake zones get extra lead time (mirrors Kotlin policy)
+    if (this.track?.name === 'Sonoma Raceway' && (corner.id === 910 || corner.id === 11)) {
+      return 5.0;
+    }
+    return CoachingService.FEEDFORWARD_DEFAULT_LEAD_S;
+  }
 
   private runFeedforward(frame: TelemetryFrame) {
     if (!this.track) return;
     if (!isValidGps(frame.latitude, frame.longitude)) return;
-    const nearest = this.findNearestCorner(frame.latitude, frame.longitude, this.track.corners);
 
+    let best: { corner: Corner; dist: number } | null = null;
+    for (const c of this.track.corners) {
+      const refLat = c.entryLat ?? c.lat;
+      const refLon = c.entryLon ?? c.lon;
+      const dist = haversineDistance(frame.latitude, frame.longitude, refLat, refLon);
+      const lookahead = this.feedforwardLookaheadM(frame.speed, c);
+      if (dist > lookahead || dist < CoachingService.FEEDFORWARD_MIN_DELIVERY_M) continue;
+      if (!best || dist < best.dist) best = { corner: c, dist };
+    }
+
+    const nearest = best?.corner ?? null;
     if (nearest && nearest !== this.lastCorner) {
       this.lastCorner = nearest;
       this.coachingQueue.enqueue({
@@ -1086,15 +1169,11 @@ If you are unsure, set confidence below 0.6 and the system will use the determin
         priority: 1,
         cornerPhase: this.currentPhase,
         timestamp: Date.now(),
+        cornerId: nearest.id,
+        cornerName: nearest.name,
+        objective: 'line_vision',
+        causeId: `feedforward_${nearest.id}`,
       });
     }
-  }
-
-  private findNearestCorner(lat: number, lon: number, corners: Corner[]): Corner | null {
-    for (const c of corners) {
-      const dist = haversineDistance(lat, lon, c.lat, c.lon);
-      if (dist < 150) return c;
-    }
-    return null;
   }
 }
