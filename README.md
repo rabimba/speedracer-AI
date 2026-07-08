@@ -11,21 +11,6 @@ Catalyst tells you what you did wrong with numbers.
 Racecraft tells you how to fix it in real time, adjusted to your skill.
 ```
 
-### Screenshots
-
-<table>
-  <tr>
-    <td align="center"><b>Web App — Live Coaching</b></td>
-    <td align="center"><b>Android — Telemetry + Camera Fusion</b></td>
-    <td align="center"><b>Android — Device Test Setup</b></td>
-  </tr>
-  <tr>
-    <td><img src="koru-application/screenshot.png" alt="Web app live coaching" width="280"></td>
-    <td><img src="design-assets/media/poster-sonoma.jpg" alt="Android Sonoma live session" width="280"></td>
-    <td><img src="pixel-android-app/screenshots/setup-screen.png" alt="Android setup screen" width="200"></td>
-  </tr>
-</table>
-
 ### Download the Android APK
 
 Grab the latest APK from the [Releases page](https://github.com/rabimba/speedracer-AI/releases) — download `racecraft-latest.apk` and install on a Pixel device (Android 10+ / API 29+). Enable "Install from unknown sources" in Settings if prompted.
