@@ -1,6 +1,8 @@
 # Racecraft — Trustable AI Race Coach
 
 > Repo: [`github.com/rabimba/speedracer-AI`](https://github.com/rabimba/speedracer-AI) | Live site: [`rabimba.github.io/speedracer-AI`](https://rabimba.github.io/speedracer-AI/)
+>
+> **Blog series:** [Racecraft / Project Koru — Prologue (Origin)](https://rkrants.blogspot.com/2026/06/racecraft-project-koru-prologue-origin.html) · [Bridging the Domain Gap: AI Race Coach Built with Antigravity and Gemini (Google Developers Blog)](https://developers.googleblog.com/bridging-the-domain-gap-ai-race-coach-built-with-antigravity-and-gemini/)
 
 A real-time, on-device driving coach that processes telemetry streams and delivers context-aware coaching as you drive — not after the fact. Built on a split-brain architecture: deterministic rules for sub-50ms safety cues, grounded LLM analysis for strategic feedback, and reference-trace delta coaching that explains the gap to a gold lap.
 
