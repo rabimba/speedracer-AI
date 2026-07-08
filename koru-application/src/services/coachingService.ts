@@ -65,6 +65,9 @@ export class CoachingService {
   private lastCorner: Corner | null = null;
   private coldCooldownMs = 15000;
   private apiKey: string | null = null;
+  private coldRetryCount = 0;
+  private static readonly COLD_MAX_RETRIES = 2;
+  private static readonly COLD_CONFIDENCE_THRESHOLD = 0.6;
 
   // New modules
   private cornerDetector = new CornerPhaseDetector();
@@ -84,6 +87,7 @@ export class CoachingService {
   private lastDeltaTime = 0;
   private static readonly DELTA_COOLDOWN_S = 6;
   private apexFrame: TelemetryFrame | null = null;
+  private lastDeltaAnalysis: DeltaAnalysis | null = null;
 
   // Session goals (Phase 6.2 — populated by pre-race chat or auto-generated)
   private sessionGoals: SessionGoal[] = [];
@@ -303,12 +307,14 @@ export class CoachingService {
     // Skip non-actionable "MAINTAIN" cues — the hot path covers smoothness.
     if (analysis.recommendedAction === 'MAINTAIN') {
       this.apexFrame = null;
+      this.lastDeltaAnalysis = null;
       return;
     }
 
     this.lastDeltaCornerId = refCornerId;
     this.lastDeltaTime = frame.time;
     this.apexFrame = null;
+    this.lastDeltaAnalysis = analysis;
 
     const objective = this.deltaObjectiveFor(analysis);
     const causeId = this.deltaCauseIdFor(analysis);
@@ -727,28 +733,48 @@ export class CoachingService {
     return action;
   }
 
-  // ── COLD PATH: Gemini Cloud detailed analysis ──────────
+  // ── COLD PATH: Gemini Cloud detailed analysis (grounded, Pillar 2) ──
 
+  /**
+   * Grounded COLD path — fires at corner exit (not arbitrary frame) so the
+   * LLM sees a complete corner. Includes DEL delta evidence in the prompt,
+   * requests structured JSON output, routes by confidence, and retries on
+   * transient failures.
+   */
   private async runColdPath(frame: TelemetryFrame) {
     const now = Date.now();
     if (now - this.lastColdTime < this.coldCooldownMs) return;
     if (!this.apiKey) return;
 
+    // Corner-aware trigger: only fire at corner exit, not mid-corner or on
+    // random straights. This ensures the LLM reasons about a complete corner.
+    const isCornerExit = this.currentPhase === 'STRAIGHT' ||
+                        this.currentPhase === 'EXIT' ||
+                        this.currentPhase === 'ACCELERATION';
+    if (!isCornerExit || !this.lastCorner) return;
+
     this.lastColdTime = now;
+    this.coldRetryCount = 0;
+
     const coach = this.getCoach();
-
-    const cornerName = this.lastCorner?.name || 'straight';
-    const cornerAdvice = this.lastCorner?.advice || '';
-
     const skillLevel = this.driverModel.getSkillLevel();
     const instruction = coldPathInstructionForSkill(skillLevel);
 
+    // RAG: pull track context + DEL delta evidence + driver corner history
     const trackContext = getTrackPromptContext(
       this.track,
       this.lastCorner,
       skillLevel,
       this.sessionPhase,
+      this.lastDeltaAnalysis,
     );
+
+    const deltaSummary = this.lastDeltaAnalysis
+      ? `DELTA ANALYSIS: ${this.lastDeltaAnalysis.corner?.name ?? 'corner'} — ` +
+        `apex speed ${this.lastDeltaAnalysis.apexSpeedDelta > 0 ? '+' : ''}${this.lastDeltaAnalysis.apexSpeedDelta.toFixed(0)} mph vs reference, ` +
+        `brake ${this.lastDeltaAnalysis.brakeDelta > 0 ? '+' : ''}${this.lastDeltaAnalysis.brakeDelta.toFixed(0)}% vs reference. ` +
+        `Root cause likely: ${this.inferColdRootCause(this.lastDeltaAnalysis)}.`
+      : 'No delta analysis available for this corner.';
 
     const prompt = `${coach.systemPrompt}
 
@@ -761,35 +787,144 @@ ${this.currentGoalPromptContext()}
 Current Telemetry:
 Speed: ${frame.speed.toFixed(1)} mph | Brake: ${frame.brake.toFixed(0)}% | Throttle: ${frame.throttle.toFixed(0)}%
 G-Lat: ${frame.gLat.toFixed(2)} | G-Long: ${frame.gLong.toFixed(2)}
-Location: ${cornerName} - ${cornerAdvice}
+Location: ${this.lastCorner.name} - ${this.lastCorner.advice}
 
-${instruction}`;
+${deltaSummary}
+
+${instruction}
+
+Respond as JSON: {"cause":"root cause in one phrase","fix":"one actionable fix under 15 words","confidence":0.0-1.0}
+If you are unsure, set confidence below 0.6 and the system will use the deterministic cue instead.`;
 
     try {
-      const res = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': this.apiKey!,
-          },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        }
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (text) this.coachingQueue.enqueue({
-        path: 'cold',
-        text,
-        priority: 2,
-        cornerPhase: this.currentPhase,
-        timestamp: Date.now(),
-      });
+      const result = await this.callGeminiWithRetry(prompt);
+      if (!result) return;
+
+      const parsed = this.parseColdResponse(result);
+      if (!parsed) {
+        // Unparseable response — fall back to raw text at P2
+        if (result.text) this.enqueueColdDecision(result.text, 2, parsed);
+        return;
+      }
+
+      // Confidence routing: low confidence → let the deterministic delta cue stand
+      if (parsed.confidence < CoachingService.COLD_CONFIDENCE_THRESHOLD) {
+        return;
+      }
+
+      // High confidence → use the LLM's cause-first fix
+      const text = parsed.fix || result.text || '';
+      if (text) this.enqueueColdDecision(text, 2, parsed);
     } catch (err) {
       console.error('Cold path failed:', err);
     }
+  }
+
+  private async callGeminiWithRetry(
+    prompt: string,
+  ): Promise<{ text: string } | null> {
+    const maxRetries = CoachingService.COLD_MAX_RETRIES;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': this.apiKey!,
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.4,
+                maxOutputTokens: 150,
+              },
+            }),
+          },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          this.coldRetryCount = 0;
+          return { text };
+        }
+        // 4xx → don't retry (bad request / bad key)
+        if (res.status >= 400 && res.status < 500) {
+          console.error(`Cold path: client error ${res.status}, not retrying`);
+          return null;
+        }
+        // 5xx → retry with backoff
+        if (attempt < maxRetries) {
+          this.coldRetryCount++;
+          await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+        }
+      } catch (err) {
+        if (attempt < maxRetries) {
+          this.coldRetryCount++;
+          await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+        } else {
+          throw err;
+        }
+      }
+    }
+    return null;
+  }
+
+  private parseColdResponse(response: { text: string }): { cause: string; fix: string; confidence: number } | null {
+    if (!response.text) return null;
+    try {
+      const parsed = JSON.parse(response.text);
+      if (typeof parsed.fix === 'string' && typeof parsed.confidence === 'number') {
+        return {
+          cause: parsed.cause ?? '',
+          fix: parsed.fix,
+          confidence: parsed.confidence,
+        };
+      }
+    } catch {
+      // Not JSON — try to extract from text
+      return null;
+    }
+    return null;
+  }
+
+  private enqueueColdDecision(
+    text: string,
+    priority: 0 | 1 | 2 | 3,
+    parsed: { cause: string; fix: string; confidence: number } | null,
+  ): void {
+    this.coachingQueue.enqueue({
+      path: 'cold',
+      text,
+      priority,
+      cornerPhase: this.currentPhase,
+      timestamp: Date.now(),
+      cornerId: this.lastCorner?.id,
+      cornerName: this.lastCorner?.name,
+      confidence: parsed?.confidence,
+      causeId: parsed?.cause ? `cold_${parsed.cause.slice(0, 40).replace(/\s+/g, '_')}` : undefined,
+    });
+  }
+
+  private inferColdRootCause(delta: DeltaAnalysis): string {
+    if (delta.apexSpeedDelta < -10 && delta.brakeDelta > 20) {
+      return 'overbraking at entry — braking too hard or too late, scrubbing speed';
+    }
+    if (delta.apexSpeedDelta < -10 && delta.brakeDelta <= 0) {
+      return 'insufficient cornering commitment — not carrying enough speed through the apex';
+    }
+    if (delta.throttleTimingDelta > 15 && delta.phase === 'APEX') {
+      return 'early throttle — getting on the gas before the apex, pushing the line wide';
+    }
+    if (delta.trackUseDelta < -0.15) {
+      return 'poor track use — not using the full width on exit';
+    }
+    if (delta.brakeDelta > 25) {
+      return 'brake modulation — stabbing instead of squeezing the brake';
+    }
+    return 'corner execution gap vs reference line';
   }
 
   // ── FEEDFORWARD: geofence-based corner advice ──────────

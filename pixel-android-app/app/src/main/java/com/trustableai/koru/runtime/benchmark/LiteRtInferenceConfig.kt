@@ -142,8 +142,8 @@ object LiteRtPromptFactory {
     }
 
     private fun compactPrompt(window: EdgeReasoningWindow): String {
-        val speed = window.features["speedMps"]?.let { "%.0f".format(it) } ?: "?"
-        val decel = window.features["longitudinalAccel"]?.let { "%.1f".format(it) } ?: "?"
+        val speed = window.features["speed_mph"]?.let { "%.0f".format(it) } ?: "?"
+        val decel = window.features["g_long"]?.let { "%.1f".format(it) } ?: "?"
         return """
             Koru EDGE coach. JSON only: {"speak":true,"action":"${window.actionHint.name}","priority":${window.priority},"text":"<=14 words","confidence":0.0}
             trigger=${window.triggerId}; phase=${window.phase.name}; corner=${window.cornerName ?: "none"}; speed=$speed; decel=$decel
@@ -168,9 +168,13 @@ object LiteRtPromptFactory {
             cornerName = "T4",
             features =
                 mapOf(
-                    "speedMps" to 18.4,
-                    "longitudinalAccel" to -0.8,
-                    "lateralAccel" to 0.6,
+                    "speed_mph" to 41.0,
+                    "g_long" to -0.8,
+                    "g_lat" to 0.6,
+                    "throttle" to 35.0,
+                    "brake" to 0.0,
+                    "coasting_ratio" to 0.1,
+                    "cognitive_load" to 0.3,
                 ),
             causeHint = "late_throttle",
         )

@@ -6,7 +6,8 @@ import {
   getInsightsForCorner,
   type SonomaCornerId,
 } from './trodCoachingData';
-import { SONOMA_RACEWAY } from './trackData';
+import { SONOMA_RACEWAY, THUNDERHILL_EAST } from './trackData';
+import type { DeltaAnalysis } from '@trustable/core-telemetry';
 
 type SessionPhase = 1 | 2 | 3;
 
@@ -26,6 +27,22 @@ const ROSS_PEDAGOGY_PRIMER = [
 
 function isSonomaTrack(track: Track | null | undefined): boolean {
   return track?.name === SONOMA_RACEWAY.name;
+}
+
+function isThunderhillTrack(track: Track | null | undefined): boolean {
+  return track?.name === THUNDERHILL_EAST.name;
+}
+
+const THUNDERHILL_TRACK_PRIMER = [
+  'Thunderhill Raceway (East): 2.875 miles with significant elevation change and the Cyclone complex.',
+  'Sector 1 covers the front straight through Turns 1-4. Brake discipline and long exits matter most.',
+  'Sector 2 is the Cyclone and west flow — blind crests, platform stability, and maintenance throttle.',
+  'Sector 3 is the return complex. Flow and rhythm dominate; avoid over-slowing for the final kink.',
+].join(' ');
+
+function genericTrackPrimer(track: Track): string {
+  return `${track.name}: ${track.length} meters with ${track.corners.length} corners and ${track.sectors.length} sectors. ` +
+    `Sectors: ${track.sectors.map(s => s.name).join(', ')}.`;
 }
 
 function mapSonomaCornerId(corner: Corner | null | undefined): SonomaCornerId | null {
@@ -104,10 +121,29 @@ export function getTrackPromptContext(
   corner: Corner | null,
   skillLevel: SkillLevel,
   sessionPhase: SessionPhase,
+  deltaAnalysis?: DeltaAnalysis | null,
 ): string {
-  if (!isSonomaTrack(track)) return '';
+  if (!track) return '';
 
   const sessionFocus = sessionFocusForPhase(sessionPhase);
+
+  // Sonoma gets the full T-Rod dossier (existing behavior)
+  if (isSonomaTrack(track)) {
+    return sonomaPromptContext(track, corner, skillLevel, sessionPhase, sessionFocus, deltaAnalysis);
+  }
+
+  // Thunderhill and other tracks get a generalized context with DEL delta evidence
+  return genericPromptContext(track, corner, skillLevel, sessionPhase, sessionFocus, deltaAnalysis);
+}
+
+function sonomaPromptContext(
+  _track: Track,
+  corner: Corner | null,
+  skillLevel: SkillLevel,
+  _sessionPhase: SessionPhase,
+  sessionFocus: ReturnType<typeof sessionFocusForPhase>,
+  deltaAnalysis?: DeltaAnalysis | null,
+): string {
   const sonomaCornerId = mapSonomaCornerId(corner);
   const insights = sonomaCornerId
     ? getInsightsForCorner(sonomaCornerId)
@@ -130,6 +166,8 @@ export function getTrackPromptContext(
 - ${fallbackSonomaAdvice(corner)}
 `;
 
+  const deltaBlock = deltaAnalysis ? formatDeltaBlock(deltaAnalysis) : '';
+
   return `TRACK-SPECIFIC DOMAIN LAYER:
 ${SONOMA_TRACK_PRIMER}
 
@@ -144,8 +182,63 @@ CURRENT SESSION FOCUS:
 
 ${cornerBlock}RELEVANT INSIGHTS:
 ${insightLines}
-
+${deltaBlock}
 When coaching Sonoma, prioritize exit quality from Turns 3, 7, 11, and 12, protect maintenance throttle in the Carousel, and do not overload the driver with more than one new change at a time.`;
+}
+
+function genericPromptContext(
+  track: Track,
+  corner: Corner | null,
+  skillLevel: SkillLevel,
+  _sessionPhase: SessionPhase,
+  sessionFocus: ReturnType<typeof sessionFocusForPhase>,
+  deltaAnalysis?: DeltaAnalysis | null,
+): string {
+  const primer = isThunderhillTrack(track) ? THUNDERHILL_TRACK_PRIMER : genericTrackPrimer(track);
+
+  // Pull general (non-Sonoma-corner-specific) T-Rod insights — they're universal racing wisdom
+  const generalInsights = TROD_INSIGHTS.filter((insight) => insight.cornerIds.length === 0).slice(0, 4);
+  const insightLines = generalInsights
+    .map((insight) => `- ${insight.category}: ${insight.insight}`)
+    .join('\n');
+
+  const cornerBlock = corner == null
+    ? ''
+    : `Corner dossier for ${corner.name}:
+- Track advice: ${corner.advice}
+${corner.targetSpeed != null ? `- Target speed: ${corner.targetSpeed} mph\n` : ''}`;
+
+  const deltaBlock = deltaAnalysis ? formatDeltaBlock(deltaAnalysis) : '';
+
+  return `TRACK-SPECIFIC DOMAIN LAYER:
+${primer}
+
+COACHING PEDAGOGY:
+${ROSS_PEDAGOGY_PRIMER}
+
+CURRENT SESSION FOCUS:
+- Step ${sessionFocus.step}: ${sessionFocus.focus}
+- ${sessionFocus.description}
+- Driver skill level right now: ${skillLevel}
+
+${cornerBlock}RELEVANT INSIGHTS:
+${insightLines}
+${deltaBlock}
+Coach one change at a time. Prioritize the biggest time-loss gap shown in the delta evidence above.`;
+}
+
+function formatDeltaBlock(delta: DeltaAnalysis): string {
+  const cornerName = delta.corner?.name ?? 'this corner';
+  return `
+DELTA EVIDENCE (reference trace comparison):
+- Corner: ${cornerName} (${delta.phase})
+- Apex speed delta: ${delta.apexSpeedDelta > 0 ? '+' : ''}${delta.apexSpeedDelta.toFixed(0)} mph vs reference
+- Brake delta: ${delta.brakeDelta > 0 ? '+' : ''}${delta.brakeDelta.toFixed(0)}% vs reference
+- Throttle timing delta: ${delta.throttleTimingDelta > 0 ? '+' : ''}${delta.throttleTimingDelta.toFixed(0)}% vs reference
+- Track use delta: ${delta.trackUseDelta > 0 ? '+' : ''}${delta.trackUseDelta.toFixed(2)} vs reference
+- Traction circle utilization: ${delta.tractionCircleUtilization.toFixed(2)}G
+- Recommended action: ${delta.recommendedAction}
+`;
 }
 
 export function shouldSuppressTrackAction(
