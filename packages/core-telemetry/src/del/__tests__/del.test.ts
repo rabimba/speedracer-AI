@@ -6,11 +6,12 @@ import {
   createLearningPlanEnvelope,
   detectBrakeDegradation,
   evaluateBiometricLoad,
+  referenceTraceForTrack,
   sanitizeOnTrackCue,
   shouldSuppressCueForPhase,
   validateLearningPlanEnvelope,
 } from '../index.js';
-import { SONOMA_RACEWAY } from '../../tracks/index.js';
+import { SONOMA_RACEWAY, THUNDERHILL_EAST } from '../../tracks/index.js';
 import type { TelemetryFrame } from '../../types/telemetry.js';
 
 const baseFrame: TelemetryFrame = {
@@ -113,5 +114,34 @@ describe('Domain Expertise Layer', () => {
     expect(valid.sizeBytes).toBeLessThan(50 * 1024);
     expect(tampered.ok).toBe(false);
     expect(tampered.errors).toContain('learning_plan_digest_mismatch');
+  });
+
+  it('returns a Thunderhill reference trace and generates delta cues for it', () => {
+    const trace = referenceTraceForTrack(THUNDERHILL_EAST.name);
+    expect(trace.length).toBeGreaterThan(0);
+
+    const thunderhillFrame: TelemetryFrame = {
+      time: 10.2,
+      latitude: 39.539,
+      longitude: -122.331,
+      speed: 48,
+      throttle: 14,
+      brake: 6,
+      gLat: 1.04,
+      gLong: -0.06,
+      distance: 400,
+      steering: 22,
+    };
+
+    const analysis = analyzeDeltaToTarget(thunderhillFrame, trace, THUNDERHILL_EAST);
+    expect(analysis.corner?.name).toBe('Turn 1 brake');
+    expect(analysis.phase).toBe('APEX');
+    expect(analysis.apexSpeedDelta).toBe(-14);
+    expect(analysis.recommendedAction).toBe('HUSTLE');
+    expect(analysis.cue.split(/\s+/).length).toBeLessThanOrEqual(7);
+  });
+
+  it('returns an empty trace for unknown tracks', () => {
+    expect(referenceTraceForTrack('Mystery Track')).toHaveLength(0);
   });
 });

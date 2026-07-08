@@ -1,4 +1,4 @@
-import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal, SkillLevel } from '../types';
+import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal, SkillLevel, CoachingObjective } from '../types';
 import { COACHES, DEFAULT_COACH, DECISION_MATRIX, RACING_PHYSICS_KNOWLEDGE } from '../utils/coachingKnowledge';
 import {
   getTrackFeedforwardMessage,
@@ -7,6 +7,12 @@ import {
   shouldSuppressTrackAction,
 } from '../data/trackExpertise';
 import { haversineDistance, isValidGps } from '../utils/geoUtils';
+import {
+  analyzeDeltaToTarget,
+  referenceTraceForTrack,
+  type DeltaAnalysis,
+  type ReferenceTraceSample,
+} from '@trustable/core-telemetry';
 import { CornerPhaseDetector } from './cornerPhaseDetector';
 import { TimingGate } from './timingGate';
 import { CoachingQueue } from './coachingQueue';
@@ -72,6 +78,13 @@ export class CoachingService {
   private lastCognitiveCheck = 0;
   private lastHustleCheck = 0;
 
+  // DEL — reference-trace delta coaching (Pillar 1)
+  private referenceTrace: ReferenceTraceSample[] = [];
+  private lastDeltaCornerId: number | null = null;
+  private lastDeltaTime = 0;
+  private static readonly DELTA_COOLDOWN_S = 6;
+  private apexFrame: TelemetryFrame | null = null;
+
   // Session goals (Phase 6.2 — populated by pre-race chat or auto-generated)
   private sessionGoals: SessionGoal[] = [];
 
@@ -90,6 +103,9 @@ export class CoachingService {
   setTrack(track: Track): void {
     this.track = track;
     this.cornerDetector.setTrack(track);
+    this.referenceTrace = referenceTraceForTrack(track.name);
+    this.lastDeltaCornerId = null;
+    this.lastDeltaTime = 0;
   }
 
   getTimingState() { return this.timingGate.getState(); }
@@ -172,6 +188,7 @@ export class CoachingService {
 
     // Run coaching paths (enqueue decisions)
     this.runHotPath(frame);
+    this.runDeltaPath(frame);
     this.checkCognitiveOverload(frame);
     this.checkHustle(frame);
     this.runFeedforward(frame);
@@ -231,6 +248,106 @@ export class CoachingService {
     if (frameTime > 180) { this.sessionPhase = 3; }
     else if (frameTime > 60) { this.sessionPhase = 2; }
     else { this.sessionPhase = 1; }
+  }
+
+  // ── DELTA PATH: reference-trace comparison (Pillar 1) ──────
+
+  /**
+   * Compare the stored apex frame against a gold reference trace and emit a
+   * grounded, evidence-based cue at P2 when the driver exits a corner.
+   *
+   * The cue fires at corner EXIT (not during the apex) so it doesn't fight the
+   * timing-gate blackout and doesn't distract the driver mid-corner. The
+   * analysis runs on the apex frame captured while the driver was in the
+   * corner, so it references the corner the driver just drove.
+   *
+   * Unlike the HOT path (threshold rules → generic phrase), the delta path
+   * explains the gap to the reference: "carrying 8 mph less through the
+   * apex", "braked 14m early", etc.
+   */
+  private runDeltaPath(frame: TelemetryFrame): void {
+    if (this.referenceTrace.length === 0 || !this.track) return;
+
+    // Capture the apex frame for later analysis at corner exit.
+    if (this.currentPhase === 'APEX' || this.currentPhase === 'MID_CORNER') {
+      this.apexFrame = frame;
+      return;
+    }
+
+    // Fire at corner exit — when we have a stored apex frame and the driver
+    // has transitioned to a non-blackout phase (STRAIGHT / EXIT / ACCELERATION).
+    if (!this.apexFrame) return;
+    if (this.currentPhase !== 'STRAIGHT' && this.currentPhase !== 'EXIT' && this.currentPhase !== 'ACCELERATION') {
+      return;
+    }
+
+    // Cooldown: don't fire more than once per DELTA_COOLDOWN_S seconds.
+    if (frame.time - this.lastDeltaTime < CoachingService.DELTA_COOLDOWN_S) return;
+
+    let analysis: DeltaAnalysis;
+    try {
+      analysis = analyzeDeltaToTarget(this.apexFrame, this.referenceTrace, this.track);
+    } catch {
+      this.apexFrame = null;
+      return;
+    }
+
+    // Don't re-cue the same corner within the cooldown.
+    const refCornerId = analysis.corner?.id ?? null;
+    if (refCornerId !== null && refCornerId === this.lastDeltaCornerId &&
+        frame.time - this.lastDeltaTime < CoachingService.DELTA_COOLDOWN_S) {
+      this.apexFrame = null;
+      return;
+    }
+
+    // Skip non-actionable "MAINTAIN" cues — the hot path covers smoothness.
+    if (analysis.recommendedAction === 'MAINTAIN') {
+      this.apexFrame = null;
+      return;
+    }
+
+    this.lastDeltaCornerId = refCornerId;
+    this.lastDeltaTime = frame.time;
+    this.apexFrame = null;
+
+    const objective = this.deltaObjectiveFor(analysis);
+    const causeId = this.deltaCauseIdFor(analysis);
+
+    this.coachingQueue.enqueue({
+      path: 'hot',
+      action: analysis.recommendedAction,
+      text: analysis.cue,
+      priority: 2,
+      cornerPhase: this.currentPhase,
+      timestamp: Date.now(),
+      cornerId: refCornerId ?? undefined,
+      cornerName: analysis.corner?.name,
+      objective,
+      causeId,
+    });
+  }
+
+  private deltaObjectiveFor(analysis: DeltaAnalysis): CoachingObjective {
+    switch (analysis.recommendedAction) {
+      case 'BRAKE':
+      case 'SPIKE_BRAKE':
+        return 'brake_entry';
+      case 'EARLY_THROTTLE':
+      case 'LIFT_MID_CORNER':
+        return 'exit_throttle';
+      case 'PUSH':
+        return 'line_vision';
+      case 'HUSTLE':
+        return 'exit_throttle';
+      default:
+        return 'smoothness';
+    }
+  }
+
+  private deltaCauseIdFor(analysis: DeltaAnalysis): string {
+    const corner = analysis.corner?.name ? `${analysis.corner.name}_` : '';
+    const sign = (n: number) => (n > 0 ? 'plus' : n < 0 ? 'minus' : 'flat');
+    return `delta_${corner}${analysis.recommendedAction}_${sign(analysis.apexSpeedDelta)}speed_${sign(analysis.brakeDelta)}brake`;
   }
 
   // ── HOT PATH: instant heuristic commands ───────────────

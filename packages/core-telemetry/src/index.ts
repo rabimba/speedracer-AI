@@ -50,7 +50,7 @@ export type {
   LearningPlanValidationResult,
 } from './del/index.js';
 
-export { SONOMA_GOLD_TRACE } from './traces/sonomaGoldTrace.js';
+export { SONOMA_GOLD_TRACE, THUNDERHILL_GOLD_TRACE } from './traces/sonomaGoldTrace.js';
 export type { ReferenceTraceSample } from './traces/sonomaGoldTrace.js';
 
 export {

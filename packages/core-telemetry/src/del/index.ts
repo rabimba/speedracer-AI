@@ -1,7 +1,7 @@
 import type { CornerPhase } from '../types/cornerPhase.js';
 import type { TelemetryFrame } from '../types/telemetry.js';
 import type { Corner, Track } from '../types/track.js';
-import { SONOMA_GOLD_TRACE, type ReferenceTraceSample } from '../traces/sonomaGoldTrace.js';
+import { SONOMA_GOLD_TRACE, THUNDERHILL_GOLD_TRACE, type ReferenceTraceSample } from '../traces/sonomaGoldTrace.js';
 
 export type CoachAction =
   | 'THRESHOLD' | 'TRAIL_BRAKE' | 'BRAKE' | 'WAIT'
@@ -115,7 +115,10 @@ const PHASE_ORDER: Record<CornerPhase, number> = {
 };
 
 export function referenceTraceForTrack(trackName: string): ReferenceTraceSample[] {
-  return trackName.toLowerCase().includes('sonoma') ? SONOMA_GOLD_TRACE : [];
+  const lower = trackName.toLowerCase();
+  if (lower.includes('sonoma')) return SONOMA_GOLD_TRACE;
+  if (lower.includes('thunderhill')) return THUNDERHILL_GOLD_TRACE;
+  return [];
 }
 
 export function findNearestReferenceSample(
