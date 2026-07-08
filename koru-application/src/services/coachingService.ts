@@ -1,4 +1,4 @@
-import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal, SkillLevel, CoachingObjective } from '../types';
+import type { TelemetryFrame, CoachAction, Corner, Track, CoachingDecision, CornerPhase, SessionGoal, SkillLevel, CoachingObjective, DriverProfile } from '../types';
 import { COACHES, DEFAULT_COACH, DECISION_MATRIX, RACING_PHYSICS_KNOWLEDGE } from '../utils/coachingKnowledge';
 import {
   getTrackFeedforwardMessage,
@@ -18,6 +18,8 @@ import { TimingGate } from './timingGate';
 import { CoachingQueue } from './coachingQueue';
 import { DriverModel } from './driverModel';
 import { PerformanceTracker } from './performanceTracker';
+import { ReadinessEvaluator } from './readinessEvaluator';
+import { LocalDriverProfileStore } from './driverProfileStore';
 
 /** Map actions to priority levels (module-level Map avoids per-call array allocations) */
 const ACTION_PRIORITY: Map<string, 0 | 1 | 2 | 3> = new Map([
@@ -75,11 +77,16 @@ export class CoachingService {
   private coachingQueue = new CoachingQueue();
   private driverModel = new DriverModel();
   private performanceTracker = new PerformanceTracker();
+  private readinessEvaluator = new ReadinessEvaluator();
+  private profileStore = new LocalDriverProfileStore();
   private currentPhase: CornerPhase = 'STRAIGHT';
   private track: Track | null = null;
   private lastSkillLevel: import('../types').SkillLevel = 'BEGINNER';
   private lastCognitiveCheck = 0;
   private lastHustleCheck = 0;
+  private driverProfile: DriverProfile | null = null;
+  private sessionActions: CoachAction[] = [];
+  private lastReadinessCornerId: number | null = null;
 
   // DEL — reference-trace delta coaching (Pillar 1)
   private referenceTrace: ReferenceTraceSample[] = [];
@@ -110,16 +117,93 @@ export class CoachingService {
     this.referenceTrace = referenceTraceForTrack(track.name);
     this.lastDeltaCornerId = null;
     this.lastDeltaTime = 0;
+    this.readinessEvaluator.reset();
+    void this.loadDriverProfile();
   }
 
   getTimingState() { return this.timingGate.getState(); }
   getCornerPhase() { return this.currentPhase; }
   getDriverState() { return this.driverModel.getState(); }
+  getReadinessDiagnostics() { return this.readinessEvaluator.getDiagnostics(); }
+  getDriverProfile(): DriverProfile | null { return this.driverProfile; }
   getSessionGoals() { return this.sessionGoals; }
   getPerformanceTracker() { return this.performanceTracker; }
 
   /** Call when a new lap starts (e.g. from lap detection logic) */
   newLap(): void { this.performanceTracker.newLap(); }
+
+  /**
+   * Load the driver profile from the persistence layer (Pillar 3).
+   * Called automatically on setTrack. Populates problem corners, strengths,
+   * and weaknesses from previous sessions.
+   */
+  async loadDriverProfile(driverId: string = LocalDriverProfileStore.getDefaultDriverId()): Promise<DriverProfile | null> {
+    this.driverProfile = await this.profileStore.load(driverId);
+    if (this.driverProfile) {
+      // Auto-generate session goals from recurring problem corners
+      this.autoGenerateGoalsFromProfile();
+    }
+    return this.driverProfile;
+  }
+
+  /**
+   * Save the current session summary to the persistence layer (Pillar 3).
+   * Call when a session ends to persist corner performance data.
+   */
+  async saveSessionSummary(): Promise<void> {
+    if (!this.track) return;
+    const skillLevel = this.driverModel.getSkillLevel();
+    const summary = this.profileStore.buildSessionSummary(
+      this.track.name,
+      skillLevel,
+      this.performanceTracker.getCornerHistories(),
+      this.sessionActions,
+    );
+    await this.profileStore.addSession(
+      LocalDriverProfileStore.getDefaultDriverId(),
+      summary,
+    );
+  }
+
+  /**
+   * Auto-generate session goals from the driver profile's problem corners
+   * and weaknesses (Pillar 3). Replaces the TODO for auto-generation from
+   * DriverProfile.
+   */
+  private autoGenerateGoalsFromProfile(): void {
+    if (!this.driverProfile || this.driverProfile.problemCorners.length === 0) return;
+    if (this.sessionGoals.length > 0) return; // Don't override explicitly set goals
+
+    const goals: SessionGoal[] = [];
+    const topProblemCorner = this.driverProfile.problemCorners[0];
+
+    if (topProblemCorner != null && this.track) {
+      const corner = this.track.corners.find(c => c.id === topProblemCorner);
+      if (corner) {
+        goals.push({
+          id: `auto-corner-${topProblemCorner}`,
+          focus: 'braking',
+          description: `Focus on ${corner.name} — recurring problem corner from previous sessions.`,
+          source: 'auto_generated',
+          prioritizedActions: ['BRAKE', 'TRAIL_BRAKE'],
+        });
+      }
+    }
+
+    if (this.driverProfile.weaknesses.includes('SPIKE_BRAKE')) {
+      goals.push({
+        id: 'auto-smoothness',
+        focus: 'smoothness',
+        description: 'Work on brake modulation — squeeze, don\'t stab.',
+        source: 'auto_generated',
+        prioritizedActions: ['SPIKE_BRAKE'],
+      });
+    }
+
+    if (goals.length > 0) {
+      this.sessionGoals = goals.slice(0, 3);
+    }
+  }
 
   /**
    * Set session goals (Phase 6.2).
@@ -159,6 +243,7 @@ export class CoachingService {
     // TODO: Remove when CoachPanel displays priority/action/phase metadata
     const pri = ['🔴P0', '🟠P1', '🔵P2', '⚪P3'][msg.priority] ?? `P${msg.priority}`;
     console.log(`[COACH] ${pri} ${msg.action ?? msg.path} | ${msg.cornerPhase} | ${msg.text}`);
+    if (msg.action) this.sessionActions.push(msg.action);
     this.timingGate.startDelivery();
     this.listeners.forEach(cb => cb(msg));
   }
@@ -173,12 +258,19 @@ export class CoachingService {
       if (detectedCorner) this.lastCorner = detectedCorner;
     }
 
-    // Track per-corner performance (Phase 6.4)
+    // Track per-corner performance (Phase 6.4) + feed readiness evaluator
     const improvement = this.performanceTracker.update(
       frame, this.currentPhase,
       detection.cornerId ?? null, detection.cornerName ?? null,
     );
-    if (improvement) this.coachingQueue.enqueue(improvement);
+    if (improvement) {
+      this.coachingQueue.enqueue(improvement);
+    }
+
+    // Feed corner completion to readiness evaluator when a corner exits
+    // (corner ID transitions from non-null to null/STRAIGHT). This is
+    // independent of whether an improvement decision was generated.
+    this.feedReadinessOnCornerExit(detection.cornerId ?? null);
 
     // Update timing gate with current phase
     this.timingGate.update(this.currentPhase);
@@ -187,7 +279,7 @@ export class CoachingService {
     this.driverModel.update(frame);
     this.adaptToSkillLevel();
 
-    // Session progression
+    // Session progression — readiness-based (Pillar 3)
     this.updateSessionPhase(frame.time);
 
     // Run coaching paths (enqueue decisions)
@@ -207,6 +299,37 @@ export class CoachingService {
     if (decision) {
       this.emit(decision);
     }
+  }
+
+  /**
+   * Feed corner completion metrics to the readiness evaluator when the driver
+   * exits a corner (corner ID transitions from non-null to null). Reads the
+   * last snapshot from the PerformanceTracker's history for the corner that
+   * was just completed.
+   */
+  private feedReadinessOnCornerExit(currentCornerId: number | null): void {
+    if (currentCornerId !== null) {
+      this.lastReadinessCornerId = currentCornerId;
+      return;
+    }
+
+    // Corner ID transitioned to null — driver exited a corner
+    if (this.lastReadinessCornerId === null) return;
+
+    const histories = this.performanceTracker.getCornerHistories();
+    const history = histories.get(this.lastReadinessCornerId);
+    if (history && history.snapshots.length > 0) {
+      const lastSnap = history.snapshots[history.snapshots.length - 1];
+      this.readinessEvaluator.onCornerComplete({
+        maxBrake: lastSnap.maxBrake,
+        maxThrottle: lastSnap.maxThrottle,
+        entrySpeed: lastSnap.entrySpeed,
+        exitSpeed: lastSnap.exitSpeed,
+        lapNumber: lastSnap.lapNumber,
+      });
+    }
+
+    this.lastReadinessCornerId = null;
   }
 
   /** Adapt coaching parameters when skill level changes */
@@ -245,9 +368,25 @@ export class CoachingService {
     }
   }
 
-  /** Update session phase based on frame time and skill level */
+  /**
+   * Update session phase based on readiness signals (Pillar 3).
+   * Replaces wall-clock 60s/180s cutoffs with telemetry-based evaluation:
+   * the driver advances when they demonstrate readiness, not when time passes.
+   * Falls back to time-based progression if no corners have been driven yet.
+   */
   private updateSessionPhase(frameTime: number): void {
     const skill = this.driverModel.getSkillLevel();
+    const smoothness = this.driverModel.getState().inputSmoothness;
+
+    // If we have corner data, use readiness-based evaluation
+    if (this.readinessEvaluator.getDiagnostics().cornersDriven > 0) {
+      this.sessionPhase = this.readinessEvaluator.evaluateSessionPhase(skill, smoothness);
+      return;
+    }
+
+    // Early in the session before any corners are completed, fall back to
+    // time-based progression so the driver isn't stuck at phase 1 forever
+    // if GPS is not available.
     if (skill === 'ADVANCED') { this.sessionPhase = 3; return; }
     if (frameTime > 180) { this.sessionPhase = 3; }
     else if (frameTime > 60) { this.sessionPhase = 2; }
