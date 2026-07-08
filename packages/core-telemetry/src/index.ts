@@ -11,7 +11,7 @@ export type {
   GpsSSEPoint,
 } from './types/telemetry.js';
 
-export type { Corner, Sector, Track } from './types/track.js';
+export type { Corner, CornerDoctrine, Sector, Track } from './types/track.js';
 
 export type { CornerPhase } from './types/cornerPhase.js';
 

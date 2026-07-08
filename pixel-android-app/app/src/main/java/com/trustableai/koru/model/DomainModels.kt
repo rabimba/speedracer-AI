@@ -250,6 +250,14 @@ data class TelemetrySourceHealth(
     val signUnverified: Boolean = false,
 )
 
+data class CornerDoctrine(
+    val brakeZone: Boolean = false,
+    val exitPriority: Boolean = false,
+    val maintenance: Boolean = false,
+    val sacrifice: Boolean = false,
+    val doubleApex: Boolean = false,
+)
+
 data class Corner(
     val id: Int,
     val name: String,
@@ -262,6 +270,7 @@ data class Corner(
     val entryLat: Double? = null,
     val entryLon: Double? = null,
     val targetSpeed: Double? = null,
+    val doctrine: CornerDoctrine = CornerDoctrine(),
 )
 
 data class Track(

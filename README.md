@@ -1,234 +1,73 @@
 # Racecraft — Trustable AI Race Coach
 
-> **Racecraft** (repo: [`github.com/rabimba/speedracer-AI`](https://github.com/rabimba/speedracer-AI)) — a trustable, on-device, real-time driving coach. _Internal module ids still use the original `koru` codename to avoid build churn; "Racecraft" is the product brand._
+> Repo: [`github.com/rabimba/speedracer-AI`](https://github.com/rabimba/speedracer-AI) | Live site: [`rabimba.github.io/speedracer-AI`](https://rabimba.github.io/speedracer-AI/)
 
-Today's best telemetry systems — including the SOTA Garmin Catalyst — run on fixed, deterministic rules. They tell you what went wrong after the fact, with numbers. Racecraft takes a different approach: a multimodal, agentic AI system built on Google's on-device stack (**Gemma 4 E2B** via LiteRT-LM / AICore on-device + **Gemini 2.5 Flash Lite** in the cloud) that processes real-time data streams to deliver context-aware coaching as it happens, adapted to driver skill level.
-
-The goal is to build a reference architecture that proves a split-brain AI can be trusted in a mission-critical, zero-latency environment. The patterns and learnings from high-frequency racing telemetry are designed to translate to broader enterprise domains where real-time AI decision-making under pressure is the challenge.
-
-The GR86 field-test goal is narrower and practical: give the driver timely feedback that improves lap speed and reduces lap time. The hot path handles immediate in-car cues that must not wait on a model. The cold path uses the saved RaceBox + OBDLink + camera session afterward to identify time-loss patterns, validate whether live cues fired in the right places, and produce the next-session focus.
+A real-time, on-device driving coach that processes telemetry streams and delivers context-aware coaching as you drive — not after the fact. Built on a split-brain architecture: deterministic rules for sub-50ms safety cues, grounded LLM analysis for strategic feedback, and reference-trace delta coaching that explains the gap to a gold lap.
 
 ```
 Catalyst tells you what you did wrong with numbers.
-This system tells you in real time how to adapt and fix it, adjusted to your skill level.
+Racecraft tells you how to fix it in real time, adjusted to your skill.
 ```
 
-## Table of Contents
+## What's Built
 
-- [Current Status](#current-status)
-- [Project Overview](PROJECT_OVERVIEW.md)
-- [Roadmap](#roadmap)
-  - [Data Reasoning](#data-reasoning)
-  - [Edge / Telemetry](#edge--telemetry)
-  - [AGY Pipeline](#agy-pipeline)
-  - [UX / Frontend](#ux--frontend)
-  - [Future Work](#future-work)
-- [Hardware Stack](#hardware-stack)
-- [Architecture](#architecture)
-  - [Split-Brain Coaching Engine](#split-brain-coaching-engine)
-  - [Coach Personas](#coach-personas)
-- [Onboarding](#onboarding)
-- [streaming-telemetry-server](#streaming-telemetry-server)
-- [koru-application](#koru-application)
-- [Tech Stack](#tech-stack)
+| Capability | Status |
+|---|---|
+| **HOT path** — 12 deterministic threshold rules, P0 safety preemption, <50ms | Production |
+| **DELTA path** — reference-trace comparison at corner exit, evidence-based cues | Production |
+| **COLD path** — Gemini 2.5 Flash Lite, corner-aware trigger, structured JSON, confidence routing, retry/backoff | Production |
+| **FEEDFORWARD** — velocity-scaled geofence (120-320m, 4-5s lead), corner setup advice | Production |
+| **EDGE path** — on-device Gemma 4 E2B via LiteRT-LM, 750ms inference timeout (Android only) | Field-test |
+| **Driver model** — skill classification (BEGINNER/INTERMEDIATE/ADVANCED), adaptive timing | Production |
+| **Readiness progression** — session phase advances on telemetry signals, not wall clock | Production |
+| **Driver profile store** — cross-session corner performance, problem corners, auto-goals | Production |
+| **Corner doctrine** — property-keyed expertise (brakeZone, exitPriority, maintenance, sacrifice, doubleApex) | Production |
+| **Track support** — Sonoma Raceway + Thunderhill East (15 corners, GPS-anchored) | Production |
+| **GitHub Pages** — auto-deploy on push to main | Production |
 
----
-
-## Current Status
-
-The repo now supports both the original browser flow and a native Android on-device flow.
-
-### Implemented Today
-
-- Native Android host app with a Jetpack Compose + Material 3 live field-test UI.
-- Sonoma Raceway is now the primary deployed track in both the web registry and native Android catalog.
-- Sonoma-specific coaching guidance is wired in from the sector map plus coaching notes, including corner dossiers for Turns 2, 3, 3A, 6, 7, 9-10, 11, and 12.
-- The track-specific coaching doctrine now influences runtime selection, not just prompt text: it can suppress premature advice, bias hot-path wording, and shape feedforward/edge guidance per corner.
-- CameraX-based live camera lane with lightweight on-device vision feature extraction.
-- Three Android live-session modes:
-  - `Telemetry + Camera Fusion`
-  - `Device Camera + GPS Test`
-  - `Camera Feedback (Debug)`
-- Selectable telemetry source abstraction in Android.
-- Field-test telemetry sources now include `racebox_obd_fusion`, with RaceBox Mini as the motion clock and OBDLink MX+/EX as vehicle-state enrichment.
-- Phone-only fallback source: `phone_imu_gps`.
-- Always-on camera fusion for telemetry sessions, so live telemetry frames can carry vision features.
-- Realtime on-device coaching through the native runtime, recorded session artifacts, and replay loading.
-- Velocity-scaled FEEDFORWARD timing, fixed P0 safety phrases, spoken P0 audio clips with TTS fallback, persisted audio latency evidence, and non-blocking Pixel 10 GPU EDGE enrichment for field-test safety validation.
-
-### Works Now
-
-- Browser SSE flow still works for mock telemetry and replay.
-- Native Android live sessions start, stop, speak coaching cues, and save recorded sessions.
-- `Telemetry + Camera Fusion` can run the native `RaceBox + OBDLink` source path when RaceBox BLE plus either OBDLink MX+ Bluetooth or OBDLink EX USB is available.
-- `Telemetry + Camera Fusion` runs on device using phone GPS/IMU plus camera-derived vision features.
-- `Device Camera + GPS Test` runs a trackless device-only validation lane for realtime performance testing.
-- `Camera Feedback (Debug)` runs a vision-only debug lane to validate the camera pathway independently.
-
-### Still In Progress
-
-- Physical GR86 validation of the RaceBox Mini + OBDLink MX+/EX path.
-- Enhanced GR86 channels beyond standard OBD-II, such as steering angle and true brake pressure.
-- Rich racing semantics from vision beyond low-level motion and balance features.
-- Production-grade race coaching quality from fused hardware telemetry.
-
-## Roadmap
-
-### Data Reasoning
-
-- [x] **Timing state machine** — OPEN → DELIVERING → COOLDOWN → BLACKOUT. Enforces silence during mid-corner/apex. P0 safety messages bypass all states. Configurable per skill level.
-- [x] **Priority queue** — P0 (safety: BRAKE, OVERSTEER_RECOVERY) preempts all. P1 tactical, P2 strategic, P3 encouragement. Max 5 items, 3s stale expiry.
-- [x] **Driver model** — Classifies skill from input smoothness + coasting ratio. Time-based 10s rolling window (robust to 8Hz-25Hz data rates). 5s hysteresis before level change. Adapts cooldown, blackout, and cold path prompts per skill level.
-- [x] **Coaching knowledge enrichment** — Track-driving mental models such as friction circle, weight transfer, trail braking, vision, and maintenance throttle. 4 new coaching rules (EARLY_THROTTLE, LIFT_MID_CORNER, SPIKE_BRAKE, COGNITIVE_OVERLOAD). Skill-adapted humanization (beginner: feel-based, advanced: data-driven). Session progression (phases 1-3 suppress advanced techniques early). Skill-aware cold path prompts.
-- [x] **Sonoma track deployment layer** — Sonoma Raceway sector timing, corner map, and coach-specific domain guidance are now wired into the production track registry and feedforward/coaching paths across web and Android.
-- [x] **Test infrastructure** — Vitest with 42 tests: unit tests for geoUtils, CornerPhaseDetector, TimingGate, CoachingQueue, DriverModel, DecisionMatrix. Sonoma CSV integration test with synthetic fixture.
-
-### Edge / Telemetry
-
-- [x] **Native Android live host** — Jetpack Compose live UI, direct StateFlow telemetry, on-device audio path, recorded-session pipeline, and native live backend status reporting.
-- [x] **Camera lane** — CameraX preview + analyzer, lightweight vision features, and camera-direct realtime feedback loop.
-- [x] **Selectable Android live modes** — `Telemetry + Camera Fusion`, `Device Camera + GPS Test`, and `Camera Feedback (Debug)` now route through the native Android host.
-- [x] **Selectable telemetry source abstraction** — Native sessions can request `synthetic`, `phone_imu_gps`, `racebox_ble`, `obd_bluetooth`, or `racebox_obd_fusion` without changing the reasoning engine contract.
-- [x] **Phone IMU + GPS telemetry source** — First real native source implemented for on-device fused testing without external hardware.
-- [x] **RaceBox + OBDLink fused source** — Native Android can connect RaceBox Mini over BLE GATT, OBDLink MX+ over Bluetooth Classic, and OBDLink EX over USB OTG, using RaceBox as the 25Hz motion clock and OBD as slower RPM/throttle/temperature enrichment.
-- [x] **Replayable native session capture** — Android live sessions now persist fused frame timelines and decisions, and the web app can load the latest saved capture back into Replay and Analysis.
-- [x] **Bench-safe motion gating** — Phone-only telemetry coaching is now suppressed until real movement is detected, reducing stationary false-positive coaching during device testing.
-- [ ] **Data fusion and time sync calibration** — Initial 25Hz RaceBox-led fusion is implemented. Cross-correlation calibration (hard throttle blip → RPM spike vs IMU G spike), continuous-channel interpolation, and measured offset reporting are still pending physical validation.
-- [x] **Deterministic P0 safety audio** — Native Android now dispatches bundled spoken P0 cues for BRAKE and OVERSTEER_RECOVERY before falling back to flushed TTS, and records audio dispatch latency evidence in schema v2 session artifacts.
-- [x] **Non-blocking Pixel 10 EDGE enrichment** — EDGE reasoner work now runs in a single-flight async queue. MediaPipe LiteRT GPU inference can enrich non-P0 coaching when a native model is staged, while HOT/P0 remains deterministic and never waits for GPU or LLM output.
-- [x] **OBD transport software path** — RaceBox Mini connects through Android BLE GATT with high connection priority, OBDLink MX+ connects through paired Bluetooth Classic RFCOMM, and OBDLink EX connects through USB OTG serial inside the foreground telemetry service.
-- [x] **Hardware data client interfaces** — RaceBox and OBD ingestion are hidden behind small fakeable client interfaces so the coaching engine contract does not change when upgrading to enhanced GR86 PIDs or direct CAN later.
-- [ ] **Mocked data stream API** — Rabimba to deploy a throttled API endpoint providing synthetic telemetry streams. Enables pipeline development before the field test. All teams should validate their ingestion against this endpoint.
-- [ ] **CAN-to-USB ingestion (Team 2)** — Team 2 BMW E46 will have direct CAN-to-USB access (decision: Apr 14). Plan software strategy for hardwired CAN ingestion at 100+ Hz, bypassing Bluetooth multiplexing.
-- [ ] **Dual Bluetooth stability test (All Teams)** — Test simultaneous streaming from RaceBox Mini (BLE 5.2) and OBD sensors (BT Classic 3.0) to verify connection stability and stack multiplexing on Pixel 10.
-
-### AGY Pipeline
-
-- [ ] **Define post-session data schema** — Specify what format coaching events and lap metrics should be stored in (BigQuery, local JSON, or other) so the coaching engine can export session data for analysis and cross-session learning.
-- [ ] **Build ingestion for coaching events** — Receive per-corner metrics (brake point, apex speed, exit speed), mistake zones, and coaching decisions from each session. Enable post-session analysis and improvement tracking.
-
-### UX / Frontend
-
-- [ ] **Convert to PWA** — Add service worker and manifest for offline support. The hot path and feedforward already run client-side; PWA ensures the UI loads without network at the track.
-- [x] **Native Live Session controls** — The Live Session UI now exposes Android-specific mode switching, telemetry source selection, and a separate `Device Camera + GPS Test` lane for on-device performance validation.
-- [x] **Replay latest Android capture** — Replay can now load the latest saved native session artifact without requiring a manual CSV export first.
-- [ ] **Minimal HUD for track use** — Design a signal-light-only visual (green/yellow/red) for in-car use. The driver cannot look at a screen; audio is primary, but a peripheral color signal adds confirmation without distraction.
-- [ ] **Coach persona selection UX** — Evaluate whether mid-session coach switching is useful or distracting. Consider recommending a persona based on driver skill level from the driver model.
-
-### Future Work
-
-- [ ] **Cold path offline fallback** — Pre-compute a coaching lookup table for known tracks (keyed by corner + common mistakes) as offline replacement for Gemini cold path. Evaluate on-device Gemma 4 on Pixel 10 as an upgrade over Gemini Nano.
-- [ ] **Track auto-detection** — Detect corners on unknown tracks from heading change rate alone, without pre-loaded track data. Enables track-agnostic coaching for any track day.
-- [x] **Corner-specific Sonoma coaching** — Sonoma sector/corner guidance now shapes feedforward and edge coaching for the deployment target.
-- [ ] **Broader known-track coaching catalog** — Extend the same domain-expertise layer to additional tracks beyond Sonoma, and decide how much telemetry-only coaching is safe on unknown layouts.
-- [ ] **Two-way conversational dialog** — Enable real-time back-and-forth between the driver and the AI coach. This is the pinnacle for advanced drivers, where coaching becomes a discussion about minute nuances, setup adjustments, and driving strategy rather than one-way instructions.
-- [ ] **Productionize the native Android app** — Replace phone-only inferred telemetry with RaceBox/OBD/CAN-grade feeds, add richer vision semantics, and harden the on-device runtime for field use.
-
----
-
-## Hardware Stack
-
-All teams share a common compute and sensor platform. Car-specific adapters vary by team.
-
-### Common Stack (All Teams)
-
-| Device | Role | Connection | Data Rate |
-|--------|------|------------|-----------|
-| **Pixel 10** | Compute gateway, audio output, edge AI inference | — | — |
-| **RaceBox Mini** | 25Hz GPS + IMU (position, speed, heading, lateral/longitudinal G) | BLE 5.2 | 25 Hz, 7.5-15ms latency |
-| **OBDLink MX+** | Standard OBD-II adapter (RPM, speed, pedal position, coolant temp) | Bluetooth Classic 3.0 | 5-8 Hz effective |
-| **OBDLink EX** | Standard OBD-II USB adapter (same Mode 01 enrichment path) | USB OTG serial | 5-8 Hz effective |
-
-### Team Cars
-
-| Team | Car | OBD Path | Notes |
-|------|-----|----------|-------|
-| **Team 1 (Beginner)** | 2024 Subaru GR86 (automatic) | DauntlessOBD Enhanced + Hachi ASC CAN | Full CAN access, 100-500 kbps |
-| **Team 2 (Intermediate)** | BMW E46 M3 (MSS54HP) | OBDLink MX+ K-Line (Path A) or CANable 2.0 direct CAN (Path B) | K-Line limited to 10.4 kbaud, 9 channels |
-| **Team 3 (Pro)** | Honda S2000 AP2 | MoTec system (separate sync) | Pro data unit handled by T-Rod |
-
-### Data Channel Tiers
-
-Coaching capability scales with available data channels:
-
-| Tier | Channels | Coaching Capability |
-|------|----------|-------------------|
-| **Tier 1 (Beginner)** | GPS + IMU + RPM + Speed | Lap time delta, brake markers, apex location, corner speed |
-| **Tier 2 (Enthusiast)** | + Pedal position + Coolant temp + Oil temp | Throttle commitment, safety alerts (S54 >105°C coolant, >130°C oil) |
-| **Tier 3 (Professional)** | + Wheel speeds x4 + Steering angle + Brake state | Traction circle utilisation, slip ratio, ABS map, trail braking quality |
-
-### Latency Budget
-
-Total budget from telemetry event to audio coaching: **300-500ms**.
-
-```
-RaceBox BLE → Pixel 10:     7.5 - 15 ms
-OBD K-Line round-trip:      80 - 150 ms (vehicle-side, cannot reduce)
-Android BLE → fusion:       5 - 10 ms
-AI inference (hot path):    < 50 ms
-TTS audio output:           50 - 200 ms
-                            ─────────────
-Total:                      ~200 - 425 ms
-```
-
-> "Feedback 800ms late is worse than silence." — Brian Luc, Mentorship Session 1
-
----
+**Tests:** 157 (core-telemetry 30 + koru 127). Build + lint clean.
 
 ## Architecture
-
-The repo now supports two execution surfaces:
-
-- a **browser application** that consumes SSE and replay files
-- a **native Android host** that runs on-device camera, phone telemetry, and fused coaching paths
-
-Both surfaces use the same split-brain coaching concepts, but the Android path can now run local realtime testing without requiring the browser SSE server.
-
-```
-                         ┌─────────────────────────────────────────────┐
-                         │           koru-application (React)          │
-                         │                                             │
- ┌───────────────┐  SSE  │  ┌─────────────┐    ┌──────────────────┐   │
- │  Telemetry    │──────►│  │  Telemetry   │───►│  CoachingService │   │
- │  Server       │       │  │  Stream      │    │  (Split-Brain)   │   │
- │  (FastAPI)    │       │  │  Service     │    │                  │   │
- └───────────────┘       │  └─────────────┘    │  HOT ──► <50ms   │   │
-        ▲                │                      │  COLD ─► Gemini  │   │
-        │                │                      │  FEED ─► Geofence│   │
- ┌──────┴──────┐         │                      └────────┬─────────┘   │
- │ GPS Device  │         │                               │             │
- │ (Racelogic) │         │  ┌──────────┐    ┌────────────▼──────────┐  │
- │ or Mock CSV │         │  │  Gemini  │    │    Audio Output       │  │
- └─────────────┘         │  │  Service │    │  (TTS + AudioContext) │  │
-                         │  └──────────┘    └───────────────────────┘  │
-                         │                                             │
-                         │  Pages: Landing │ Dashboard │ Live │ Replay │
-                         └─────────────────────────────────────────────┘
-```
-
-### Split-Brain Coaching Engine
-
-The coaching engine routes decisions through three paths based on urgency:
 
 ```
   TelemetryFrame
        │
-       ├──► HOT PATH (heuristic rules, <50ms)
-       │    "Trail brake!" "Commit!" "Brake!"
-       │    No cloud round-trip. Fires on threshold violations.
+       ├──► HOT PATH          Deterministic rules → instant safety cues (<50ms)
+       │                       "Brake!" "Trail off!" "Countersteer!"
        │
-       ├──► COLD PATH (Gemini Flash, 2-5s)
-       │    Multi-frame telemetry analysis with physics context.
-       │    "You're lifting early in T5 — trust the grip through mid-corner."
+       ├──► DELTA PATH         Reference-trace comparison at corner exit (P2)
+       │                       "Turn 1: Carry more speed next" (14 mph below reference)
        │
-       └──► FEEDFORWARD (geofence triggers, 150m before corner)
-            Corner-specific advice delivered before the maneuver.
-            "T3 right: late apex, brake at the 100m board."
+       ├──► COLD PATH          Gemini Flash Lite, corner-aware, structured JSON (P2)
+       │                       {"cause":"overbraking","fix":"Brake earlier, release to apex","confidence":0.82}
+       │
+       ├──► FEEDFORWARD        Velocity-scaled geofence, corner setup advice (P1)
+       │                       "📍 Turn 3: late apex, wait for the curb."
+       │
+       └──► EDGE (Android)     On-device Gemma 4 E2B, non-blocking enrichment (P2)
+                                Single-flight queue, 750ms timeout, never blocks HOT/P0
 ```
 
-### Coach Personas
+All paths feed a priority queue (P0-P3) gated by a timing state machine (OPEN → DELIVERING → COOLDOWN → BLACKOUT). P0 preempts everything. Blackout silences non-P0 during mid-corner/apex.
 
-Five AI personas with different communication styles. Switch mid-session.
+## Coaching Intelligence
+
+### Reference-Trace Delta Coaching (DEL)
+Gold reference traces for Sonoma and Thunderhill. At corner exit, the system compares the driver's apex frame against the nearest reference sample and generates an evidence-based cue with the gap quantified. Enriches decisions with `objective`, `causeId`, `confidence`, `cornerId`, `cornerName`.
+
+### Grounded COLD Path
+Fires at corner exit (not arbitrary frames). Prompt includes DEL delta evidence, track context for all tracks, and T-Rod coaching insights. Requests structured JSON `{cause, fix, confidence}`. Low-confidence responses (<0.6) are discarded — the deterministic delta cue stands instead. Retry with exponential backoff on 5xx, fail fast on 4xx.
+
+### Corner Doctrine
+Corners are tagged with properties (`brakeZone`, `exitPriority`, `maintenance`, `sacrifice`, `doubleApex`) instead of hardcoded IDs. Any track with tagged corners gets doctrine-aware coaching — suppression, text generation, and objective mapping — without writing track-specific code.
+
+### Readiness-Based Progression
+Session phase (1-3) advances when the driver demonstrates readiness via telemetry signals (corner count, brake smoothness, throttle commitment), not when 60 seconds elapse. Aligns with T-Rod's pedagogical model: lines → shifts → trail braking → throttle commitment.
+
+### Driver Profile
+Cross-session corner performance persists to localStorage. Problem corners (issue count ≥ 3 across sessions), strengths, and weaknesses are computed. Session goals auto-generate from the profile — e.g., "Focus on Turn 1 brake — recurring problem corner from previous sessions."
+
+### Coach Personas
 
 | Coach | Style | Example |
 |-------|-------|---------|
@@ -238,229 +77,91 @@ Five AI personas with different communication styles. Switch mid-session.
 | **Garmin** | Data | "Entry speed: -8 mph vs ideal. +0.3s potential." |
 | **Super AJ** | Adaptive | Switches style per error type |
 
----
+## Repo Structure
+
+```
+koru-application/          React + TypeScript web app (Vite, Tailwind)
+  src/services/
+    coachingService.ts     Split-brain engine (HOT/DELTA/COLD/FEEDFORWARD)
+    driverProfileStore.ts  Cross-session persistence (localStorage)
+    readinessEvaluator.ts  Telemetry-based session phase progression
+    performanceTracker.ts  Per-corner lap-over-lap tracking
+    sharedPhraseCatalog.ts JSON phrase catalog (shared with Android)
+  src/data/
+    trackData.ts           Re-export from @trustable/core-telemetry
+    trackExpertise.ts      Doctrine-keyed coaching layer, T-Rod insights
+    trodCoachingData.ts    Extracted from real Tony Rodriguez coaching session
+
+packages/core-telemetry/   Shared TypeScript library
+  src/tracks/              Sonoma + Thunderhill track definitions
+  src/corner/              CornerPhaseDetector (GPS + G-force)
+  src/del/                 Delta analysis, biometric load, brake degradation, learning plans
+  src/traces/              Gold reference traces (Sonoma + Thunderhill)
+
+pixel-android-app/         Native Android (Kotlin + Jetpack Compose + Material 3)
+  app/src/main/.../runtime/
+    KoruRealtimeEngine.kt  Android coaching engine (HOT/FEEDFORWARD/EDGE)
+    DeterministicCore.kt   Corner detector, timing gate, queue, driver model, edge triggers
+    CornerDoctrineCatalog.kt  Doctrine-keyed coaching objectives + text
+    TrackCatalog.kt        Sonoma + Thunderhill corner data
+    reasoner/              LiteRT-LM (Gemma 4), AICore (scaffold), deterministic fallback
+
+streaming-telemetry-server/  Python FastAPI SSE server (mock + serial GPS)
+.github/workflows/           CI (test/lint/build) + Deploy (GitHub Pages)
+```
 
 ## Onboarding
 
 ### Prerequisites
+- Node.js 22+ (npm 11+)
+- Python 3.10+ (for telemetry server)
+- [Gemini API key](https://aistudio.google.com/apikey) (optional — hot path works without it)
 
-- Node.js 20+
-- Python 3.10+
-- A [Gemini API key](https://aistudio.google.com/apikey) (optional, hot path works without it)
+### Web App
 
-### 1. Start the Telemetry Server
+```bash
+npm install                # from repo root (monorepo)
+cd koru-application
+npm run dev                # http://localhost:5173
+```
+
+### Telemetry Server (optional, for live SSE)
 
 ```bash
 cd streaming-telemetry-server
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python ingest.py --mock
+python ingest.py --mock    # replays Sonoma CSV at 10Hz
 ```
 
-The server starts at `http://localhost:8000`. The `--mock` flag replays `SampleStream2024.csv` (Sonoma Raceway data) at 10Hz over SSE.
-
-For live GPS hardware (VK-162 USB dongle):
-
-```bash
-python ingest.py --port /dev/tty.usbserial-XXXX --baud 9600
-```
-
-### 2. Start the Web Application
+### Android App (optional, for on-device testing)
 
 ```bash
 cd koru-application
-npm install
-npm run dev
+npm run pixel:e2e:prepare   # build web + stage model
 ```
 
-Open `http://localhost:5173`. Click **Open Dashboard** to enter the app.
+Then open `pixel-android-app/` in Android Studio, connect a Pixel device, run the `app` module.
 
-### 3. Run the Native Android App (optional but recommended for on-device testing)
+### Gemini (optional)
 
-Prepare the Android bundle and on-device model:
-
-```bash
-cd koru-application
-npm run pixel:e2e:prepare
-```
-
-Then:
-
-1. Open [pixel-android-app](/Users/rkaranjai/Documents/trustable-ai-codelab/pixel-android-app) in Android Studio.
-2. Connect a Pixel device with USB debugging enabled.
-3. Run the `app` module.
-4. Open `Live Session` in the app.
-5. Choose one of:
-   - `Telemetry + Camera Fusion`
-   - `Device Camera + GPS Test`
-   - `Camera Feedback (Debug)`
-
-### 4. Configure Gemini (optional)
-
-Click the gear icon in the navbar and paste your Gemini API key. This enables:
-- Cold path cloud coaching (Gemini Flash)
+Click the gear icon in the navbar → paste API key. Enables:
+- COLD path cloud coaching (Gemini 2.5 Flash Lite)
 - Post-session AI lap comparison
 - Gemini TTS voice output
-
-The hot path and feedforward path work without an API key.
-
-### 5. Run a Session
-
-| Mode | Steps |
-|------|-------|
-| **Browser Live** | Go to Live > paste SSE endpoint (`http://localhost:8000/events`) > pick a coach > drive |
-| **Android Telemetry + Camera Fusion** | Open Live Session on device > choose `Telemetry + Camera Fusion` > select `Phone IMU + GPS` or another source > grant permissions > press `Connect` |
-| **Android Device Camera + GPS Test** | Open Live Session on device > choose `Device Camera + GPS Test` > grant permissions > press `Start Device Test` |
-| **Android Camera Feedback (Debug)** | Open Live Session on device > choose `Camera Feedback (Debug)` > grant camera permission > press `Start Feedback` |
-| **Replay** | Go to Replay > upload a CSV from your datalogger > scrub with synced charts |
-| **Analysis** | Go to Analysis > upload two CSVs > click Compare Laps for sector-by-sector AI breakdown |
-
----
-
-## streaming-telemetry-server
-
-Python FastAPI service that streams GPS telemetry over Server-Sent Events (SSE).
-
-```
-streaming-telemetry-server/
-  ingest.py              # FastAPI app: SSE broadcast, mock generator, serial reader, NMEA parser
-  requirements.txt       # fastapi, uvicorn, sse-starlette, pyserial, pynmea2
-  SampleStream2024.csv   # Sonoma Raceway sample data (VBOX format)
-  test_nmea_parsing.py   # NMEA parsing tests
-  Procfile               # Heroku/Railway deployment
-```
-
-### How it works
-
-```
- ┌────────────────┐         ┌──────────────┐         ┌──────────┐
- │ Data Source     │         │   ingest.py  │   SSE   │ Clients  │
- │                 │         │              │ /events │          │
- │ --mock:         │────────►│  Broadcaster │────────►│ Browser  │
- │   CSV at 10Hz   │         │  (pub/sub)   │         │ koru-app │
- │                 │         │              │         │          │
- │ --port:         │────────►│  NMEA Parser │────────►│ Any SSE  │
- │   Serial GPS    │         │  or Binary   │         │ client   │
- └────────────────┘         └──────────────┘         └──────────┘
-```
-
-**Modes:**
-- `--mock` — Replays `SampleStream2024.csv` as GPSD TPV objects at 10Hz. No hardware needed.
-- `--port /dev/ttyXXX --baud 9600` — Reads NMEA sentences from serial GPS (VK-162 tested).
-- `--binary` — Experimental binary protocol mode for VBox devices.
-
-**Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/events` | GET | SSE stream of GPS data (TPV JSON objects) |
-| `/state` | GET | Current mock mode status |
-| `/mock` | POST | Enable/disable mock data `{"enabled": true}` |
-
-**Environment variables** (`.env`):
-- `PORT` — Server port (default: 8000)
-- `HOST` — Bind address (default: 0.0.0.0)
-
----
-
-## koru-application
-
-React + TypeScript + Vite web application for real-time coaching visualization and interaction.
-
-```
-koru-application/
-  src/
-    components/
-      CoachPanel.tsx         # Coaching message display and persona selector
-      GaugeCluster.tsx       # Speed, throttle, brake, G-force gauges
-      Navbar.tsx             # Navigation bar with API key settings
-      PlaybackControls.tsx   # Replay scrubber and playback speed
-      TelemetryCharts.tsx    # Recharts-based telemetry visualization
-      TrackMap.tsx           # Canvas track map with car position
-    data/
-      trackData.ts           # Multi-track registry (Sonoma default, Thunderhill retained)
-      trackExpertise.ts      # Sonoma-specific coaching layer from sector map + coach notes
-    hooks/
-      useGeminiCloud.ts      # Gemini API integration hook
-      usePredictiveCoaching.ts  # Mistake zone tracking + 8s lookahead
-      useTTS.ts              # Text-to-speech hook (Web Speech API + Gemini TTS)
-    pages/
-      Landing.tsx            # Landing page
-      Dashboard.tsx          # Main dashboard
-      LiveSession.tsx        # Live telemetry + real-time coaching
-      Replay.tsx             # CSV replay with synced charts
-      Analysis.tsx           # Two-lap AI comparison
-    services/
-      audioService.ts        # AudioContext pre-caching + Web Speech API fallback
-      androidBridge.ts       # Legacy browser bridge bindings for older Android hosts
-      coachingService.ts     # Split-brain coaching engine (hot/cold/feedforward)
-      geminiService.ts       # Gemini REST API wrapper
-      liveBackendAdapter.ts  # Browser vs Android live backend adapter
-      recordedSessionStore.ts # Latest saved native session cache for replay
-      telemetryStreamService.ts  # SSE client, CSV/JSON file replay, virtual sensors
-    utils/
-      audioUtils.ts          # Audio helper utilities
-      coachingKnowledge.ts   # Coach personas, decision matrix, racing physics knowledge
-      telemetryParser.ts     # Telemetry data parsing utilities
-    types.ts                 # TelemetryFrame, Track, Corner, CoachAction, CoachPersona
-```
-
-### Data Flow
-
-```
- SSE/CSV Input
-      │
-      ▼
- TelemetryStreamService ──► TelemetryFrame
-      │
-      ├──► GaugeCluster (speed, throttle, brake, G)
-      ├──► TelemetryCharts (time-series plots)
-      ├──► TrackMap (car position on canvas)
-      │
-      └──► CoachingService
-              │
-              ├──► Hot Path ──► immediate CoachAction
-              ├──► Feedforward ──► geofence-triggered advice
-              └──► Cold Path ──► GeminiService ──► analysis
-                                                      │
-                                        All paths ────┘
-                                             │
-                                             ▼
-                                      CoachPanel (display)
-                                      AudioService (TTS)
-```
-
-### Native Android Live Modes
-
-The Android app now provides a native Compose live field-test surface. The React Live Session page remains available for browser demos, replay, and analysis workbench flows.
-
-| Mode | Purpose | Current Source |
-|------|---------|----------------|
-| `Telemetry + Camera Fusion` | Main on-device fused lane | `phone_imu_gps`, `synthetic`, future BLE/OBD |
-| `Device Camera + GPS Test` | Trackless device-only performance and latency testing | `phone_imu_gps` |
-| `Camera Feedback (Debug)` | Vision-only debug path | CameraX analyzer only |
-
-In the fused Android modes, the runtime path is:
-
-`Compose UI -> LiveSessionViewModel -> KoruSessionBus StateFlow -> TelemetrySource -> TelemetryFusionEngine(+vision) -> TelemetryFrame -> KoruRealtimeEngine -> native audio + recorder`
-
----
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19 + TypeScript + Vite 8 |
-| Styling | Tailwind CSS 4 |
-| Charts | Recharts |
-| Native Android | Kotlin + Jetpack Compose + Material 3 + CameraX + foreground service |
-| AI | Gemini 2.0 Flash via `@google/genai` |
-| On-device inference | LiteRT-LM / deterministic fallback |
-| Audio | Web Speech API + Gemini TTS (`gemini-2.5-pro-preview-tts`) |
-| Track rendering | Canvas API |
+| Web frontend | React 19 + TypeScript + Vite 8 + Tailwind 4 |
+| Shared library | `@trustable/core-telemetry` (Vitest, 30 tests) |
+| Native Android | Kotlin + Jetpack Compose + Material 3 + CameraX |
+| On-device AI | Gemma 4 E2B via MediaPipe LiteRT-LM (GPU) |
+| Cloud AI | Gemini 2.5 Flash Lite (`@google/genai`) |
 | Telemetry server | Python FastAPI + SSE |
-| GPS parsing | pynmea2 |
-| Communication | Server-Sent Events (SSE) |
+| CI/CD | GitHub Actions (test/lint/build + Pages deploy) |
+| Tests | 157 total (Vitest + JUnit) |
 
 ## License
 

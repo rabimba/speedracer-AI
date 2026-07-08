@@ -250,7 +250,7 @@ export function shouldSuppressTrackAction(
   phase: CornerPhase,
   cognitiveLoad: number,
 ): boolean {
-  if (!isSonomaTrack(track)) return false;
+  if (!track) return false;
 
   if (cognitiveLoad > 0.72 && ['HUSTLE', 'PUSH', 'FULL_THROTTLE', 'COMMIT'].includes(action)) {
     return true;
@@ -264,11 +264,16 @@ export function shouldSuppressTrackAction(
     return true;
   }
 
-  if ((corner?.id === 6 || corner?.id === 7) && action === 'PUSH') {
+  const doctrine = corner?.doctrine;
+  if (!doctrine) return false;
+
+  // Maintenance corners: don't chase speed — distance is king
+  if (doctrine.maintenance && action === 'PUSH') {
     return true;
   }
 
-  if (corner?.id === 3 && ['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action)) {
+  // Exit-priority corners: only allow throttle actions at exit, not mid-corner
+  if (doctrine.exitPriority && ['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action)) {
     return phase !== 'EXIT' && phase !== 'ACCELERATION';
   }
 
@@ -284,7 +289,7 @@ export function getTrackHotActionMessage(
   phase: CornerPhase,
   cognitiveLoad: number,
 ): string | null {
-  if (!isSonomaTrack(track)) return null;
+  if (!track) return null;
 
   if (action === 'COGNITIVE_OVERLOAD' || cognitiveLoad > 0.72) {
     return skillLevel === 'BEGINNER'
@@ -292,57 +297,46 @@ export function getTrackHotActionMessage(
       : 'One clean change only. Reset to marks and vision.';
   }
 
-  switch (corner?.id) {
-    case 3:
-      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && (phase === 'EXIT' || phase === 'ACCELERATION')) {
-        return 'Turn 3: late apex finished. Now commit all the way out.';
-      }
-      if (action === 'COAST' || action === 'LIFT_MID_CORNER') {
-        return 'Turn 3: do not float the exit. Be patient, then full throttle.';
-      }
-      if (action === 'EARLY_THROTTLE') {
-        return 'Turn 3: too early. Wait for the late apex before throttle.';
-      }
-      break;
+  const doctrine = corner?.doctrine;
+  if (!doctrine) return null;
 
-    case 6:
-      if (action === 'COAST' || action === 'LIFT_MID_CORNER' || action === 'THROTTLE') {
-        return 'Carousel: keep maintenance throttle and stay tight to the curb.';
-      }
-      if (action === 'PUSH') {
-        return 'Carousel: do not chase speed. Distance is king here.';
-      }
-      break;
+  // Exit-priority corners: coach throttle commitment at exit
+  if (doctrine.exitPriority && ['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) &&
+      (phase === 'EXIT' || phase === 'ACCELERATION')) {
+    return `${corner!.name}: late apex finished. Now commit all the way out.`;
+  }
+  if (doctrine.exitPriority && (action === 'COAST' || action === 'LIFT_MID_CORNER')) {
+    return `${corner!.name}: do not float the exit. Be patient, then full throttle.`;
+  }
+  if (doctrine.exitPriority && action === 'EARLY_THROTTLE') {
+    return `${corner!.name}: too early. Wait for the late apex before throttle.`;
+  }
 
-    case 7:
-      if (action === 'COAST' || action === 'LIFT_MID_CORNER') {
-        return 'Turn 7: maintenance throttle through the middle, then drive to second apex.';
-      }
-      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && (phase === 'EXIT' || phase === 'ACCELERATION')) {
-        return 'Turn 7: second apex is done. Unwind and commit to power.';
-      }
-      break;
+  // Maintenance corners: coach maintenance throttle + distance
+  if (doctrine.maintenance && (action === 'COAST' || action === 'LIFT_MID_CORNER' || action === 'THROTTLE')) {
+    return `${corner!.name}: keep maintenance throttle and stay tight to the curb.`;
+  }
+  if (doctrine.maintenance && action === 'PUSH') {
+    return `${corner!.name}: do not chase speed. Distance is king here.`;
+  }
 
-    case 910:
-      if (action === 'BRAKE' || action === 'WAIT' || action === 'HESITATION') {
-        return 'Turns 9-10: sacrifice 9, straighten the car, then brake for 10.';
-      }
-      break;
+  // Double-apex corners: coach the rotation between apexes
+  if (doctrine.doubleApex && (action === 'COAST' || action === 'LIFT_MID_CORNER')) {
+    return `${corner!.name}: maintenance throttle through the middle, then drive to second apex.`;
+  }
 
-    case 11:
-      if (action === 'BRAKE' || action === 'SPIKE_BRAKE' || action === 'TRAIL_BRAKE') {
-        return 'Turn 11: big squeeze first, then taper the release cleanly.';
-      }
-      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && sessionPhase >= 2) {
-        return 'Turn 11 exit matters. Free the hands, then commit down the next straight.';
-      }
-      break;
+  // Sacrifice corners: coach the setup for the next corner
+  if (doctrine.sacrifice && (action === 'BRAKE' || action === 'WAIT' || action === 'HESITATION')) {
+    return `${corner!.name}: sacrifice the first part, straighten the car, then brake for the next.`;
+  }
 
-    case 12:
-      if (['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && sessionPhase >= 2) {
-        return 'Turn 12: unwind early and build the front-straight run.';
-      }
-      break;
+  // Brake-zone corners: coach brake modulation
+  if (doctrine.brakeZone && (action === 'BRAKE' || action === 'SPIKE_BRAKE' || action === 'TRAIL_BRAKE')) {
+    return `${corner!.name}: big squeeze first, then taper the release cleanly.`;
+  }
+  if (doctrine.brakeZone && doctrine.exitPriority &&
+      ['THROTTLE', 'FULL_THROTTLE', 'HUSTLE'].includes(action) && sessionPhase >= 2) {
+    return `${corner!.name} exit matters. Free the hands, then commit down the next straight.`;
   }
 
   if (sessionPhase === 1 && skillLevel === 'BEGINNER' && (action === 'PUSH' || action === 'HUSTLE')) {

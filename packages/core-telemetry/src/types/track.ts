@@ -1,3 +1,11 @@
+export interface CornerDoctrine {
+  brakeZone?: boolean;       // heavy braking corner
+  exitPriority?: boolean;    // exit speed is critical
+  maintenance?: boolean;     // sweeping corner, maintenance throttle
+  sacrifice?: boolean;       // sacrifice this corner to set up the next
+  doubleApex?: boolean;      // double apex corner
+}
+
 export interface Corner {
   id: number;
   name: string;
@@ -10,6 +18,7 @@ export interface Corner {
   entryLat?: number;
   entryLon?: number;
   targetSpeed?: number;    // safe entry speed (mph)
+  doctrine?: CornerDoctrine;
 }
 
 export interface Sector {

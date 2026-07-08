@@ -19,6 +19,8 @@ data class CoachingIntentEvaluation(
 )
 
 object CornerDoctrineCatalog {
+    // Legacy ID sets — kept as fallback for corners without doctrine tags.
+    // New tracks should tag corners with CornerDoctrine instead.
     private val brakingCorners = setOf(1, 2, 31, 11)
     private val exitPriorityCorners = setOf(3, 7, 11, 12)
     private val maintenanceCorners = setOf(6, 7)
@@ -35,6 +37,17 @@ object CornerDoctrineCatalog {
         CoachAction.COMMIT,
         CoachAction.HUSTLE,
     )
+
+    private fun Corner?.isBrakeZone(): Boolean =
+        this?.doctrine?.brakeZone == true || this?.id in brakingCorners
+    private fun Corner?.isExitPriority(): Boolean =
+        this?.doctrine?.exitPriority == true || this?.id in exitPriorityCorners
+    private fun Corner?.isMaintenance(): Boolean =
+        this?.doctrine?.maintenance == true || this?.id in maintenanceCorners
+    private fun Corner?.isSacrifice(): Boolean =
+        this?.doctrine?.sacrifice == true || this?.id == 910
+    private fun Corner?.isDoubleApex(): Boolean =
+        this?.doctrine?.doubleApex == true || this?.id == 7
 
     fun evaluateHotAction(
         track: Track?,
@@ -63,7 +76,7 @@ object CornerDoctrineCatalog {
             return CoachingIntentEvaluation(action = action, objective = objective, priority = basePriority)
         }
 
-        val text = sonomaText(corner, phase, action, objective, driverState.skillLevel)
+        val text = doctrineText(corner, phase, action, objective, driverState.skillLevel)
         val suppress = shouldSuppressSonomaAction(corner, phase, action, objective, isEmergencyBrake, driverState)
         return if (suppress) {
             suppressed(action, objective)
@@ -220,7 +233,7 @@ object CornerDoctrineCatalog {
         if (!isSonoma(track)) return frame.speedMph >= target + 25.0 || frame.speedMph >= 85.0
 
         val cornerId = corner?.id ?: return frame.speedMph >= 95.0
-        if (cornerId in brakingCorners || cornerId == 910) {
+        if (corner.isBrakeZone() || corner.isSacrifice()) {
             return frame.speedMph >= target + 25.0 || frame.speedMph >= 85.0
         }
         return frame.speedMph >= target + 40.0 || frame.speedMph >= 105.0
@@ -248,7 +261,7 @@ object CornerDoctrineCatalog {
             CoachAction.WAIT, CoachAction.ROTATE -> CoachingObjective.ROTATE_WAIT
             CoachAction.TURN_IN, CoachAction.APEX, CoachAction.PUSH -> CoachingObjective.LINE_VISION
             CoachAction.THROTTLE, CoachAction.FULL_THROTTLE, CoachAction.HUSTLE -> {
-                if (corner?.id in maintenanceCorners && phase in setOf(CornerPhase.MID_CORNER, CornerPhase.APEX)) {
+                if (corner.isMaintenance() && phase in setOf(CornerPhase.MID_CORNER, CornerPhase.APEX)) {
                     CoachingObjective.MAINTENANCE_THROTTLE
                 } else {
                     CoachingObjective.EXIT_THROTTLE
@@ -260,7 +273,7 @@ object CornerDoctrineCatalog {
                 CoachingObjective.LINE_VISION
             }
             CoachAction.MAINTAIN, CoachAction.COAST, CoachAction.LIFT_MID_CORNER -> {
-                if (corner?.id in maintenanceCorners || phase == CornerPhase.MID_CORNER || phase == CornerPhase.APEX) {
+                if (corner.isMaintenance() || phase == CornerPhase.MID_CORNER || phase == CornerPhase.APEX) {
                     CoachingObjective.MAINTENANCE_THROTTLE
                 } else {
                     CoachingObjective.SMOOTHNESS
@@ -283,84 +296,90 @@ object CornerDoctrineCatalog {
             return true
         }
         if (action == CoachAction.BRAKE) return !isEmergencyBrake
-        return when (corner?.id) {
-            3 -> {
-                action in brakeActions ||
-                    (action in throttleActions && phase != CornerPhase.EXIT && phase != CornerPhase.ACCELERATION)
-            }
-            6 -> action in brakeActions || action in setOf(CoachAction.PUSH, CoachAction.HUSTLE, CoachAction.FULL_THROTTLE)
-            7 -> action in setOf(CoachAction.BRAKE, CoachAction.THRESHOLD, CoachAction.PUSH) ||
-                (action in setOf(CoachAction.FULL_THROTTLE, CoachAction.HUSTLE) && phase != CornerPhase.EXIT && phase != CornerPhase.ACCELERATION)
-            12 -> action in brakeActions && !isEmergencyBrake
-            else -> objective == CoachingObjective.NO_CUE
-        }
+
+        // Property-keyed doctrine — works for any tagged corner on any track
+        if (corner == null) return objective == CoachingObjective.NO_CUE
+
+        if (corner.isExitPriority() && action in brakeActions) return !isEmergencyBrake
+        if (corner.isExitPriority() && action in throttleActions &&
+            phase != CornerPhase.EXIT && phase != CornerPhase.ACCELERATION) return true
+        if (corner.isMaintenance() && action in brakeActions) return true
+        if (corner.isMaintenance() && action in setOf(CoachAction.PUSH, CoachAction.HUSTLE, CoachAction.FULL_THROTTLE)) return true
+
+        return objective == CoachingObjective.NO_CUE
     }
 
-    private fun sonomaText(
+    /**
+     * Doctrine-keyed text generation — works for any track with tagged corners.
+     * Falls back to corner name instead of hardcoded track-specific names.
+     */
+    private fun doctrineText(
         corner: Corner?,
         phase: CornerPhase,
         action: CoachAction,
         objective: CoachingObjective,
         skillLevel: SkillLevel,
     ): String? {
-        return when (corner?.id) {
-            3 -> when (objective) {
-                CoachingObjective.ROTATE_WAIT -> "Turn 3: late apex first. Wait, then throttle."
-                CoachingObjective.EXIT_THROTTLE -> "Turn 3: apex done. Unwind and commit out."
-                CoachingObjective.MAINTENANCE_THROTTLE -> "Turn 3: no floating. Patient, then full throttle."
+        if (corner == null) return null
+        val name = corner.name
+
+        // Exit-priority corners: coach throttle commitment and patience
+        if (corner.isExitPriority()) {
+            return when (objective) {
+                CoachingObjective.ROTATE_WAIT -> "$name: late apex first. Wait, then throttle."
+                CoachingObjective.EXIT_THROTTLE -> "$name: apex done. Unwind and commit out."
+                CoachingObjective.MAINTENANCE_THROTTLE -> "$name: no floating. Patient, then full throttle."
                 else -> null
             }
-            6 -> when (objective) {
-                CoachingObjective.MAINTENANCE_THROTTLE -> "Carousel: hug inside, hold maintenance throttle."
-                CoachingObjective.LINE_VISION -> "Carousel: distance is king. Stay tight to curb."
+        }
+
+        // Maintenance corners: coach distance and maintenance throttle
+        if (corner.isMaintenance() && !corner.isExitPriority()) {
+            return when (objective) {
+                CoachingObjective.MAINTENANCE_THROTTLE -> "$name: hug inside, hold maintenance throttle."
+                CoachingObjective.LINE_VISION -> "$name: distance is king. Stay tight to curb."
                 else -> null
             }
-            7 -> when (objective) {
-                CoachingObjective.MAINTENANCE_THROTTLE -> "Turn 7: maintenance throttle through the middle."
-                CoachingObjective.LINE_VISION -> "Turn 7: first apex, rotate, second apex."
-                CoachingObjective.EXIT_THROTTLE -> "Turn 7: second apex done. Unwind and power."
+        }
+
+        // Double-apex corners: coach the rotation between apexes
+        if (corner.isDoubleApex()) {
+            return when (objective) {
+                CoachingObjective.MAINTENANCE_THROTTLE -> "$name: maintenance throttle through the middle."
+                CoachingObjective.LINE_VISION -> "$name: first apex, rotate, second apex."
+                CoachingObjective.EXIT_THROTTLE -> "$name: second apex done. Unwind and power."
                 else -> null
             }
-            910 -> when (objective) {
+        }
+
+        // Sacrifice corners: coach the setup for the next corner
+        if (corner.isSacrifice()) {
+            return when (objective) {
                 CoachingObjective.LINE_VISION, CoachingObjective.ROTATE_WAIT ->
-                    "Turns 9-10: open 9, straighten, then set up 10."
+                    "$name: open the first part, straighten, then set up the next."
                 CoachingObjective.BRAKE_RELEASE ->
-                    "Turns 9-10: straighten first, then squeeze and release."
+                    "$name: straighten first, then squeeze and release."
                 else -> null
             }
-            11 -> when (objective) {
+        }
+
+        // Brake-zone corners: coach brake modulation
+        if (corner.isBrakeZone()) {
+            return when (objective) {
                 CoachingObjective.BRAKE_ENTRY ->
-                    if (action == CoachAction.BRAKE) "Turn 11: brake now, straight and firm." else "Turn 11: big squeeze, then taper cleanly."
-                CoachingObjective.BRAKE_RELEASE -> "Turn 11: end braking clean. Eyes to exit."
-                CoachingObjective.EXIT_THROTTLE -> "Turn 11: free the hands, then commit down straight."
+                    if (action == CoachAction.BRAKE) "$name: brake now, straight and firm." else "$name: big squeeze, then taper cleanly."
+                CoachingObjective.BRAKE_RELEASE -> "$name: end braking clean. Eyes to exit."
+                CoachingObjective.EXIT_THROTTLE -> "$name: free the hands, then commit down straight."
+                CoachingObjective.ROTATE_WAIT -> "$name: patience. Let it rotate."
+                CoachingObjective.LINE_VISION -> "$name: eyes up and clean turn-in."
                 else -> null
             }
-            12 -> when (objective) {
-                CoachingObjective.EXIT_THROTTLE, CoachingObjective.LINE_VISION -> "Turn 12: unwind early and build front-straight speed."
-                else -> null
-            }
-            31 -> when (objective) {
-                CoachingObjective.BRAKE_ENTRY -> "Turn 3A: finish the brake straight, then rotate."
-                CoachingObjective.BRAKE_RELEASE -> "Turn 3A: release smoothly and let it rotate."
-                CoachingObjective.ROTATE_WAIT -> "Turn 3A: patience over crest. Let it rotate."
-                else -> null
-            }
-            2 -> when (objective) {
-                CoachingObjective.LINE_VISION -> "Turn 2: stay wide, eyes to curb."
-                CoachingObjective.BRAKE_RELEASE -> "Turn 2: trail to the curb, release smooth."
-                CoachingObjective.ROTATE_WAIT -> "Turn 2: wait for the curb before throttle."
-                else -> null
-            }
-            1 -> when (objective) {
-                CoachingObjective.BRAKE_ENTRY, CoachingObjective.BRAKE_RELEASE -> "Turn 1: settle early, brake straight, quiet hands."
-                CoachingObjective.LINE_VISION -> "Turn 1: eyes up and clean turn-in."
-                else -> null
-            }
-            else -> if (skillLevel == SkillLevel.BEGINNER && phase == CornerPhase.APEX) {
-                "Eyes up. One clean change at a time."
-            } else {
-                null
-            }
+        }
+
+        return if (skillLevel == SkillLevel.BEGINNER && phase == CornerPhase.APEX) {
+            "Eyes up. One clean change at a time."
+        } else {
+            null
         }
     }
 

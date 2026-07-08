@@ -24,6 +24,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45500,
       targetSpeed: 55,
       advice: 'Brake straight, settle the platform, and commit to a clean turn-in.',
+      doctrine: { brakeZone: true },
     },
     {
       id: 2,
@@ -37,6 +38,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45620,
       targetSpeed: 70,
       advice: 'Stay wide, trail brake in, use the apex curb, and throttle at the curb.',
+      doctrine: { brakeZone: true },
     },
     {
       id: 3,
@@ -50,6 +52,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45720,
       targetSpeed: 52,
       advice: 'Slow in, fast out. Late apex and wait longer than you think for throttle.',
+      doctrine: { exitPriority: true },
     },
     {
       id: 31,
@@ -63,6 +66,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45780,
       targetSpeed: 45,
       advice: 'Brake in a straight line, be patient over the crest, and let the car rotate.',
+      doctrine: { brakeZone: true },
     },
     {
       id: 6,
@@ -76,6 +80,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45720,
       targetSpeed: 65,
       advice: 'Carousel: hug the inside, keep maintenance throttle, and never give up distance.',
+      doctrine: { maintenance: true },
     },
     {
       id: 7,
@@ -89,6 +94,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45430,
       targetSpeed: 52,
       advice: 'Double-apex mindset: stay tight, rotate in the middle, and use both apexes.',
+      doctrine: { maintenance: true, exitPriority: true, doubleApex: true },
     },
     {
       id: 910,
@@ -102,6 +108,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45360,
       targetSpeed: 58,
       advice: 'Open Turn 9, straighten the car, and sacrifice it for a clean Turn 10/11 run.',
+      doctrine: { sacrifice: true },
     },
     {
       id: 11,
@@ -115,6 +122,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45330,
       targetSpeed: 42,
       advice: 'Big brake zone. Straight-line brake, patient release, and protect the exit.',
+      doctrine: { brakeZone: true, exitPriority: true },
     },
     {
       id: 12,
@@ -128,6 +136,7 @@ export const SONOMA_RACEWAY: Track = {
       entryLon: -122.45380,
       targetSpeed: 80,
       advice: 'Unwind early, free the hands, and commit to front-straight exit speed.',
+      doctrine: { exitPriority: true },
     },
   ],
   mapPoints: [
@@ -170,6 +179,7 @@ export const THUNDERHILL_EAST: Track = {
       entryLon: -122.3311918,
       targetSpeed: 66,
       advice: 'Primary brake zone after the front straight. Brake straight, release before the long exit.',
+      doctrine: { brakeZone: true, exitPriority: true },
     },
     {
       id: 2,
@@ -235,6 +245,7 @@ export const THUNDERHILL_EAST: Track = {
       entryLon: -122.3288888,
       targetSpeed: 58,
       advice: 'Smooth approach over elevation; keep the platform settled.',
+      doctrine: { maintenance: true },
     },
     {
       id: 7,
@@ -248,6 +259,7 @@ export const THUNDERHILL_EAST: Track = {
       entryLon: -122.3294536,
       targetSpeed: 54,
       advice: 'Blind crest discipline: straight, smooth, and committed.',
+      doctrine: { maintenance: true },
     },
     {
       id: 8,
@@ -261,6 +273,7 @@ export const THUNDERHILL_EAST: Track = {
       entryLon: -122.3296034,
       targetSpeed: 60,
       advice: 'Unwind over the crest and let the car use the road on exit.',
+      doctrine: { maintenance: true, exitPriority: true },
     },
     {
       id: 9,
@@ -287,6 +300,7 @@ export const THUNDERHILL_EAST: Track = {
       entryLon: -122.3354928,
       targetSpeed: 74,
       advice: 'Flowing section. Hold rhythm and look far through the next complex.',
+      doctrine: { exitPriority: true },
     },
     {
       id: 11,
@@ -339,6 +353,7 @@ export const THUNDERHILL_EAST: Track = {
       entryLon: -122.3328057,
       targetSpeed: 72,
       advice: 'Fast return section. Stay precise and avoid over-slowing.',
+      doctrine: { exitPriority: true },
     },
     {
       id: 15,
